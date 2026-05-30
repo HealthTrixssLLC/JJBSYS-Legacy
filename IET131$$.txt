@@ -1,0 +1,1806 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IET131   TITLE '**  CICS/TS TCP/IP SMTP-E CALLABLE CLIENT PROGRAM  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IET131   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IET131   RSECT
+IET131   AMODE 31
+IET131   RMODE ANY
+IET131   DFHEIENT CODEREG=(12,7),                                      *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IET131 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         MVC   EZA25EYE,=CL8'EZA25EYE'  SET EYE CATCHER
+         B     INT00                    BRANCH AROUND DUMP ID
+         DS    0H
+         DC    CL8'IET131'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*----------------------------------------------------------------------
+*        VERIFY TCP/IP CICS EXIT ACTIVE
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               EXITPROGRAM('EZACIC01'),                                *
+               STARTSTATUS(FULWORK),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LA    RA,COMRSPTC              LOAD TCP/IP INACT RETURN CODE
+         CLC   RESP,DFHRESP(NORMAL)     EXIT PROGRAM FOUND
+         BNE   XIT00                    ..NO, BRANCH
+         CLC   FULWORK,DFHVALUE(STARTED) EXIT ACTIVE
+         BNE   XIT00                    ..NO, BRANCH
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               SYSID(BDRYSYS)
+*----------------------------------------------------------------------
+*        VERIFY CALLER'S PARMS
+*----------------------------------------------------------------------
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH
+         BL    ABN01                    ..NO CHOICE BUT ABEND
+         EXEC  CICS,                                                   *
+               ADDRESS,                                                *
+               COMMAREA(R9),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND
+         BNE   ABN02                    ..NO CHOICE BUT ABEND
+         USING COMPARM,R9
+*
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         LA    RA,COMRSPCL              LOAD INVALID COMMAREA LEN
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH
+         BL    XIT00                    ..NO, BRANCH
+*
+         LA    RA,COMRSPPE              LOAD TEMP/QUE PAIR ERROR
+         CLI   COMTRQ,COMTRQ01          TEMPLATE/QUEUE PAIR CNT VALID
+         BL    XIT00                    ..NO, BRANCH
+         CLI   COMTRQ,COMTRQ04          TEMPLATE/QUEUE PAIR CNT VALID
+         BH    XIT00                    ..NO, BRANCH
+*
+         LA    RA,COMRSPTX              LOAD FILE EXT NOT .TXT OR .CSV
+         CLI   COMATTYP,COMATTXT        Attachment type TEXT?
+         BNE   INT03
+         OC    COMATEXT,=CL3' '         Force upper case
+         CLC   =CL3'TXT',COMATEXT       Valid TEXT file extension?
+         BE    INT03                    Yes, branch
+         CLC   =CL3'CSV',COMATEXT       Valid TEXT file extension?
+         BNE   XIT00                    RETURN RESP CODE
+*
+INT03    DS    0H
+         MVI   DELIMITR,C'&&'           SET DEFAULT SYMBOL DELIMITER
+         TRT   COMDELIM,DLMTBL          VALID OVERIDE PASSED
+         BNZ   INT05                    ..NO, BRANCH
+         MVC   DELIMITR,COMDELIM        SET OVERRIDE SYMBOL DELIMITER
+INT05    DS    0H
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE
+*
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         LA    R4,SRVRTBL               LOAD SERVER TABLE @
+         LA    RF,SRVRTBL#              LOAD SERVER TABLE ENTRIES
+INT10    DS    0H
+         CLC   COMSRV,0(R4)             VALID SERVER REQUEST
+         BE    INT20                    ..YES, BRANCH
+         LA    R4,L'SRVRTBL(,R4)        INDEX TO NEXT ENTRY
+         BCT   RF,INT10                 ..LOOP
+         LA    RA,COMRSPSI              SET INVALID SERVER ID
+         B     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        LINK FOR TCP GETHOSTNAME CALL
+*----------------------------------------------------------------------
+INT20    DS    0H
+         LA    RE,EZA25RC
+         LR    R0,RE
+         LA    RF,EZA25ELN
+         SR    R1,R1
+         MVCL  RE,R0                    CLR EZACIC25 COMMONAREA
+*
+         LA    RE,4(,R4)
+         OC    4(4,R4),4(R4)            IP @ ALREADY KNOWN
+         BNZ   INT32                    ..YES, USE IT
+         MVC   EZA25REQ,=C'GHBN'        PASS DNS NAME TO EZACIC25
+         MVI   EZA25TYP,C'0'             FOR GETHOSTBYNAME
+         L     R1,8(,R4)                LOAD HOST NAME LENGTH
+         L     RE,12(,R4)               LOAD HOST NAME @
+         ST    R1,EZA25NLN              STORE HOST NAME LEN
+         BCTR  R1,0                     DECR FOR EXECUTE MOVE
+         EX    R1,EZA25MV
+*EZA25MV MVC   EZA25HNM(0),0(RE)        EXECUTED INSTRUCTION
+*
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('EZACIC25'),                                    *
+               COMMAREA(EZA25RC),                                      *
+               LENGTH(=AL2(EZA25ELN))
+         L     R5,EZA25HNT              LOAD  HOSTENT @
+         LTR   R5,R5                    FOUND HOSTENT
+         BNZ   INT30                    ..YES, BRANCH
+         LA    RA,COMRSPGH              SET SOCKET CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+EZA25MV  MVC   EZA25HNM(0),0(RE)
+*
+INT30    DS    0H
+         L     R6,16(,R5)               LOAD HOSTADDR LIST @
+         L     RE,0(R6)                 LOAD 1ST IP @
+INT32    DS    0H
+         MVC   CALIPADR,0(RE)           SET SERVER IP @
+*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(COMTMP01),                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    INT34
+         LA    RA,COMRSTMP              SET CALLER TEMPLATE ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+INT34    DS    0H
+*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TSQUEUE(COMTSQ01),                                      *
+               NUMITEMS(TSQITEMS),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    INT36
+         LA    RA,COMRSPQE              SET CALLER TS QUEUE ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+INT36    DS    0H
+         CLC   TSQITEMS,=H'2'
+         BNH   INT37
+         MVC   BDRYDSH1,=C'--'
+         MVI   BDRYDSH2,C'-'
+         MVI   BDRYDSH3,C'-'
+         MVC   BDRYDSH4,=C'--'
+         MVC   BDRYIEI,=C'IEI-'
+         MVC   BDRYTSQ,COMTSQ01
+         LH    R1,TSQITEMS
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         UNPK  BDRYITEM,DBLWORK+5(3)
+INT37    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TSQUEUE(QNAME),                                         *
+               NUMITEMS(HLFWORK),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BNE   INT38
+         CLC   HLFWORK,=H'30000'        TRACE QUEUE NEARLY FULL
+         BL    INT38                    ..NO, BRANCH
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(QNAME),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+INT38    DS    0H
+*----------------------------------------------------------------------
+*        HTML DOCUMENT CONSTRUCTION
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ01),                                        *
+               ITEM(=H'3'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC00
+         LA    RA,COMRSITM              SET CALLER TS QUEUE ITEM ERROR
+         B     XIT00                    RETURN RESP CODE
+DOC00    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(COMTMP01),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER(DELIMITR),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC10
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC10    DS    0H
+*----------------------------------------------------------------------
+         CLI   COMTRQ,COMTRQ02          TEMPLATE/QUEUE PAIR #2
+         BL    TCP00                    ..NO, BRANCH
+         OC    COMTSQ02,COMTSQ02        QUEUE SPECIFIED
+         BZ    DOC30                    ..NO, BRANCH
+         MVC   SEGWORK,=H'1'
+DOC15    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ02),                                        *
+               ITEM(SEGWORK),                                          *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC20
+         CLC   RESP,DFHRESP(ITEMERR)
+         BE    DOC35
+         LA    RA,COMRSITM              SET CALLER TS QUEUE READ ERROR
+         B     XIT00                    RETURN RESP CODE
+DOC20    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP02),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER(DELIMITR),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC25
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC25    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               FROMDOC(TMPTOKEN),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC28
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         B     XIT00
+DOC28    DS    0H
+         LH    R1,SEGWORK
+         AHI   R1,1
+         STH   R1,SEGWORK
+         OC    COMTSQ02,COMTSQ02        QUEUE SPECIFIED
+         BNZ   DOC15                    ..YES, BRANCH
+         B     DOC35                    ..NO, BRANCH
+DOC30    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP02),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC25
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC35    DS    0H
+*----------------------------------------------------------------------
+         CLI   COMTRQ,COMTRQ03          TEMPLATE/QUEUE PAIR #3
+         BL    TCP00                    ..NO, BRANCH
+         OC    COMTSQ03,COMTSQ03        QUEUE SPECIFIED
+         BZ    DOC55                    ..NO, BRANCH
+         MVC   SEGWORK,=H'1'
+DOC40    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ03),                                        *
+               ITEM(SEGWORK),                                          *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC45
+         CLC   RESP,DFHRESP(ITEMERR)
+         BE    DOC60
+         LA    RA,COMRSITM              SET CALLER TS QUEUE READ ERROR
+         B     XIT00                    RETURN RESP CODE
+DOC45    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP03),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER(DELIMITR),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC50
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC50    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               FROMDOC(TMPTOKEN),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC53
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         B     XIT00
+DOC53    DS    0H
+         LH    R1,SEGWORK
+         AHI   R1,1
+         STH   R1,SEGWORK
+         OC    COMTSQ03,COMTSQ03        QUEUE SPECIFIED
+         BNZ   DOC40                    ..YES, BRANCH
+         B     DOC60                    ..NO, BRANCH
+DOC55    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP03),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC50
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC60    DS    0H
+*----------------------------------------------------------------------
+         CLI   COMTRQ,COMTRQ04          TEMPLATE/QUEUE PAIR #4
+         BL    TCP00                    ..NO, BRANCH
+         OC    COMTSQ04,COMTSQ04        QUEUE SPECIFIED
+         BZ    DOC80                    ..NO, BRANCH
+         MVC   SEGWORK,=H'1'
+DOC65    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ04),                                        *
+               ITEM(SEGWORK),                                          *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC70
+         CLC   RESP,DFHRESP(ITEMERR)
+         BE    DOC85
+         LA    RA,COMRSITM              SET CALLER TS QUEUE READ ERROR
+         B     XIT00                    RETURN RESP CODE
+DOC70    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP04),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER(DELIMITR),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC75
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC75    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               FROMDOC(TMPTOKEN),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC73
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         B     XIT00
+DOC73    DS    0H
+         LH    R1,SEGWORK
+         AHI   R1,1
+         STH   R1,SEGWORK
+         OC    COMTSQ04,COMTSQ04        QUEUE SPECIFIED
+         BNZ   DOC65                    ..YES, BRANCH
+         B     DOC85                    ..NO, BRANCH
+DOC80    DS    0H
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(TMPTOKEN),                                     *
+               DOCSIZE(TMPSIZE),                                       *
+               TEMPLATE(COMTMP04),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    DOC75
+         LA    RA,COMRSDOC              SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT00
+         LA    RA,COMRSDOD              SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         BE    XIT00
+         LA    RA,COMRSDOE              SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         BE    XIT00
+         LA    RA,COMRSDOF              SET DOCUMENT CREATE TEMPLATERR
+         B     XIT00                    RETURN RESP CODE
+DOC85    DS    0H
+*----------------------------------------------------------------------
+*        ISSUE TCP SOCKET CALL
+*----------------------------------------------------------------------
+TCP00    DS    0H
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE
+         MVC   CALPORT,2(R4)            SET SERVER PORT
+         LA    R1,CALAFINT              LOAD AF_INET
+         STH   R1,CALAF                 STORE AF_INET H-WORD
+         ST    R1,CALAFF                STORE AF_INET F-WORD
+         XC    CALRSVD8,CALRSVD8        CLEAR RESERVED
+         LA    R1,CALSTREM              LOAD STREAM SOCKET TYPE
+         ST    R1,CALSCTYP              STORE SOCKET TYPE
+         XC    CALPROTO,CALPROTO        DEFAULT PROTOCOL
+         MVC   CALSCFUN,=CL16'SOCKET'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALAFF,CALSCTYP,CALPROTO,                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNM   TCP10                    ..YES, BRANCH
+         LA    RA,COMRSPSC              SET SOCKET CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        ISSUE TCP CONNECT CALL
+*----------------------------------------------------------------------
+TCP10    DS    0H
+         STH   RF,CALSCDES              SAVE SOCKET DESCRIPTOR
+         MVC   CALSCFUN,=CL16'CONNECT'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALAF,                               *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BZ    TCP20                    ..YES, BRANCH
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+*----------------------------------------------------------------------
+*        SEND THE SMTP-E MESSAGE
+*----------------------------------------------------------------------
+TCP20    DS    0H
+         LA    R2,CALRBUFR
+         BAS   R6,RCV00
+         LA    RA,COMRS220
+         CLC   SMTPC220,CALRBUFR
+         BNE   XIT00
+*
+         MVC   CALRBUFR(L'SMTPHELO),SMTPHELO
+         MVC   CALRBUFR+L'SMTPHELO(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'SMTPHELO+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS250
+         CLC   SMTPC250,CALRBUFR
+         BNE   XIT00
+*
+         MVC   CALRBUFR(L'SMTPFR),SMTPFR
+         LA    R1,COMSNDID+L'COMSNDID
+         TRT   COMSNDID,TRTBL
+         LA    R2,COMSNDID
+         SR    R1,R2
+         BCTR  R1,0
+         EX    R1,MVCFR
+*MVCFR   MVC   CALRBUFR+L'SMTPFR(0),COMSNDID
+         LA    R1,CALRBUFR+L'SMTPFR+1(R1)
+         MVI   0(R1),C'>'
+         MVC   1(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF+1(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS250
+         CLC   SMTPC250,CALRBUFR
+         BNE   XIT00
+*
+         MVC   ITMWORK,=H'1'
+TCP21    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ01),                                        *
+               ITEM(ITMWORK),                                          *
+               SET(R3),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP22
+         LA    RA,COMRSITM              SET CALLER TS QUEUE ITEM ERROR
+         B     XIT00                    RETURN RESP CODE
+TCP22    DS    0H
+         MVC   CALRBUFR(L'SMTPTO),SMTPTO
+         TRT   0(80,R3),TRTBL
+         BNZ   TCP24
+         CLC   ITMWORK,=H'2'
+         BE    TCP25
+         LA    RA,COMRSADR              SET CALLER RCPT TO ADDRESS ERR
+         B     XIT00                    RETURN RESP CODE
+TCP24    DS    0H
+         SR    R1,R3
+         BNP   TCP24A
+         LH    R6,HLFWORK
+         SR    R6,R1
+         BCTR  R6,0
+         STH   R6,HLFWORK
+         BCTR  R1,0
+         EX    R1,MVCTO
+*MVCTO   MVC   CALRBUFR+L'SMTPTO(0),0(R3)
+         LA    R3,2(R1,R3)
+         LA    R1,CALRBUFR+L'SMTPTO+1(R1)
+         MVI   0(R1),C'>'
+         MVC   1(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF+1(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS250
+         CLC   SMTPC250,CALRBUFR
+         BNE   XIT00
+         LH    R1,HLFWORK
+         LTR   R1,R1
+         BP    TCP22
+*
+TCP24A   DS    0H
+         LH    R1,ITMWORK
+         LA    R1,1(,R1)
+         STH   R1,ITMWORK
+         CLC   ITMWORK,=H'2'
+         BE    TCP21
+*
+TCP25    DS    0H
+         MVC   CALRBUFR(L'SMTPDATA),SMTPDATA
+         MVC   CALRBUFR+L'SMTPDATA(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'SMTPDATA+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS354
+         CLC   SMTPC354,CALRBUFR
+         BNE   XIT00
+*
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ01),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R3),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP26
+         LA    RA,COMRSITM              SET CALLER TS QUEUE ITEM ERROR
+         B     XIT00                    RETURN RESP CODE
+TCP26    DS    0H
+         TRT   0(80,R3),TRTBL
+         BNZ   TCP27
+         LA    RA,COMRSADR              SET CALLER RCPT TO ADDRESS ERR
+         B     XIT00                    RETURN RESP CODE
+TCP27    DS    0H
+         MVC   CALRBUFR(L'MSGTO),MSGTO
+         SR    R1,R3
+         LH    R6,HLFWORK
+         SR    R6,R1
+         BCTR  R6,0
+         STH   R6,HLFWORK
+         BCTR  R1,0
+         EX    R1,MVCRID
+*MVCRID  MVC   CALRBUFR+L'MSGTO(0),0(R3)
+         LA    R3,2(R1,R3)
+         LA    R1,CALRBUFR+L'MSGTO+1(R1)
+         MVC   0(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+         LH    R1,HLFWORK
+         LTR   R1,R1
+         BP    TCP26
+*
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ01),                                        *
+               ITEM(=H'2'),                                            *
+               SET(R3),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP28
+         LA    RA,COMRSITM              SET CALLER TS QUEUE ITEM ERROR
+         B     XIT00                    RETURN RESP CODE
+TCP28    DS    0H
+         TRT   0(80,R3),TRTBL
+         BZ    TCP30
+         MVC   CALRBUFR(L'MSGCC),MSGCC
+         SR    R1,R3
+         BNP   TCP30
+         LH    R6,HLFWORK
+         SR    R6,R1
+         BCTR  R6,0
+         STH   R6,HLFWORK
+         BCTR  R1,0
+         EX    R1,MVCCID
+*MVCCID  MVC   CALRBUFR+L'MSGCC(0),0(R3)
+         LA    R3,2(R1,R3)
+         LA    R1,CALRBUFR+L'MSGCC+1(R1)
+         MVC   0(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+         LH    R1,HLFWORK
+         LTR   R1,R1
+         BP    TCP28
+*
+TCP30    DS    0H
+         MVC   CALRBUFR(L'MSGFR),MSGFR
+         LA    R1,COMSNDER+L'COMSNDER
+         TRT   COMSNDER,TRTBL
+         LA    R2,COMSNDER
+         SR    R1,R2
+         BCTR  R1,0
+         EX    R1,MVCSID
+*MVCSID  MVC   CALRBUFR+L'MSGFR(0),COMSNDER
+         LA    R1,CALRBUFR+L'MSGFR+1(R1)
+         MVC   0(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGXM),MSGXM
+         LA    R1,CALRBUFR+L'MSGXM
+         MVC   0(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGTI),MSGTI
+         LA    R1,COMSUBJT+L'COMSUBJT
+         TRT   COMSUBJT,TRTBL
+         LA    R2,COMSUBJT
+         SR    R1,R2
+         BCTR  R1,0
+         EX    R1,MVCSUB
+*MVCSUB  MVC   CALRBUFR+L'MSGTI(0),COMSUBJT
+         LA    R1,CALRBUFR+L'MSGTI+1(R1)
+         MVC   0(L'SMTPCRLF,R1),SMTPCRLF
+         LA    R1,L'SMTPCRLF(,R1)
+         LA    R2,CALRBUFR
+         SR    R1,R2
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGMIME),MSGMIME
+         MVC   CALRBUFR+l'MSGMIME(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGMIME+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*----------------------------------------------------------------------
+*        HTML ONLY - NO ATTACHMENTS
+*----------------------------------------------------------------------
+         CLC   TSQITEMS,=H'3'
+         BH    TCP60
+*
+         MVC   CALRBUFR(L'MSGCTYPE),MSGCTYPE
+         MVC   CALRBUFR+l'MSGCTYPE(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGCTYPE+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGCXFER),MSGCXFER
+         MVC   CALRBUFR+l'MSGCXFER(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGCXFER+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               SET(R2),                                                *
+               INITIMG(X'00'),                                         *
+               FLENGTH(DOCSIZE)
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               RETRIEVE,                                               *
+               DOCTOKEN(DOCTOKEN),                                     *
+               INTO(0(R2)),                                            *
+               LENGTH(DOCSIZE),                                        *
+               MAXLENGTH(DOCSIZE)
+         MVC   CALNBYTE,DOCSIZE
+         BAS   R6,WRT00
+*
+TCP35    DS    0H
+         MVC   CALRBUFR(L'SMTPDOT),SMTPDOT
+         LA    R1,L'SMTPDOT
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS250
+         CLC   SMTPC250,CALRBUFR
+         BNE   XIT00
+*
+         MVC   CALRBUFR(L'SMTPQUIT),SMTPQUIT
+         MVC   CALRBUFR+L'SMTPQUIT(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'SMTPQUIT+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         BAS   R6,RCV00
+         LA    RA,COMRS221
+         CLC   SMTPC221,CALRBUFR
+         BNE   XIT00
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP CLOSE CALL
+*----------------------------------------------------------------------
+TCP40    DS    0H
+         MVC   CALSCFUN,=CL16'CLOSE'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BZ    XIT00                    ..YES, BRANCH
+         LA    RA,COMRSPLC              SET CLOSE CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+MVCFR    MVC   CALRBUFR+L'SMTPFR(0),COMSNDID
+MVCTO    MVC   CALRBUFR+L'SMTPTO(0),0(R3)
+MVCRID   MVC   CALRBUFR+L'MSGTO(0),0(R3)
+MVCCID   MVC   CALRBUFR+L'MSGCC(0),0(R3)
+MVCSID   MVC   CALRBUFR+L'MSGFR(0),COMSNDER
+MVCSUB   MVC   CALRBUFR+L'MSGTI(0),COMSUBJT
+*----------------------------------------------------------------------
+*        HTML PLUS ATTACHMENTS
+*----------------------------------------------------------------------
+TCP60    DS    0H
+         MVC   CALRBUFR(L'MSGBTYPE),MSGBTYPE
+         MVC   CALRBUFR+L'MSGBTYPE(BDRYIDTL),BDRYIDT
+         MVI   CALRBUFR+L'MSGBTYPE+BDRYIDTL,C'"'
+         MVC   CALRBUFR+L'MSGBTYPE+BDRYIDTL+1(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGBTYPE+BDRYIDTL+1+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(BDRYIDBL),BDRYIDB
+         MVC   CALRBUFR+BDRYIDBL(L'SMTPCRLF),SMTPCRLF
+         LA    R1,BDRYIDBL+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGCTYPE),MSGCTYPE
+         MVC   CALRBUFR+L'MSGCTYPE(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGCTYPE+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         MVC   CALRBUFR(L'MSGCXFER),MSGCXFER
+         MVC   CALRBUFR+L'MSGCXFER(L'SMTPCRLF),SMTPCRLF
+         MVC   CALRBUFR+L'MSGCXFER+L'SMTPCRLF(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGCXFER+(2*L'SMTPCRLF)
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               SET(R2),                                                *
+               INITIMG(X'00'),                                         *
+               FLENGTH(DOCSIZE)
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               RETRIEVE,                                               *
+               DOCTOKEN(DOCTOKEN),                                     *
+               INTO(0(R2)),                                            *
+               LENGTH(DOCSIZE),                                        *
+               MAXLENGTH(DOCSIZE)
+         MVC   CALNBYTE,DOCSIZE
+         BAS   R6,WRT00
+*
+         MVC   ITMWORK,=H'4'
+         LH    R1,TSQITEMS
+         SH    R1,=H'3'
+         STH   R1,TSQITEMS
+*
+TCP65    DS    0H
+         LH    R1,ITMWORK
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         MVC   CALRBUFR(BDRYIDBL),BDRYIDB
+         MVC   CALRBUFR+BDRYIDBL(L'SMTPCRLF),SMTPCRLF
+         LA    R1,BDRYIDBL+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         CLI   COMATTYP,COMATBIN    Binary Type Attachment
+         BE    TCP70                ..Yes Branch
+*
+         MVC   CALRBUFR(L'MSGTTYPE),MSGTTYPE
+         MVC   CALRBUFR+L'MSGTTYPE(L'COMTSQ01),COMTSQ01
+         MVI   CALRBUFR+L'MSGTTYPE+L'COMTSQ01,C'.'
+         UNPK  CALRBUFR+L'MSGTTYPE+L'COMTSQ01+1(5),DBLWORK+5(3)
+         MVI   CALRBUFR+L'MSGTTYPE+L'COMTSQ01+6,C'.'
+         MVC   CALRBUFR+L'MSGTTYPE+L'COMTSQ01+7(3),COMATEXT
+         MVI   CALRBUFR+L'MSGTTYPE+L'COMTSQ01+10,C'"'
+         MVC   CALRBUFR+L'MSGTTYPE+L'COMTSQ01+11(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGTTYPE+L'COMTSQ01+11+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         B     TCP71
+*
+TCP70    DS    0H
+         MVC   CALRBUFR(L'MSGZTYPE),MSGZTYPE
+         MVC   CALRBUFR+L'MSGZTYPE(L'COMTSQ01),COMTSQ01
+         MVI   CALRBUFR+L'MSGZTYPE+L'COMTSQ01,C'.'
+         UNPK  CALRBUFR+L'MSGZTYPE+L'COMTSQ01+1(5),DBLWORK+5(3)
+         MVI   CALRBUFR+L'MSGZTYPE+L'COMTSQ01+6,C'.'
+         MVC   CALRBUFR+L'MSGZTYPE+L'COMTSQ01+7(3),COMATEXT
+         MVI   CALRBUFR+L'MSGZTYPE+L'COMTSQ01+10,C'"'
+         MVC   CALRBUFR+L'MSGZTYPE+L'COMTSQ01+11(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGZTYPE+L'COMTSQ01+11+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+TCP71    DS    0H
+         CLI   COMATTYP,COMATBIN    Binary Type Attachment
+         BE    TCP75                ..Yes Branch
+*
+         MVC   CALRBUFR(L'MSGCXFER),MSGCXFER
+         MVC   CALRBUFR+L'MSGCXFER(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGCXFER+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         B     TCP76
+*
+TCP75    DS    0H
+         MVC   CALRBUFR(L'MSGZXFER),MSGZXFER
+         MVC   CALRBUFR+L'MSGZXFER(L'SMTPCRLF),SMTPCRLF
+         LA    R1,L'MSGZXFER+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+TCP76    DS    0H
+*
+         MVC   CALRBUFR(L'MSGCDISP),MSGCDISP
+         MVC   CALRBUFR+L'MSGCDISP(L'COMTSQ01),COMTSQ01
+         MVI   CALRBUFR+L'MSGCDISP+L'COMTSQ01,C'.'
+         UNPK  CALRBUFR+L'MSGCDISP+L'COMTSQ01+1(5),DBLWORK+5(3)
+         MVI   CALRBUFR+L'MSGCDISP+L'COMTSQ01+6,C'.'
+         MVC   CALRBUFR+L'MSGCDISP+L'COMTSQ01+7(3),COMATEXT
+         MVI   CALRBUFR+L'MSGCDISP+L'COMTSQ01+10,C'"'
+         MVC   CALRBUFR+L'MSGCDISP+L'COMTSQ01+11(L'SMTPCRLF),SMTPCRLF
+         MVC   CALRBUFR+L'MSGCDISP+L'COMTSQ01+11+L'SMTPCRLF(L'SMTPCRLF)*
+               ,SMTPCRLF
+         LA    R1,L'MSGCDISP+L'COMTSQ01+11+(2*L'SMTPCRLF)
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+*
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMTSQ01),                                        *
+               ITEM(ITMWORK),                                          *
+               SET(R2),                                                *
+               LENGTH(FULWORK)
+*
+         CLI   COMATTYP,COMATBIN    Binary Type Attachment
+         BE    TCP80                ..Yes Branch
+*----------------------------------------------------------------------
+*        TEXT ATTACHMENTS
+*----------------------------------------------------------------------
+         LH    R1,FULWORK
+         ST    R1,CALNBYTE
+         BAS   R6,WRT00
+*
+TCP78    DS    0H
+         LH    R1,ITMWORK
+         AHI   R1,1
+         STH   R1,ITMWORK
+         LH    R1,TSQITEMS
+         BCTR  R1,0
+         STH   R1,TSQITEMS
+         LTR   R1,R1
+         BP    TCP65
+*
+TCP79    DS    0H
+         MVC   CALRBUFR(BDRYIDEL),BDRYIDB
+         MVC   CALRBUFR+BDRYIDEL(L'SMTPCRLF),SMTPCRLF
+         LA    R1,BDRYIDEL+L'SMTPCRLF
+         ST    R1,CALNBYTE
+         LA    R2,CALRBUFR
+         BAS   R6,WRT00
+         B     TCP35
+*----------------------------------------------------------------------
+*        BINARY ATTACHMENTS
+*----------------------------------------------------------------------
+*
+*        Serialize Processing
+*
+TCP80    DS    0H
+         EXEC  CICS,                                                   *
+               ENQ,                                                    *
+               TASK,                                                   *
+               RESOURCE($AT$Q),                                        *
+               LENGTH(=AL2(L'$AT$Q)),
+*
+*        TDQ Create Resource
+*
+         MVC   $AT$C,$AT$B          Move CREATE parms
+         MVC   $AT$C+($AT$D-$AT$B)(L'$AT$D),0(R2) Save bin attach DSN
+         EXEC  CICS,                                                   *
+               CREATE,                                                 *
+               TDQUEUE(=CL4'$AT$'),                                    *
+               ATTRIBUTES($AT$C),                                      *
+               ATTRLEN($AT$L),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP82
+         LA    RA,COMRSTDQ              SET CREATE TDQ ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+*        Verify TDQ Opened
+*
+TCP82    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TDQUEUE(=CL4'$AT$'),                                    *
+               OPENSTATUS(FULWORK)
+         CLC   FULWORK,DFHVALUE(OPEN)
+         BE    TCP83
+         LA    RA,COMRSTDO              SET TDQ OPEN ERROR
+         B     TCP85S                   RETURN RESP CODE
+*
+*        Initialize Work Areas
+*
+TCP83    DS    0H
+         SR    RA,RA
+         LA    R1,CALRBUFR
+         ST    R1,B64OTPTR
+         XC    B64INLEN,B64INLEN
+         XC    B64OTLEN,B64OTLEN
+         XC    B64INSVL,B64INSVL
+         XC    B64INSVD,B64INSVD
+*
+*        READ TDQ QUEUE Processing
+*
+TCP84    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TD,                                                     *
+               QUEUE(=CL4'$AT$'),                                      *
+               SET(R2),                                                *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         CLC   RESP,DFHRESP(NORMAL)     Record Read?
+         BE    TCP86                    ..Yes, Branch
+         CLC   RESP,DFHRESP(QZERO)      End of Queue?
+         BE    TCP85                    ..Yes, Branch
+         LA    RA,COMRSTDE              Set Read TDQ Error
+         B     TCP85S                   ..Branch
+*
+*        TDQ QUEUE ZERO Processing
+*
+TCP85    DS    0H
+         CLC   B64OTLEN,=H'76'          Output Buffer Full?
+         BE    TCP88                    ..Yes, Branch
+         OC    B64INSVL(L'B64INSVL+L'B64INSVD),B64INSVL Input Fragment?
+         BNZ   TCP90                    ..Yes, Branch
+         LH    R2,B64OTLEN              Load Current Output Len
+         LTR   R2,R2                    Length Zero?
+         BNP   TCP85S                   ..Yes, Branch
+         ST    R2,CALNBYTE              Store Output Len
+         LA    R2,CALRBUFR              Load Output Buffer @
+         BAS   R6,WRT05                 TCP/IP Write Record
+*
+*        TDQ Close/Discard Resource
+*
+TCP85S   DS    0H
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TDQUEUE(=CL4'$AT$'),                                    *
+               CLOSED,                                                 *
+               DISABLED,                                               *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         EXEC  CICS,                                                   *
+               DISCARD,                                                *
+               TDQUEUE(=CL4'$AT$'),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LTR   RA,RA
+         BZ    TCP79
+         B     XIT00                    RETURN RESP CODE
+*
+*        TDQ Input Record Processing
+*
+TCP86    DS    0H
+         ST    R2,B64INPTR              Save Input Record @
+         MVC   B64INLEN,FULWORK         Save Input Record Len
+TCP87    DS    0H
+         CLC   B64OTLEN,=H'76'          Output Record Complete?
+         BE    TCP88                    ..Yes, Branch
+         OC    B64INSVL(L'B64INSVL+L'B64INSVD),B64INSVL Input Fragment?
+         BNZ   TCP90                    ..Yes, Branch
+         CLC   B64INLEN,=H'3'           Input Remaining Len GE 3
+         BL    TCP89                    ..No, Branch
+         L     R2,B64INPTR              Load Input Ptr @
+         SR    R0,R0                    Clr Reg
+         ICM   R0,B'0111',0(R2)         Insert Next 3 Bytes Input
+         LA    R2,3(,R2)                Index to Next Input Byte
+         ST    R2,B64INPTR              Save Input Ptr @
+         LH    R2,B64INLEN              Load Input Remaining Len
+         SH    R2,=H'3'                 Decrement by 3
+         STH   R2,B64INLEN              Save Input Remaining Len
+*
+*        TCP Output Processing
+*
+TCP87S   DS    0H
+         L     R2,B64OTPTR              Load Output Buffer Ptr @
+         SRDL  R0,6                     Shift out 6 bits
+         SRL   R1,26                    Rt Justify 6 bits
+         STC   R1,3(,R2)                Save Base64 Bytr #4
+         SRDL  R0,6                     Shift out 6 bits
+         SRL   R1,26                    Rt Justify 6 Bits
+         STC   R1,2(,R2)                Save Base64 Bytr #3
+         SRDL  R0,6                     Shift out 6 Bits
+         SRL   R1,26                    Rt Justify 6 bits
+         STC   R1,1(,R2)                Save Base64 Bytr #2
+         SRDL  R0,6                     Shift out 6 Bits
+         SRL   R1,26                    Rt Justify 6 bits
+         STC   R1,0(,R2)                Save Base64 Bytr #1
+         TR    0(4,R2),B64TBL           Convert 4 Bytes to Base64
+         LA    R2,4(,R2)                Index Output Buffer Ptr @
+         ST    R2,B64OTPTR              Save Output Buffer Ptr @
+         LH    R2,B64OTLEN              Load Output Buffer Len
+         LA    R2,4(,R2)                INdex 4 Bytes
+         STH   R2,B64OTLEN              Save Output Buffer Len
+         CLC   RESP,DFHRESP(QZERO)      TD Queue Zero Set?
+         BE    TCP85                    ..Yes, Branch
+         B     TCP87                    ..Loop thru Input Record
+*
+*        Write TCP Output Record
+*
+TCP88    DS    0H
+         LH    R2,B64OTLEN              Load Output Record Len
+         ST    R2,CALNBYTE              Store for TCP Write
+         LA    R2,CALRBUFR              Load Output Buffer @
+         BAS   R6,WRT05                 TCP/IP Write Record
+         LA    R1,CALRBUFR              Load Output Buffer Begin @
+         ST    R1,B64OTPTR              Save Output Buffer Ptr @
+         XC    B64OTLEN,B64OTLEN        Clr Output Record Len
+         CLC   RESP,DFHRESP(QZERO)      TD Queue Zero Set?
+         BE    TCP85                    ..Yes, Branch
+         B     TCP87                    ..Loop thru Input Record
+*
+*        Input Record Fragment Save Processing
+*
+TCP89    DS    0H
+         OC    B64INLEN,B64INLEN        Is there a Fragment?
+         BZ    TCP84                    ..No, Branch
+         MVC   B64INSVL,B64INLEN        Save Input Record Fragment Len
+         L     R2,B64INPTR              Load Input Record Fragment @
+         MVC   B64INSVD,0(R2)          Save Input Record Fragment Bytes
+         B     TCP84                    ..Loop thru Input TD Queue
+*
+*        Output the Two Byte Input Record Fragment Tail
+*
+TCP90    DS    0H
+         CLI   B64INSVL+1,X'02'         Two Byte Input Tail?
+         BNE   TCP91                    ..No, Branch
+         LH    R0,B64INSVD              Load Input Tail Data
+         SLL   R0,8                     Left Justify
+         CLC   RESP,DFHRESP(QZERO)      TD Queue Zero Set?
+         BE    TCP90Z                   ..Yes, Branch
+         L     R2,B64INPTR              Load Input Buffer Ptr @
+         ICM   R0,B'0001',0(R2)         Insert Next Input Data Byte
+         LA    R2,1(,R2)                Index to next Input Data Byte
+         ST    R2,B64INPTR              Save Input Buffer Ptr @
+         LH    R2,B64INLEN              Load Input Buffer Len
+         SH    R2,=H'1'                 Decrement One Byte
+         STH   R2,B64INLEN              Save Input Buffer Len
+TCP90Y   DS    0H
+         XC    B64INSVL,B64INSVL        Clr Input Fragment Len
+         XC    B64INSVD,B64INSVD        Clr Input Fragment Data
+         B     TCP87S                   ..Branch
+TCP90Z   DS    0H
+         ICM   R0,B'0001',=X'4040'      Insert Base64 Pad Byte
+         B     TCP90Y                   ..Branch
+*
+*        Output the One Byte Input Record Fragment Tail
+*
+TCP91    DS    0H
+         LH    R0,B64INSVD              Load Input Tail Data
+         SLL   R0,8                     Left Justify
+         CLC   RESP,DFHRESP(QZERO)      TS Queue Zero Set?
+         BE    TCP91Z                   ..Yes, Branch
+         L     R2,B64INPTR              Load Input Buffer Ptr @
+         ICM   R0,B'0011',0(R2)         Insert Next Input Data Bytes
+         LA    R2,2(,R2)                Index to Next Input Data Byte
+         ST    R2,B64INPTR              Save Input Buffer Ptr @
+         LH    R2,B64INLEN              Load INput Buffer Len
+         SH    R2,=H'2'                 Decrment Two Bytes
+         STH   R2,B64INLEN              Save Input Buffer Len
+TCP91Y   DS    0H
+         XC    B64INSVL,B64INSVL        Clr Input Fragment Len
+         XC    B64INSVD,B64INSVD        Clr Input Fragment Data
+         B     TCP87S                   ..Branch
+TCP91Z   DS    0H
+         ICM   R0,B'0011',=X'4040'      Insert Base64 Pad Bytes
+         B     TCP91Y                   ..Branch
+*----------------------------------------------------------------------
+*        LOG SOCKET OUTPUT
+*----------------------------------------------------------------------
+WRT00    DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               MAIN,                                                   *
+               QUEUE(QNAME),                                           *
+               FROM(0(R2)),                                            *
+               LENGTH(CALNBYTE+2),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+*----------------------------------------------------------------------
+*        TRANSLATE TO ASCII AND WRITE SOCKET OUTPUT
+*----------------------------------------------------------------------
+WRT05    DS    0H
+         CALL  EZACIC04,                                               *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         MVC   CALSCFUN,=CL16'WRITE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNM   WRT10                    ..YES, BRANCH
+         LA    RA,COMRSPWC              SET WRITE CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+WRT10    DS    0H
+         BR    R6
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP RECV CALL AND TRANSLATE ASCII TO EBCDIC
+*----------------------------------------------------------------------
+RCV00    DS    0H
+*
+         MVC   CALSCFUN,=CL16'RECV'
+         XC    CALFLG,CALFLG            CLR FLAGS
+         LA    R1,L'CALRBUFR            LOAD INPUT MSG LEN
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN
+         LA    R0,CALRBUFR
+         LR    RE,R0
+         LA    R1,L'CALRBUFR
+         SR    RF,RF
+         MVCL  R0,RE                    CLR BUFFER
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *
+               CALRBUFR,CALERRNO,CALRTNCD),                            *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNP   RCV30                    ..NO, BRANCH
+*
+RCV20    DS    0H
+         ST    RF,FULWORK               SAVE ACTUAL INPUT MSG LEN
+*
+         CALL  EZACIC05,                                               *
+               ((R2),FULWORK),                                         *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               MAIN,                                                   *
+               QUEUE(QNAME),                                           *
+               FROM(0(R2)),                                            *
+               LENGTH(FULWORK+2),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+RCV30    DS    0H
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BP    RCV40                    ..YES, BRANCH
+         LA    RA,COMRSPRC              SET RECV CALL ERROR
+RCV40    DS    0H
+         BR    R6
+*
+*----------------------------------------------------------------------
+*        VARIOUS ERROR MSGS AND ABENDS
+*----------------------------------------------------------------------
+ABN01    DS    0H
+         LA    R2,MSG01
+         LA    R3,L'MSG01
+         ICM   R4,B'1111',ABC01
+         B     ABN99
+ABN02    DS    0H
+         LA    R2,MSG02
+         LA    R3,L'MSG02
+         ICM   R4,B'1111',ABC02
+         B     ABN99
+ABN99    DS    0H
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSMT'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         ST    R4,FULWORK
+         EXEC  CICS,                                                   *
+               ABEND,                                                  *
+               ABCODE(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*----------------------------------------------------------------------
+*        RETURN TO CICS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         STC   RA,COMRSP                SET RETURN CODE
+         CLI   COMRSP,COMRSPOK          NORMAL RESPONSE
+         BNE   XIT05                    ..YES, BRANCH
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR
+         BNZ   XIT08                    ..NO, BRANCH
+         B     XIT10
+*
+XIT05    DS    0H
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR
+         BZ    XIT10                    ..NO, BRANCH
+XIT08    DS    0H
+         MVC   CALSCFUN,=CL16'SHUTDOWN'
+         LA    R1,END_BOTH
+         ST    R1,CALHOW
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALHOW,                              *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         MVC   CALSCFUN,=CL16'CLOSE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+XIT10    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS
+*----------------------------------------------------------------------
+*
+QNAME    DC    CL8'$SMTPIO$'
+*
+         CNOP  0,4
+SRVRTBL  DS    0XL16
+*
+*        F  =  10.129.0.10:25           iefw.nexus
+*        I  =  10.129.1.11:25           smtp.lvrgn.nexus
+*        S  =  10.129.0.20:25           mainframe.lvrgn.nexus
+*        X  =  10.129.1.38:25           exchange.mail.nexus
+*
+SRVRMAIL DC    C'F'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(25)                  SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'FIRWAL)            NAME LENGTH
+         DC    A(FIRWAL)                NAME @
+SRVRLVRG DC    C'I'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(25)                  SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'LVRGN)             NAME LENGTH
+         DC    A(LVRGN)                 NAME @
+SRVRSMTP DC    C'S'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(25)                  SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'SMTP)              NAME LENGTH
+         DC    A(SMTP)                  NAME @
+SRVRXCHG DC    C'X'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(25)                  SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'XCHG)              NAME LENGTH
+         DC    A(XCHG)                  NAME @
+         ORG
+SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL
+*
+FIRWAL   DC    C'iefw.nexus'
+LVRGN    DC    C'smtp.lvrgn.nexus'
+SMTP     DC    C'mainframe.lvrgn.nexus'
+XCHG     DC    C'exchange.mail.nexus'
+*
+CALL     CALL  ,                                                       *
+               (0,0,0,0,0,0,0,0),                                      *
+               VL,                                                     *
+               MF=L
+CALLLN   EQU   *-CALL
+*
+$AT$B    DC    C'DSNAME('
+$AT$D    DC    CL44' '
+         DC    C') '
+$AT$Q    DC    C'DDNAME($AT$) '
+         DC    C'TYPEFILE(INPUT) '
+         DC    C'TYPE(EXTRA) '
+         DC    C'DISPOSITION(SHR) '
+         DC    C'OPENTIME(INITIAL) '
+$AT$E    EQU   *
+$AT$LN   EQU   $AT$E-$AT$B
+$AT$L    DC    AL2($AT$E-$AT$B)
+*
+ASCICRLF DC    X'0D0A'
+*
+SMTPHELO DC    C'EHLO SMTP'
+SMTPTO   DC    C'RCPT TO: <'
+SMTPFR   DC    C'MAIL FROM: <'
+SMTPDATA DC    C'DATA'
+SMTPDOT  DC    X'0D254B0D25'
+SMTPQUIT DC    C'QUIT'
+SMTPCRLF DC    X'0D25'
+SMTPC211 DC    C'211'                   System status or Help reply
+SMTPC214 DC    C'214'                   Help message
+SMTPC220 DC    C'220'                   Service Ready
+SMTPC221 DC    C'221'                   Service Closing Xmit Channel
+SMTPC250 DC    C'250'                   Requested action completed
+SMTPC354 DC    C'354'                   Start MAIL input;
+*                                        end with <CRLF>.<CRLF>
+SMTPC500 DC    C'500'                   Syntax Error, invalid command
+SMTPC501 DC    C'501'                   Syntax Error, invalid parm/arg
+SMTPC502 DC    C'502'                   Command not implemented
+SMTPC503 DC    C'503'                   Bad command sequence
+SMTPC504 DC    C'504'                   Command parm not implemented
+MSGTO    DC    C'To: '
+MSGCC    DC    C'Cc: '
+MSGFR    DC    C'From: '
+MSGTI    DC    C'Subject: '
+MSGMIME  DC    C'Mime-Version: 1.0'
+MSGBTYPE DC    C'Content-Type: multipart/mixed; boundary="'
+MSGCTYPE DC    C'Content-Type: text/html; charset=us-ascii'
+MSGTTYPE DC    C'Content-Type: text/plain; name="'
+MSGZTYPE DC    C'Content-Type: application/octet-stream; name="'
+MSGCXFER DC    C'Content-Transfer-Encoding: 7bit'
+MSGZXFER DC    C'Content-Transfer-Encoding: base64'
+MSGCDISP DC    C'Content-Disposition: attachment; filename="'
+MSGXM    DC    C'X-Mailer: IET131 CICS SMTP Client'
+*
+MSG01    DC    C'IET131001  COMMAREA LENGTH PASSED FROM CALLER IS TOO S*
+               MALL, T111 ABEND INITIATED.'
+ABC01    EQU   *-21
+*
+MSG02    DC    C'IET131002  COMMAREA ADDRESS CAN NOT BE LOCATED, T112 A*
+               bend initiated.'
+ABC02    EQU   *-21
+*
+TRTBL    DC    256X'00'
+         ORG   TRTBL+X'00'
+         DC    X'FF'
+         ORG
+*
+B64TBL   DC    256C'='
+         ORG   B64TBL+X'00'
+         DC    C'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+         DC    C'abcdefghijklmnopqrstuvwxyz'
+         DC    C'0123456789+/'
+*
+DLMTBL   DC    256X'00'
+         ORG   DLMTBL+C'A'
+         DC    9X'FF'
+         ORG   DLMTBL+C'a'
+         DC    9X'FF'
+         ORG   DLMTBL+C'J'
+         DC    9X'FF'
+         ORG   DLMTBL+C'j'
+         DC    9X'FF'
+         ORG   DLMTBL+C'S'
+         DC    8X'FF'
+         ORG   DLMTBL+C's'
+         DC    8X'FF'
+         ORG   DLMTBL+C'0'
+         DC    10X'FF'
+         ORG   DLMTBL+C' '
+         DC    X'FF'
+         ORG   DLMTBL+C'+'
+         DC    X'FF'
+         ORG   DLMTBL+C':'
+         DC    X'FF'
+         ORG   DLMTBL+C'='
+         DC    X'FF'
+         ORG   DLMTBL+C'%'
+         DC    X'FF'
+         ORG   DLMTBL+C'\'
+         DC    X'FF'
+         ORG   DLMTBL+C'@'
+         DC    X'FF'
+         ORG   DLMTBL+C'#'
+         DC    X'FF'
+         ORG   DLMTBL+C'$'
+         DC    X'FF'
+         ORG   DLMTBL+X'00'
+         DC    X'FF'
+         ORG   DLMTBL+X'0E'
+         DC    X'FF'
+         ORG   DLMTBL+X'0F'
+         DC    X'FF'
+         ORG
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+HLFWORK  DS    H                        HALF WORD WORK
+ITMWORK  DS    H                        TS QUEUE ITEM NUMBER
+SEGWORK  DS    H                        TS QUEUE ITEM NUMBER
+TSQITEMS DS    H                        TS QUEUE ITEM COUNT
+*
+B64INPTR DS    F                        BASE64 Input @
+B64OTPTR DS    F                        BASE64 Output @
+B64INLEN DS    H                        BASE64 Input Len
+B64OTLEN DS    H                        BASE64 Output Len
+B64INSVL DS    H                        BASE64 Input Record Tail Len
+B64INSVD DS    XL2                      BASE64 Input Record Tail Data
+*
+         DS    0F
+TCPCALL  DS    XL(CALLLN)               TCP CALL PARMS
+*
+DOCTOKEN DS    CL16                     DOCUMENT TOKEN
+DOCSIZE  DS    F                        DOCUMENT SIZE
+*
+TMPTOKEN DS    CL16                     TEMP DOCUMENT TOKEN
+TMPSIZE  DS    F                        TEMP DOCUMENT SIZE
+*
+CALSCFUN DS    CL16                     SOCKET FUNCTION
+*
+CALAFF   DS    F                        AF_INET (F-WORD)
+*
+CALAF    DS    H                        ADDRESSING FAMILY
+CALAFINT EQU   2                        ..AF_INET (H-WORD)
+CALPORT  DS    H                        SERVER PORT
+CALIPADR DS    F                        SERVER IP ADDRESS
+CALRSVD8 DS    2F                       RESERVED
+*
+CALSCDES DS    H                        SOCKET DESCRIPTOR
+*
+CALSCTYP DS    F                        SOCKET TYPE
+CALSTREM EQU   1                        ..STREAM
+CALDGRAM EQU   2                        ..DATA GRAM
+CALNBYTE DS    F                        WRITE/READ BYTE COUNT
+CALPROTO DS    F                        SOCKET PROTOCOL
+*                                       ..IF ZERO, AND
+*                                           SOCKET TYPE=STREAM THEN TCP
+*                                           SOCKET TYPE=DGRAM THEN UDP
+CALERRNO DS    F                        DEPENDS ON RETURN CODE
+*                                       ..USED AS HOSTENT GETHOSTBYNAME
+CALRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION
+*
+CALFLG   DS    F                        FLAGS ARGUMENT
+*
+CALRBUFR DS    XL512                    RECV SMTP RESPONSE BUFFER
+*
+CALHOW   DS    F                        SHUTDOWN HOW ARGUMENT
+END_FROM EQU   0                        ..SHUTDOWN RECEIVE
+END_TO   EQU   1                        ..SHUTDOWN SEND
+END_BOTH EQU   2                        ..SHUTDOWN SEND AND RECEIVE
+*
+$AT$C    DS    CL($AT$LN)               TD Queue Create Attrs
+*
+EZA25EYE DS    CL8                      EZACIC25 PARMS AREA EYECATCHER
+EZA25RC  DS    F                        EZACIC25 RETURN CODE
+EZA25ERR DS    F                        EZACIC25 ERROR NUMBER
+EZA25HNT DS    A                        EZACIC25 HOSTENT @
+EZA25REQ DS    CL4                      EZACIC25 REQUEST "GHBN" ONLY
+EZA25NLN DS    F                        EZACIC25 HOST NAME LENGTH
+EZA25TYP DS    CL1                      EZACIC25 REQUEST TYPE
+EZA25TP0 EQU   C'0'                     ..CACHE or GETHOSTBYNAME
+EZA25TP1 EQU   C'1'                     ..GETHOSTBYNAME
+EZA25TP2 EQU   C'2'                     ..CACHE
+EZA25HNM DS    CL256                    EZACIC25 HOST NAME ARGUEMENT
+EZA25ELN EQU   *-EZA25RC                EZACIC25 COMMONAREA LENGTH
+*
+DELIMITR DS    XL1                      SYMBOL DELIMITER
+*
+B64IN    DS    XL3                      BASE64 Input
+B64OUT   DS    XL4                      BASE64 Output
+*
+BDRYIDB  DS    0C                       MULTIPART/MIXED BOUNARY ID
+BDRYDSH1 DS    CL2                      TWO DASHES "--"
+BDRYIDT  DS    0C                       BOUNDARY ID TITLE
+BDRYIEI  DS    CL4                      IEI SIGNATURE "IEI-"
+BDRYSYS  DS    CL4                      IEI CICS SYSID
+BDRYDSH2 DS    CL1                      ONE DASH "-"
+BDRYTSQ  DS    CL8                      USER TSQ NAME MUST BE LEN=8
+BDRYDSH3 DS    CL1                      ONE DASH "-"
+BDRYITEM DS    CL5                      TSQ NUMBER OF ITEMS
+BDRYIDBL EQU   *-BDRYIDB                BOUNDARY BEGIN LEN
+BDRYIDTL EQU   *-BDRYIDT                BOUNDARY TITLE LEN
+BDRYDSH4 DS    CL2                      TWO DASHES "--"
+BDRYIDEL EQU   *-BDRYIDB                BOUNDARY END LEN
+*
+         DFHEIEND
+*----------------------------------------------------------------------
+*        CLIENT'S COMMAREA PARM LIST DSECT
+*----------------------------------------------------------------------
+*
+COMPARM  DSECT
+*
+COMSRV   DS    CL1                      TCP SMTP SERVER ID
+COMSRCX  EQU   C'I'                     ..I = smtp.lvrgn.nexus
+*
+COMTRQ   DS    CL1                      TEMPLATES/QUEUES REQ CODE
+COMTRQ01 EQU   C'1'                     ..ONE TEMPLATE/QUEUE PAIR
+COMTRQ02 EQU   C'2'                     ..TWO TEMPLATE/QUEUE PAIRS
+COMTRQ03 EQU   C'3'                     ..THREE TEMPLATE/QUEUE PAIRS
+COMTRQ04 EQU   C'4'                     ..FOUR TEMPLATE/QUEUE PAIRS
+*
+COMRSP   DS    CL1                      RESPONSE CODE
+COMRSPOK EQU   C' '                     ..NORMAL
+COMRSPTC EQU   C'0'                     ..CICS TCP EXIT INACTIVE
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LENGTH
+COMRSPSI EQU   C'2'                     ..INVALID SERVER ID
+COMRSPSC EQU   C'3'                     ..TCP SOCKET CALL ERROR
+COMRSPCC EQU   C'4'                     ..TCP CONNECT CALL ERROR
+COMRSPWC EQU   C'5'                     ..TCP WRITE CALL ERROR
+COMRSPRC EQU   C'6'                     ..TCP RECV CALL ERROR
+COMRSPLC EQU   C'7'                     ..TCP CLOSE CALL ERROR
+COMRSILN EQU   C'8'                     ..INBOUND MSG TO SRVR LEN=0
+COMRSOLN EQU   C'9'                     ..OUTBOUND MSG FRM SRVR LEN=0
+COMRSADR EQU   C'A'                     ..SMTP RCPT TO ADDRESS ERROR
+COMRSDOC EQU   C'C'                     ..DOCUMENT CREATE INVREQ
+COMRSDOD EQU   C'D'                     ..DOCUMENT CREATE NOTFND
+COMRSDOE EQU   C'E'                     ..DOCUMENT CREATE SYMBOLERR
+COMRSDOF EQU   C'F'                     ..DOCUMENT CREATE TEMPLATERR
+COMRSPGH EQU   C'G'                     ..TCP GETHOSTBYNAME CALL ERROR
+COMRSITM EQU   C'I'                     ..TS QUEUE ITEM ERROR
+COMRSTMP EQU   C'P'                     ..TEMPLATE ID ERROR
+COMRSPQE EQU   C'Q'                     ..TS QUEUE ID ERROR
+COMRSPPE EQU   C'R'                     ..TEMPLATE/TS QUEUE PAIR ERROR
+COMRS220 EQU   C'S'                     ..SMTP RC NOT 220 ERROR
+COMRS221 EQU   C'T'                     ..SMTP RC NOT 221 ERROR
+COMRS250 EQU   C'U'                     ..SMTP RC NOT 250 ERROR
+COMRS354 EQU   C'V'                     ..SMTP RC NOT 354 ERROR
+COMRSTDQ EQU   C'W'                     ..TDQ CREATE ERROR
+COMRSTDO EQU   C'X'                     ..TDQ OPEN ERROR
+COMRSTDE EQU   C'Y'                     ..TDQ READ ERROR
+COMRSPTX EQU   C'Z'                     ..ATTACH EXT NOT .TXT or .CSV
+*
+COMATTYP DS    CL1                      ATTACHMENT TYPE
+COMATBIN EQU   C'B'                     ..BINARY
+COMATTXT EQU   C'T'                     ..TEXT (or any hex value but B)
+*
+COMATEXT DS    CL3                      TEXT/BINARY ATTACH EXTEND TYPE
+*                                       ..VALID TEXT FILE EXTENSIONS
+*                                        ..TXT = TEXT File
+*                                        ..CSV = CSV File
+*                                       ..VALID BINARY FILE EXTENSIONS
+*                                        ..ZIP = ZIP File
+*                                        ..DOC = WORD File
+*                                        ..XLS = EXCEL File
+*                                        ..PDF = ADOBE File
+*                                        ..EXE = Application Prog File
+*
+COMDELIM DS    XL1                      symbol delimiter
+*
+COMSNDID DS    CL60                     SMTP SENDER ID
+COMSNDER DS    CL80                     SENDER NAME
+COMSUBJT DS    CL80                     MESSAGE SUBJECT
+*
+COMTMP01 DS    CL48                     MESSAGE HTML TEMPLATE ID
+COMTSQ01 DS    CL8                      MESSAGE SYMBOLS QUEUE ID
+*
+COMTMP02 DS    CL48                     MESSAGE HTML TEMPLATE ID
+COMTSQ02 DS    CL8                      MESSAGE SYMBOLS QUEUE ID
+*
+COMTMP03 DS    CL48                     MESSAGE HTML TEMPLATE ID
+COMTSQ03 DS    CL8                      MESSAGE SYMBOLS QUEUE ID
+*
+COMTMP04 DS    CL48                     MESSAGE HTML TEMPLATE ID
+COMTSQ04 DS    CL8                      MESSAGE SYMBOLS QUEUE ID
+*
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH
+*----------------------------------------------------------------------
+         END
+

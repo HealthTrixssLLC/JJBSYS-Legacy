@@ -1,0 +1,99 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,NATLANG(EN),SP)
+IER000   TITLE '**  CICS/TS PLTSD SHUTDOWN TDQ COPY PROGRAM  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES                                   *
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IER000   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*----------------------------------------------------------------------
+IER000   RSECT
+IER000   AMODE 31                       MAY EXECUTE ABOVE 16M
+IER000   RMODE ANY                      MAY RESIDE ABOVE 16M
+IER000   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE('$SMTPIO$'),                                      *
+               LENGTH(HLFWORK),                                        *
+               SET(R5),                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TDQUEUE('SMTP'),                                        *
+               OPEN,                                                   *
+               ENABLED,                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         J     WRT00
+*----------------------------------------------------------------------
+LOP00    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE('$SMTPIO$'),                                      *
+               LENGTH(HLFWORK),                                        *
+               SET(R5),                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+WRT00    DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE('SMTP'),                                          *
+               LENGTH(HLFWORK),                                        *
+               FROM(0(,R5)),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         J     LOP00
+*----------------------------------------------------------------------
+*        USER EXIT RETURN TO CICS/ESA                                 *
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS                                                    *
+*----------------------------------------------------------------------
+*
+*----------------------------------------------------------------------
+*        DSECTS                                                       *
+*----------------------------------------------------------------------
+         DFHEISTG
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+HLFWORK  DS    H                        HALF WORD WORK
+*
+         DFHEIEND
+         END
+

@@ -1,0 +1,764 @@
+*ASM XOPTS(CICS,OP,EDF,NOPROLOG,NOEPILOG,NATLANG(EN),SP)
+IEW100   TITLE '** CICS/TS CWS CONVERTER FOR OBJECT DOWNLOAD **'
+*---------------------------------------------------------------------*
+*        REGISTER AND OTHER EQUATES                                   *
+*---------------------------------------------------------------------*
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*---------------------------------------------------------------------*
+*  IEW100   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*---------------------------------------------------------------------*
+IEW100   DFHEIENT CODEREG=(12,11),                                     *
+               DATAREG=(13),                                           *
+               EIBREG=(10)
+         MVC   EISEYE,=CL16'IEW100 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         B     INT00                    BRANCH AROUND DUMP ID
+IEW100   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEW100   RMODE ANY                      MAY RESIDE ABOVE 16M
+         DS    0H
+         DC    CL8'IEW100'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+*---------------------------------------------------------------------*
+*        CONVERTER INITIALIZATION                                     *
+*---------------------------------------------------------------------*
+INT00    DS    0H
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CHI   R1,L'CONVERTER_EYECATCHER CHECK MINIMUM LENGTH
+         BL    ABN01                    ..NO CHOICE BUT TO EXIT
+         EXEC  CICS,                                                   *
+               ADDRESS,                                                *
+               COMMAREA(R9),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND
+         BNE   ABN02                    ..NO CHOICE BUT TO EXIT
+         USING DFHCOMMAREA,R9
+         CLC   CONVERTER_EYECATCHER,DECODE_EYECATCHER_INIT DECODE
+         BE    DCD00                    ..YES, BRANCH
+         CLC   CONVERTER_EYECATCHER,ENCODE_EYECATCHER_INIT ENCODE
+         BE    ECD00                    ..YES, BRANCH
+         B     ABN03                    ..NO, EXIT
+*---------------------------------------------------------------------*
+*        CONVERTER DECODE                                             *
+*---------------------------------------------------------------------*
+DCD00    DS    0H
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CHI   R1,DECODE_PARMS__LEN     CHECK MINIMUM LENGTH
+         BL    ABN04                    ..NO CHOICE BUT TO EXIT
+         LH    R1,DECODE_FUNCTION       LOAD DECODE FUNCTION CODE
+         CHI   R1,URP_DECODE            DECODE FUNCTION
+         BNE   ABN03                    ..NO, EXIT
+*
+         XC    DECODE_RESPONSE,DECODE_RESPONSE
+         XC    DECODE_REASON,DECODE_REASON
+*
+         OC    DECODE_HTTP_VERSION_LENGTH,DECODE_HTTP_VERSION_LENGTH
+         BZ    ABN06                    ..NO, EXIT
+*        L     R1,DECODE_HTTP_VERSION_PTR LOAD HTTP VERSION @
+*        CLC   =C'HTTP/1.0',0(R1)        HTTP 1.0 SUPPORT
+*        BH    ABN06                    ..NO, EXIT
+*
+         OC    DECODE_METHOD_LENGTH,DECODE_METHOD_LENGTH
+         BZ    ABN07                    ..NO, EXIT
+         L     R1,DECODE_METHOD_PTR     LOAD HTTP METHOD @
+         CLC   =C'GET',0(R1)            GET METHOD
+         BNE   ABN07                    ..NO, EXIT
+*
+*---------------------------------------------------------------------*
+*        DECODE PROCESS ANALYZER ABSOLUTE PATH                        *
+*---------------------------------------------------------------------*
+DCD10    DS    0H
+         MVI   DECODE_SERVER_PROGRAM,C' ' CLR PROGRAM NAME
+         MVC   DECODE_SERVER_PROGRAM+1(L'DECODE_SERVER_PROGRAM-1),DECOD*
+               E_SERVER_PROGRAM
+         LH    R3,DECODE_RESOURCE_LENGTH LOAD ABS PATH LEN
+         CHI   R3,(2*L'HTTPPATH)+5+3    ABS PATH MINIMUM LEN
+         BL    ABN09                    ..NO, EXIT
+         L     R6,DECODE_RESOURCE_PTR   LOAD ABS PATH @
+         XC    WORK,WORK                CLR ABS PATH WORK AREA
+         LR    R1,R3                    LOAD ABS PATH LEN
+         BCTR  R1,0                     ADJUST FOR EXECUTE
+         EX    R1,MVCWORK               MOVE ABS PATH TO WORK AREA
+*MVCWORK MVC   WORK(0),0(R6)
+         OC    WORK,=256C' '            FORCE UPPER CASE
+         LA    R2,WORK                  SET ABS PATH WORK @
+         CLC   HTTPPATH,0(R2)           VALID PATH
+         BNE   ABN09                    ..NO, EXIT
+         CLC   HTTPPATH,12(R2)          VALID PATH
+         BNE   ABN09                    ..NO, EXIT
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TRANSACTION(8(R2)),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     VALID TRANSACTION
+         BNE   ABN10                    ..NO, EXIT
+         LHI   R1,(2*L'HTTPPATH)+6
+         SR    R3,R1                    CALC DOCUMENT NAME LENGTH
+         LR    R5,R2
+         AHI   R5,(2*L'HTTPPATH)+6      CALC DOCUMENT NAME @
+         MVI   DBLWORK,C' '             BLANK NAME WORK AREA
+         MVC   DBLWORK+1(L'DBLWORK-1),DBLWORK
+         LA    R1,L'DBLWORK-1
+         TRT   0(8,R5),TRTTBL
+         BZ    DCD20
+         SR    R1,R5
+         BCTR  R1,0
+DCD20    DS    0H
+         EX    R1,NAMMVC
+*NAMMVC  MVC   DBLWORK(0),0(R5)
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(DBLWORK),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     VALID DOCTEMPLATE
+         BNE   ABN11                    ..NO, EXIT
+         LA    R1,L'DBLWORK
+         ST    R1,FULWORK               SET GETMAIN LENGTH
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               NOSUSPEND,                                              *
+               SET(R4),                                                *
+               FLENGTH(FULWORK),                                       *
+               INITIMG(=X'00'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     GETMAIN OK
+         BNE   ABN12                    ..NO, EXIT
+         MVC   0(L'DBLWORK,R4),DBLWORK  DOCTEMPLATE NAME IN COMMAREA
+         ST    R4,DECODE_DATA_PTR       SET ENCODE COMMAREA @
+         MVC   DECODE_OUTPUT_DATA_LEN,FULWORK SET ENCODE COMMAREA LEN
+         B     XIT00                    RETURN TO BLI
+*
+MVCWORK  MVC   WORK(0),0(R6)            EXECUTED INSTRUCTION
+NAMMVC   MVC   DBLWORK(0),0(R5)         EXECUTED INSTRUCTION
+*
+*---------------------------------------------------------------------*
+*        CONVERTER ENCODE                                             *
+*---------------------------------------------------------------------*
+ECD00    DS    0H
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CHI   R1,ENCODE_PARMS__LEN     CHECK MINIMUM LENGTH
+         BL    ABN05                    ..NO CHOICE BUT TO EXIT
+         LH    R1,ENCODE_FUNCTION       LOAD ENCODE FUNCTION CODE
+         CHI   R1,URP_ENCODE            ENCODE FUNCTION
+         BNE   ABN03                    ..NO, EXIT
+*
+         XC    ENCODE_RESPONSE,ENCODE_RESPONSE
+         XC    ENCODE_REASON,ENCODE_REASON
+*
+         L     R3,ENCODE_INPUT_DATA_LEN LOAD ENCODE INPUT AREA LEN
+         LTR   R3,R3                    IS THERE ONE
+         BZ    ABN21                    ..NO, EXIT
+         CHI   R3,L'DBLWORK             IS AREA LONG ENOUGH
+         BL    ABN21                    ..NO, EXIT
+         L     R4,ENCODE_DATA_PTR       LOAD ENCODE INPUT AREA @
+         MVI   TEMPLATE,C' '
+         MVC   TEMPLATE+1(l'TEMPLATE-1),TEMPLATE CLR TEMPLATE NAME
+         MVC   TEMPLATE(L'DBLWORK),0(R4) SET TEMPLATE NAME
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(TEMPLATE),                                  *
+               DDNAME(DDNAME)
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               TEMPLATE(TEMPLATE),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     BINARY DOCUMENT FOUND
+         BNE   ABN22                    ..NO, EXIT
+         L     R2,=A(32*1024)           LOAD BUFFER SIZE
+         ST    R2,FULWORK               GETMAIN SIZE
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               NOSUSPEND,                                              *
+               SET(R3),                                                *
+               FLENGTH(FULWORK),                                       *
+               INITIMG(=X'00'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     GETMAIN OK
+         BNE   ABN23                    ..NO, EXIT
+         ST    R3,ENCODE_DATA_PTR       SET ENCODE OUTPUT AREA @
+         ST    R2,0(,R3)                SET BUFFER LENGTH
+         S     R2,=A(HTTPHDRL+4)        CALC MAX DOCUMENT BUFFER LEN
+         ST    R2,FULWORK               SET MAX DOCUMENT BUFFER LEN
+         LA    R4,HTTPHDRL+4(,R3)       CALC IMAGE LOAD @
+         MVC   4(HTTPHDRL,R3),HTTPHDR   MOVE HTTP HEADER TO BUFFER
+         CLC   =C'GIF ',DDNAME          IMAGE DOCUMENT
+         BE    ECD02                    ..YES, BRANCE
+         CLC   =C'JPG ',DDNAME          IMAGE DOCUMENT
+         BE    ECD02                    ..YES, BRANCE
+         CLC   =C'WAV ',DDNAME          IMAGE DOCUMENT
+         BE    ECD02                    ..YES, BRANCE
+         CLC   =C'MPG ',DDNAME          IMAGE DOCUMENT
+         BE    ECD02                    ..YES, BRANCE
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               RETRIEVE,                                               *
+               CLNTCODEPAGE('ISO-8859-1'),                             *
+               DATAONLY,                                               *
+               DOCTOKEN(DOCTOKEN),                                     *
+               INTO(0(R4)),                                            *
+               LENGTH(0(,R3)),                                         *
+               MAXLENGTH(FULWORK),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOCUMENT FOUND
+         BNE   ABN24                    ..NO, EXIT
+         B     ECD04
+ECD02    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               RETRIEVE,                                               *
+               DATAONLY,                                               *
+               DOCTOKEN(DOCTOKEN),                                     *
+               INTO(0(R4)),                                            *
+               LENGTH(0(,R3)),                                         *
+               MAXLENGTH(FULWORK),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOCUMENT FOUND
+         BNE   ABN24                    ..NO, EXIT
+ECD04    DS    0H
+         L     R4,0(,R3)                LOAD BINARY DOC LEN
+         CVD   R4,DBLWORK               CONVERT TO DECIMAL
+         LA    R4,HTTPHDRL+4(R4)        CALC HTTP OUTPUT LEN
+         ST    R4,0(,R3)                SET HTTP OUTPUT LEN
+*                                       SET CONTENT LENGTH
+         UNPK  HTTPCLEN-HTTPHDR+4(L'HTTPCLEN,R3),DBLWORK+5(3)
+         OI    HTTPCLEN+L'HTTPCLEN-1-HTTPHDR+4(R3),X'F0'
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(TEMPLATE),                                  *
+               DDNAME(DBLWORK)
+         CLC   =C'GIF ',DBLWORK
+         BNE   ECD05A
+         MVC   HTTPTYPE-HTTPHDR+4(9,R3),=C'image/gif'
+         B     ECD10
+ECD05A   DS    0H
+         CLC   =C'JPG ',DBLWORK
+         BNE   ECD05B
+         MVC   HTTPTYPE-HTTPHDR+4(10,R3),=C'image/jpeg'
+         B     ECD10
+ECD05B   DS    0H
+         CLC   =C'WAV ',DBLWORK
+         BNE   ECD05C
+         MVC   HTTPTYPE-HTTPHDR+4(11,R3),=C'audio/basic'
+         B     ECD10
+ECD05C   DS    0H
+         CLC   =C'CSS ',DBLWORK
+         BNE   ECD05D
+         MVC   HTTPTYPE-HTTPHDR+4(8,R3),=C'text/css'
+         B     ECD10
+ECD05D   DS    0H
+         CLC   =C'JS ',DBLWORK
+         BNE   ECD05E
+         MVC   HTTPTYPE-HTTPHDR+4(15,R3),=C'text/javascript'
+         B     ECD10
+ECD05E   DS    0H
+         CLC   =C'TXT ',DBLWORK
+         BNE   ECD05F
+         MVC   HTTPTYPE-HTTPHDR+4(10,R3),=C'text/plain'
+         B     ECD10
+ECD05F   DS    0H
+         CLC   =C'MPG ',DBLWORK
+         BNE   ECD05G
+         MVC   HTTPTYPE-HTTPHDR+4(10,R3),=C'video/mpeg'
+         B     ECD10
+ECD05G   DS    0H
+         B     ABN25
+ECD10    DS    0H
+         EXEC  CICS,                                                   *
+               ASKTIME,                                                *
+               ABSTIME(DBLWORK)
+         AP    DBLWORK,=P'300000'
+         EXEC  CICS,                                                   *
+               FORMATTIME,                                             *
+               ABSTIME(DBLWORK),                                       *
+               DAYOFWEEK(DAYOWK),                                      *
+               MONTHOFYEAR(MONOYR),                                    *
+               FULLDATE(FULLDATE)
+         L     R1,DAYOWK
+         LTR   R1,R1
+         BZ    ECD15
+         SR    R0,R0
+         M     R0,=F'3'
+ECD15    DS    0H
+         LA    R1,DAYTBL(R1)
+         MVC   HTTPDOW-HTTPHDR+4(L'HTTPDOW,R3),0(R1)
+         L     R1,MONOYR
+         BCTR  R1,0
+         LTR   R1,R1
+         BZ    ECD20
+         SR    R0,R0
+         M     R0,=F'3'
+ECD20    DS    0H
+         LA    R1,MONTBL(R1)
+         MVC   HTTPMOY-HTTPHDR+4(L'HTTPMOY,R3),0(R1)
+         MVC   HTTPDD-HTTPHDR+4(L'HTTPDD,R3),FULLDATE+2
+         MVC   HTTPYYYY-HTTPHDR+4(L'HTTPYYYY,R3),FULLDATE+4
+         B     XIT00
+*---------------------------------------------------------------------*
+*        ABNORMAL TERMINATION                                         *
+*---------------------------------------------------------------------*
+ABN01    DS    0H
+         LA    R2,MSG01
+         LA    R3,L'MSG01
+         B     ABN99
+ABN02    DS    0H
+         LA    R2,MSG02
+         LA    R3,L'MSG02
+         B     ABN99
+ABN03    DS    0H
+         LA    R2,MSG03
+         LA    R3,L'MSG03
+         B     ABN99
+ABN04    DS    0H
+         LA    R2,MSG04
+         LA    R3,L'MSG04
+         B     ABN99
+ABN05    DS    0H
+         LA    R2,MSG05
+         LA    R3,L'MSG05
+         B     ABN99
+ABN06    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_HTTP_NOT_SUPPORTED
+         ST    R1,DECODE_REASON
+         LA    R2,MSG06
+         LA    R3,L'MSG06
+         B     ABN99
+ABN07    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_NOT_HTTP_GET_METHOD
+         ST    R1,DECODE_REASON
+         LA    R2,MSG07
+         LA    R3,L'MSG07
+         B     ABN99
+ABN09    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_HTTP_ABSPATH_INVALID
+         ST    R1,DECODE_REASON
+         LA    R2,MSG09
+         LA    R3,L'MSG09
+         B     ABN99
+ABN10    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_HTTP_ABSTRAN_INVALID
+         ST    R1,DECODE_REASON
+         LA    R2,MSG10
+         LA    R3,L'MSG10
+         B     ABN99
+ABN11    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_DOC_TEMPLATE_INVALID
+         ST    R1,DECODE_REASON
+         LA    R2,MSG11
+         LA    R3,L'MSG11
+         B     ABN99
+ABN12    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,DECODE_RESPONSE
+         LA    R1,URP_GETMAIN_COMAREA_FAIL
+         ST    R1,DECODE_REASON
+         LA    R2,MSG12
+         LA    R3,L'MSG12
+         B     ABN99
+ABN21    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,ENCODE_RESPONSE
+         LA    R1,URP_ENCODE_COMAREA_LEN
+         ST    R1,ENCODE_REASON
+         LA    R2,MSG21
+         LA    R3,L'MSG21
+         B     ABN99
+ABN22    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,ENCODE_RESPONSE
+         LA    R1,URP_ENCODE_BIN_DOC_NOTFND
+         ST    R1,ENCODE_REASON
+         LA    R2,MSG22
+         LA    R3,L'MSG22
+         B     ABN99
+ABN23    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,ENCODE_RESPONSE
+         LA    R1,URP_GETMAIN_COMAREA_FAIL
+         ST    R1,ENCODE_REASON
+         LA    R2,MSG23
+         LA    R3,L'MSG23
+         B     ABN99
+ABN24    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,ENCODE_RESPONSE
+         LA    R1,URP_ENCODE_DOC_RETRVE_ERR
+         ST    R1,ENCODE_REASON
+         LA    R2,MSG24
+         LA    R3,L'MSG24
+         B     ABN99
+ABN25    DS    0H
+         LA    R1,URP_EXCEPTION
+         ST    R1,ENCODE_RESPONSE
+         LA    R1,URP_ENCODE_DOC_TYPE_ERR
+         ST    R1,ENCODE_REASON
+         LA    R2,MSG25
+         LA    R3,L'MSG25
+         B     ABN99
+ABN99    DS    0H
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+         CLC   CONVERTER_EYECATCHER,DECODE_EYECATCHER_INIT DECODE
+         BNE   XIT00                    ..NO, BRANCH
+         OC    DECODE_RESPONSE,DECODE_RESPONSE
+         BZ    XIT00
+*---------------------------------------------------------------------*
+*        LOG DECODE INPUT PARMS                                       *
+*---------------------------------------------------------------------*
+DCL00    DS    0H
+         MVI   TDOA,C' '                CLR LOGGING BUFFER
+         MVC   TDOA+1(L'TDOA-1),TDOA
+         LA    R2,MSG08
+         LA    R3,L'MSG08
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+*
+         MVC   TDOA(L'HTTPCLNT),HTTPCLNT
+         MVC   TDOA+L'HTTPCLNT(L'DECODE_CLIENT_ADDRESS_STRING),DECODE_C*
+               LIENT_ADDRESS_STRING
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+*
+         OC    DECODE_HTTP_VERSION_LENGTH,DECODE_HTTP_VERSION_LENGTH
+         BZ    DCL10
+         MVC   TDOA(L'HTTPVER),HTTPVER
+         LA    R1,TDOA+L'HTTPVER
+         LH    R2,DECODE_HTTP_VERSION_LENGTH
+         CHI   R2,L'TDOA-L'HTTPVER
+         BNH   DCL05
+         LA    R2,L'TDOA-L'HTTPVER(0)
+DCL05    DS    0H
+         L     R3,DECODE_HTTP_VERSION_PTR
+         BCTR  R2,0
+         EX    R2,DCLMVC
+*DCLMVC  MVC   0(0,R1),0(R3)
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+DCL10    DS    0H
+*
+         OC    DECODE_METHOD_LENGTH,DECODE_METHOD_LENGTH
+         BZ    DCL20
+         MVC   TDOA(L'HTTPMETH),HTTPMETH
+         LA    R1,TDOA+L'HTTPMETH
+         LH    R2,DECODE_METHOD_LENGTH
+         CHI   R2,L'TDOA-L'HTTPMETH
+         BNH   DCL15
+         LA    R2,L'TDOA-L'HTTPMETH(0)
+DCL15    DS    0H
+         L     R3,DECODE_METHOD_PTR
+         BCTR  R2,0
+         EX    R2,DCLMVC
+*DCLMVC  MVC   0(0,R1),0(R3)
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+DCL20    DS    0H
+*
+         OC    DECODE_REQUEST_HEADER_LENGTH,DECODE_REQUEST_HEADER_LENGT*
+               H
+         BZ    DCL30
+         MVC   HLFWORK2,DECODE_REQUEST_HEADER_LENGTH
+         MVC   FULWORK2,DECODE_REQUEST_HEADER_PTR
+DCL22    DS    0H
+         MVC   TDOA(L'HTTPREQH),HTTPREQH
+         LH    R2,HLFWORK2
+         CHI   R2,L'TDOA-L'HTTPREQH
+         BNH   DCL25
+         LA    R2,L'TDOA-L'HTTPREQH(0)
+DCL25    DS    0H
+         L     R3,FULWORK2
+         L     R0,FULWORK2
+         LH    R1,HLFWORK2
+         SR    R0,R2
+         SR    R1,R2
+         ST    R0,FULWORK2
+         STH   R1,HLFWORK2
+         BCTR  R2,0
+         LA    R1,TDOA+L'HTTPREQH
+         EX    R2,DCLMVC
+*DCLMVC  MVC   0(0,R1),0(R3)
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+         LH    R2,HLFWORK2
+         LTR   R2,R2
+         BP    DCL22
+DCL30    DS    0H
+*
+         OC    DECODE_RESOURCE_LENGTH,DECODE_RESOURCE_LENGTH
+         BZ    DCL40
+         MVC   TDOA(L'HTTPRESC),HTTPRESC
+         LA    R1,TDOA+L'HTTPRESC
+         LH    R2,DECODE_RESOURCE_LENGTH
+         CHI   R2,L'TDOA-L'HTTPRESC
+         BNH   DCL35
+         LA    R2,L'TDOA-L'HTTPRESC(0)
+DCL35    DS    0H
+         L     R3,DECODE_RESOURCE_PTR
+         BCTR  R2,0
+         EX    R2,DCLMVC
+*DCLMVC  MVC   0(0,R1),0(R3)
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+DCL40    DS    0H
+*
+         OC    DECODE_USER_DATA_LENGTH,DECODE_USER_DATA_LENGTH
+         BZ    DCL50
+         MVC   TDOA(L'HTTPUSRD),HTTPUSRD
+         LA    R1,TDOA+L'HTTPUSRD
+         LH    R2,DECODE_USER_DATA_LENGTH
+         CHI   R2,L'TDOA-L'HTTPUSRD
+         BNH   DCL45
+         LA    R2,L'TDOA-L'HTTPUSRD(0)
+DCL45    DS    0H
+         L     R3,DECODE_USER_DATA_PTR
+         BCTR  R2,0
+         EX    R2,DCLMVC
+*DCLMVC  MVC   0(0,R1),0(R3)
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+DCL50    DS    0H
+*
+         MVC   TDOA(L'HTTPPROG),HTTPPROG
+         MVC   TDOA+L'HTTPPROG(L'DECODE_SERVER_PROGRAM),DECODE_SERVER_P*
+               ROGRAM
+         LA    R2,TDOA
+         LA    R3,L'TDOA
+         STH   R3,HLFWORK
+         BAS   R8,WTD00
+         B     XIT00
+*
+DCLMVC   MVC   0(0,R1),0(R3)            EXECUTED INSTRUCTION
+*
+*---------------------------------------------------------------------*
+*        WRITE TD ROUTINE                                             *
+*---------------------------------------------------------------------*
+WTD00    DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSSL'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         MVI   TDOA,C' '                CLR BUFFER
+         MVC   TDOA+1(L'TDOA-1),TDOA
+         BR    R8
+*---------------------------------------------------------------------*
+*        RETURN TO CICS                                               *
+*---------------------------------------------------------------------*
+XIT00    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*---------------------------------------------------------------------*
+*        CONSTANTS                                                    *
+*---------------------------------------------------------------------*
+*
+HTTPCLNT DC    C'HTTP CLIENT IP @:  '
+HTTPVER  DC    C'HTTP VERSION    :  '
+HTTPMETH DC    C'HTTP METHOD     :  '
+HTTPPROG DC    C'HTTP SERVER PROG:  '
+HTTPREQH DC    C'HTTP REQUEST HDR:  '
+HTTPRESC DC    C'HTTP RESOURCE   :  '
+HTTPUSRD DC    C'HTTP USER DATA  :  '
+*
+HTTPHDR  DC    C'HTTP/1.1 200 Deliver File'
+         DC    X'0D25'
+         DC    C'Content-Length: '
+HTTPCLEN DC    C'00000'
+         DC    X'0D25'
+         DC    C'Content-Type: '
+HTTPTYPE DC    CL32' '
+         DC    X'0D25'
+         DC    C'Cache-Control: Public'
+         DC    X'0D25'
+         DC    C'Expires: '
+HTTPDOW  DC    C'DOW'
+         DC    C', '
+HTTPDD   DC    C'DD'
+         DC    C' '
+HTTPMOY  DC    C'MOY'
+         DC    C' '
+HTTPYYYY DC    C'YYYY'
+         DC    C' 12:00:00 GMT'
+         DC    X'0D25'
+         DC    X'0D25'
+HTTPHDRL EQU   *-HTTPHDR
+*
+HTTPPATH DC    C'/IEW100'
+*
+MSG01    DC    C'IEW10001E  WEB converter program entry without a COMMA*
+               REA, exit immediate.'
+*
+MSG02    DC    C'IEW10002E  WEB converter program entry with invalid CO*
+               MMAREA length, exit immediate.'
+*
+MSG03    DC    C'IEW10003E  WEB converter program entry with invalid DE*
+               CODE/ENCODE function code, exit immediate.'
+*
+MSG04    DC    C'IEW10004E  WEB converter program DECODE entry with inv*
+               alid COMMAREA length, exit immediate.'
+*
+MSG05    DC    C'IEW10005E  WEB converter program ENCODE entry with inv*
+               alid COMMAREA length, exit immediate.'
+*
+MSG06    DC    C'IEW10006E  WEB converter DECODE client does not suppor*
+               t HTTP/1.0, exit immediate.'
+*
+MSG07    DC    C'IEW10007E  WEB converter DECODE client did not send GE*
+               T method, exit immediate.'
+*
+MSG08    DC    C'IEW10008I  WEB converter DECODE input parms follow:'
+*
+MSG09    DC    C'IEW10009E  WEB converter DECODE absolute path invalid,*
+                exit immediate.'
+*
+MSG10    DC    C'IEW10010E  WEB converter DECODE absolute transaction i*
+               nvalid, exit immediate.'
+*
+MSG11    DC    C'IEW10011E  WEB converter DECODE document template name*
+                is invalid, exit immediate.'
+*
+MSG12    DC    C'IEW10012E  WEB converter DECODE GETMAIN for ENCODE COM*
+                MAREA failed, exit immediate.'
+*
+MSG21    DC    C'IEW10021E  WEB converter program ENCODE entry with inv*
+               alid COMMAREA length, exit immediate.'
+*
+MSG22    DC    C'IEW10022E  WEB converter program ENCODE document not f*
+               ound, exit immediate.'
+*
+MSG23    DC    C'IEW10023E  WEB converter ENCODE GETMAIN for document b*
+               uffer failed, exit immediate.'
+*
+MSG24    DC    C'IEW10024E  WEB converter program ENCODE document retri*
+               eve error, exit immediate.'
+*
+MSG25    DC    C'IEW10025E  WEB converter program ENCODE document conte*
+               nt type error, exit immediate.'
+*
+DAYTBL   DC    C'SunMonTueWedThuFriSat'
+MONTBL   DC    C'JanFebMarAprMayJunJulAugSepOctNovDec'
+*
+TRTTBL   DC    256X'FF'
+         ORG   TRTTBL+C'A'
+         DC    9X'00'
+         ORG   TRTTBL+C'J'
+         DC    9X'00'
+         ORG   TRTTBL+C'S'
+         DC    8X'00'
+         ORG   TRTTBL+C'0'
+         DC    10X'00'
+         ORG   TRTTBL+C'$'
+         DC    X'00'
+         ORG   TRTTBL+C'#'
+         DC    X'00'
+         ORG   TRTTBL+C'@'
+         DC    X'00'
+*
+         COPY  DFHWBUCD                 CONVERTER DE/ENCODE CONSTANTS
+*
+URP_HTTP_NOT_SUPPORTED    EQU 64
+URP_NOT_HTTP_GET_METHOD   EQU 66
+URP_HTTP_ABSPATH_INVALID  EQU 68
+URP_HTTP_ABSTRAN_INVALID  EQU 70
+URP_DOC_TEMPLATE_INVALID  EQU 72
+URP_GETMAIN_COMAREA_FAIL  EQU 74
+URP_ENCODE_COMAREA_LEN    EQU 76
+URP_ENCODE_BIN_DOC_NOTFND EQU 78
+URP_ENCODE_DOC_RETRVE_ERR EQU 80
+URP_ENCODE_DOC_TYPE_ERR   EQU 82
+*
+*---------------------------------------------------------------------*
+*        DSECTS                                                       *
+*---------------------------------------------------------------------*
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+FULWORK2 DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+HLFWORK  DS    H                        HALF WORD WORK
+HLFWORK2 DS    H                        HALF WORD WORK
+DAYOWK   DS    F                        DAY OF WEEK
+MONOYR   DS    F                        MONTH OF YEAR
+DDNAME   DS    CL8                      TEMPLATE DDNAME
+FULLDATE DS    CL8                      FULL DATE MMDDYYYY
+DOCTOKEN DS    XL16                     DOCUMENT TOKEN
+TEMPLATE DS    CL48                     TEMPLATE NAME
+*
+TDOA     DS    CL120                    TD WRITE OUTPUT AREA
+         ORG   TDOA
+WORK     DS    CL256                    ABS PATH WORK AREA
+         ORG
+*
+         COPY  DFHWBCDD                 CONVERTER DE/ENCODE PARMS
+*---------------------------------------------------------------------*
+         DFHEIEND
+         END
+

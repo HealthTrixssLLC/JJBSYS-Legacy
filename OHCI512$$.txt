@@ -1,0 +1,240 @@
+++USERMOD(OHCI512) REWORK(20131220) .
+++VER(C150) FMID(HCI6800)
+   /*
+     USERMOD OHCI512 CREATED USING SMP SYSMOD INSTALL DIALOG.
+     UPDATED BY: TSSS013
+             ON: 13/12/20  12:00
+                 YY/MM/DD
+    DESCRIPTION:
+                 User replacable module for EXCI.
+      ATTENTION:
+                 The following UCLIN must be applied to the
+                 TZONE prior to installing the USERMOD.
+-----------------------------------------------------------------------
+UCLIN .
+REP       MAC             ( DFHXCURM )
+          GENASM          ( DFHXCURM )
+                          .
+REP       ASSEM           ( DFHXCURM )
+++ASMIN
+         COPY DFHXCURM                                                  00000100
+++ENDASMIN
+                          .
+ENDUCL.
+-----------------------------------------------------------------------
+       */ .
+++MAC(DFHXCURM) DISTLIB(ADFHSAMP) .
+         TITLE '**  CICS/ESA EXCI URM EXIT  **'
+*----------------------------------------------------------------------
+*  DFHXCURM CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+R0       EQU   0
+R1       EQU   1
+R2       EQU   2
+R3       EQU   3
+R4       EQU   4
+R5       EQU   5
+R6       EQU   6
+R7       EQU   7
+R8       EQU   8
+R9       EQU   9
+RA       EQU   10
+RB       EQU   11
+RC       EQU   12
+RD       EQU   13
+RE       EQU   14
+RF       EQU   15
+DFHXCURM CSECT
+         ENTRY DFHXCURM
+         USING *,RF
+         B     INT00
+         DROP  RF
+         DFHVM XCURM,ENTRY=DFHXCURM,AMODE=31,RMODE=ANY
+INT00    DS    0H
+         STM   RE,RC,12(RD)
+         LR    RC,RF
+         USING DFHXCURM,RC
+*----------------------------------------------------------------------
+*  ADDRESS CALLERS'S PARM LIST
+*----------------------------------------------------------------------
+         LR    RB,R1                    SAVE PARM LIST @
+         USING EXCI_URM_PARMS,RB        USE EXCI DESCT
+         L     RA,URMANCH               LOAD ANCHOR @
+         L     RA,0(,RA)                LOAD USER AREA @
+         LTR   RA,RA                    TEST USER AREA @
+         BNZ   GET00                    ..YES, BRANCH
+*----------------------------------------------------------------------
+*  GETMAIN SAVE AREA STORAGE
+*----------------------------------------------------------------------
+         LA    R0,USERALN               LOAD STORAGE LENGTH
+         GETMAIN RC,                                                   *
+               LV=(0),                                                 *
+               LOC=ANY
+         LR    RA,R1                    GETMAIN SUCCESSFUL
+         L     R1,URMANCH               LOAD USER AREA @
+         ST    RA,0(,R1)                SAVE GETMAIN @
+GET00    DS    0H
+         USING USERAREA,RA              USE IT
+         ST    RD,4(0,RA)               STORE BWD CHAIN @
+         ST    RA,8(0,RD)               STORE FWD CHAIN @
+         LR    RD,RA                    USE NEW SA
+*----------------------------------------------------------------------
+*  TEST CALLER'S REQUEST TYPE
+*----------------------------------------------------------------------
+         L     R2,URMINV                LOAD REQUEST @
+         L     R2,0(,R2)                LOAD REQUEST
+         SLL   R2,2                     CALC BRANCH INDEX
+         B     BRREQ(R2)
+BRREQ    DS    0H                       BRANCH TABLE
+         B     XIT00                    INVALID REQUEST
+         B     ALP00                    ALLOCATE PIPE REQUEST
+         B     UNA00                    TARGET CICS SYSTEM UNAVAILABLE
+         B     NPA00                    NO PIPES AVAILABLE
+         B     IRC00                    NO IRC SINCE IPL
+         B     XIT00                    INVALID REQUEST
+*----------------------------------------------------------------------
+*  ALLOCATE PIPE REQUEST
+*----------------------------------------------------------------------
+ALP00    DS    0H
+         L     R2,URMCICS               LOAD CICS APPLID @
+         LA    R3,JOBAPPL               LOAD CONVERSION TABLE @
+         LA    R1,JOBAPPLE              LOAD # TABLE ENTRIES
+ALP05    DS    0H
+         CLC   0(8,R3),0(R2)            MATCH PASSED TO CONVERTABLE
+         BE    ALP10                    ..YES, BRANCH
+         CLC   8(8,R3),0(R2)            MATCH PASSED TO CONVERTED
+         BE    XIT00                    ..YES, BRANCH
+         LA    R3,L'JOBAPPL(,R3)        INDEX TABLE
+         BCT   R1,ALP05                 ..LOOP
+         MVC   WTOX02,WTOD02            MOVE WTO MSG MODEL
+         MVC   WTOX02M,WTOD02M          MOVE WTO MSG MODEL
+         MVC   WTOX02C(8),0(R2)         MOVE JOBNAME TO WTO
+         LA    R3,WTOX02
+         B     WTO00
+ALP10    DS    0H
+         MVC   0(8,R2),8(R3)            CONVERT JOBNAME TO APPLID
+         B     XIT00
+*----------------------------------------------------------------------
+*  CICS TARGET CONNECTION UNAVALIBLE
+*----------------------------------------------------------------------
+UNA00    DS    0H
+         L     R2,URMCICS               LOAD CICS APPLID @
+         MVC   WTOX03,WTOD03            MOVE WTO MSG MODEL
+         MVC   WTOX03M,WTOD03M          MOVE WTO MSG MODEL
+         MVC   WTOX03C(8),0(R2)         MOVE JOBNAME TO WTO
+         LA    R3,WTOX03
+         B     WTO00
+*----------------------------------------------------------------------
+*  NO PIPES AVALIBLE TO TARGET CICS
+*----------------------------------------------------------------------
+NPA00    DS    0H
+         LA    R3,WTOD04
+         B     WTO00
+*----------------------------------------------------------------------
+*  NO IRC AVALIBLE IN MVS
+*----------------------------------------------------------------------
+IRC00    DS    0H
+         LA    R3,WTOD05
+         B     WTO00
+*----------------------------------------------------------------------
+*  WRITE OPERATOR MESSAGES
+*----------------------------------------------------------------------
+WTO00    DS    0H
+         LA    R2,WTOC00
+         LA    R4,WTOD98
+         WTO   TEXT=(((R2),),((R3),),((R4),)),                         *
+               MF=(E,WTOERROR)
+*----------------------------------------------------------------------
+*  RETURN TO CALLER
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         L     RD,4(0,RD)               LOAD BWD CHAIN @
+         LM    RE,RC,12(RD)             Restore Callers REGs
+         SR    RF,RF                    SET RC=0
+         BR    RE                       Return to caller
+*----------------------------------------------------------------------
+*  ISSUE WTO MESSAGES AND ABEND
+*----------------------------------------------------------------------
+ABN00    DS    0H                       BRANCH TABLE
+         LA    R2,WTOC00
+         LA    R3,WTOD01
+         LA    R4,WTOD99
+         WTO   TEXT=(((R2),),((R3),),((R4),)),                         *
+               MF=(E,WTOERROR)
+         ABEND 1601,                                                   *
+               DUMP,                                                   *
+               STEP,                                                   *
+               USER
+         DC    H'0'
+*----------------------------------------------------------------------
+*  CONSTANTS AND LITERALS
+*----------------------------------------------------------------------
+*
+JOBAPPL  DS    0CL16                    JOB NAME TO VTAM APPL TABLE
+         DC    CL8'CICSPRD0',CL8'CICSPRD0'
+         DC    CL8'CICSPRD5',CL8'CICSPRD5'
+         DC    CL8'CICSPRD6',CL8'CICSPRD6'
+         DC    CL8'CICSINVT',CL8'CICSINVT'
+*
+         DC    CL8'CICSIES0',CL8'CICSIES0'
+*
+         DC    CL8'CICSTRA1',CL8'CICSTRA1'
+*
+         DC    CL8'CICSTST1',CL8'CICSTST1'
+         DC    CL8'CICSTST9',CL8'CICSTST9'
+*
+         DC    CL8'IEPCCWS0',CL8'IEPCCWS0'
+*
+JOBAPPLE EQU   (*-JOBAPPL)/L'JOBAPPL    # TABLE ENTRIES
+*
+WTOERROR WTO   TEXT=((,C),(,D),(,DE)),                                 *
+               ROUTCDE=(2,11),                                         *
+               DESC=(6),                                               *
+               MF=L
+*
+WTOC00   DC    AL2(L'WTOC00M)
+WTOC00M  DC    C'IEIXCU00  IEI EXCI URM Exit'
+WTOD01   DC    AL2(L'WTOD01M)
+WTOD01M  DC    C'IEIXCU01  GETMAIN failed'
+WTOD02   DC    AL2(L'WTOD02M)
+WTOD02M  DC    C'IEIXCU02  W A R N I N G  requested CICSXXXX unknown'
+WTOD03   DC    AL2(L'WTOD03M)
+WTOD03M  DC    C'IEIXCU03  W A R N I N G  requested CICSXXXX unavailabl*
+               e'
+WTOD04   DC    AL2(L'WTOD04M)
+WTOD04M  DC    C'IEIXCU04  W A R N I N G  no pipes available to CICS'
+WTOD05   DC    AL2(L'WTOD05M)
+WTOD05M  DC    C'IEIXCU05  W A R N I N G  no CICS IRC available in MVS'
+WTOD98   DC    AL2(L'WTOD98M)
+WTOD98M  DC    C'IEIXCU98  Processing continues, job failure likely'
+WTOD99   DC    AL2(L'WTOD99M)
+WTOD99M  DC    C'IEIXCU99  Job step will abend U/1601'
+*
+         LTORG
+*----------------------------------------------------------------------
+*        DSECTS                                                       *
+*----------------------------------------------------------------------
+*
+USERAREA DSECT
+SAVEAREA DS    18F
+*
+WTOWORK  DS    0H
+*
+         ORG   WTOWORK
+WTOX02   DS    AL2
+WTOX02M  DS    CL(L'WTOD02M)
+WTOX02C  EQU   WTOX02M+35,8
+         ORG
+*
+         ORG   WTOWORK
+WTOX03   DS    AL2
+WTOX03M  DS    CL(L'WTOD03M)
+WTOX03C  EQU   WTOX03M+35,8
+         ORG
+*
+USERALN  EQU   *-USERAREA
+*
+         COPY  DFHXCPLD
+*
+         END
+

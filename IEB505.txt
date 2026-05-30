@@ -1,0 +1,398 @@
+IEB505   TITLE '**  EXCI CALLABLE CLIENT DYNAMIC CONNECTION ROUTINE **' 00010002
+*********************************************************************** 00020002
+*                                                                     * 00030002
+* ASSEMBLER = HLASM                                                   * 00040002
+*                                                                     * 00050002
+* MODULE NAME = IEB505                                                * 00060002
+*                                                                     * 00070002
+* DESCRIPTIVE NAME = ASSEMBLER EXCI DYNAMIC CONNECTION ROUTINE        * 00080002
+*                                                                     * 00090002
+* ENTRY POINT = IEB505                                                * 00100002
+*                                                                     * 00110002
+* DESCRIPTION:  PROVIDE BATCH PROGRAMS A FACILITY BY WHICH TO OBTAIN  * 00120002
+*               THE NAME OF AN AVAILABLE CICS JOB TO WHICH TO CONNECT * 00130002
+*               FOR EXCI SERVICES.  SELECTION CRITERIA IS A TWO       * 00140002
+*               CHARACTER COUNTRY CODE WHICH IS USED TO LOCATE A      * 00150002
+*               MEMBER OF A PDSE WHICH CONTAINS THE CICS JOB NAMES.   * 00160002
+*                                                                     * 00170002
+*********************************************************************** 00180002
+IEB505   RSECT                                                          00190002
+*---------------------------------------------------------------------- 00200002
+*-  MODES AND EQUATES                                                   00210002
+*---------------------------------------------------------------------- 00220002
+         ENTRY IEB505                                                   00230002
+IEB505   AMODE 31                                                       00240002
+IEB505   RMODE 24                                                       00250002
+R0       EQU   0                                                        00260002
+R1       EQU   1                                                        00270002
+R2       EQU   2                                                        00280002
+R3       EQU   3                                                        00290002
+R4       EQU   4                                                        00300002
+R5       EQU   5                                                        00310002
+R6       EQU   6                                                        00320002
+R7       EQU   7                                                        00330002
+R8       EQU   8                                                        00340002
+R9       EQU   9                                                        00350002
+RA       EQU   10                                                       00360002
+RB       EQU   11                                                       00370002
+RC       EQU   12                                                       00380002
+RD       EQU   13                                                       00390002
+RE       EQU   14                                                       00400002
+RF       EQU   15                                                       00410002
+*---------------------------------------------------------------------- 00420002
+*-  ENTRY                                                               00430002
+*---------------------------------------------------------------------- 00440002
+         BAKR  RE,R0                    SAVE CALLERS REGS               00450002
+         LAE   RC,0(RF,0)               LOAD BASE                       00460002
+         USING IEB505,RC                                                00470002
+*---------------------------------------------------------------------- 00480002
+*-  INITIALIZATION                                                      00490002
+*---------------------------------------------------------------------- 00500002
+         LTR   RB,R1                    SAVE PARM @                     00510002
+         BNZ   PRM00                                                    00520002
+         WTO   'IEB50501  Caller''s PARM area not found - abend S/0C1.' 00530002
+         DC    H'0'                                                     00540002
+PRM00    DS    0H                                                       00550002
+         L     RB,0(,RB)                                                00560002
+         USING PARM,RB                                                  00570002
+         LA    R2,USER31LN              LOAD AVOVE STORAGE LENGTH       00580002
+         STORAGE OBTAIN,                                               *00590002
+               LENGTH=(R2),                                            *00600002
+               LOC=ANY,                                                *00610002
+               RELATED=GETM01                                           00620002
+         LAE   RD,0(R1,0)               LOAD AREA @                     00630002
+         USING USER31,RD                                                00640002
+         MVC   USERSAVE+4(4),=C'F1SA'   SET EYE CATCHER                 00650002
+         B     INT00                                                    00660002
+         DC    CL8'IEB505'              CSECT EYECATCHER                00670002
+         DC    CL8'&SYSDATE',C' '       ASSEMBLE DATE                   00680002
+         DC    CL5'&SYSTIME',C' '       ASSEMBLE TIME                   00690002
+INT00    DS    0H                                                       00700002
+         MVC   USEROPEN,EXCIOPEN        ININTIALIZE OPEN LIST           00710002
+         L     R9,PARMCCOD              LOAD COUNTRY CODE @             00720002
+         L     R7,PARMJOBN              LOAD CICS JOBNAME @             00730002
+         L     R6,PARMEMSG              LOAD ERROR MESSAGE @            00740002
+         USING CCOD,R9                                                  00750002
+         USING JOBN,R7                                                  00760002
+         USING EMSG,R6                                                  00770002
+         MVC   JOBNID,=CL8' '           CLEAR CICS JOBNAME              00780002
+         MVI   EMSGID,C' '              CLEAR ERROR MESSAGE             00790002
+         MVC   EMSGID+1(L'EMSGID-1),EMSGID                              00800002
+         L     R2,USER24LN              LOAD BELOW STORAGE LENGTH       00810002
+         STORAGE OBTAIN,                                               *00820002
+               LENGTH=(R2),                                            *00830002
+               LOC=BELOW,                                              *00840002
+               RELATED=GETM02                                           00850002
+         LA    R8,0(0,R1)               LOAD AREA @                     00860002
+         USING USER24,R8                                                00870002
+         MVC   USERDCB,EXCIDCB          INITIALIZE DCB                  00880002
+         MVC   USERREAD,EXCIREAD        ININTIALIZE READ LIST           00890002
+*---------------------------------------------------------------------- 00900002
+*-  LOAD IEB501                                                         00910002
+*---------------------------------------------------------------------- 00920002
+         LA    R2,IEB501                LOAD CALLABLE CLIENT LMOD ID    00930002
+         LOAD  EPLOC=(R2),                                             *00940002
+               RELATED=LOAD01                                           00950002
+         ST    R0,USER501               SAVE IEB501 EP @                00960002
+*---------------------------------------------------------------------- 00970002
+*-  OPEN COUNTRY CODE TABLE PDSE                                        00980002
+*---------------------------------------------------------------------- 00990002
+         BAS   R5,OPN00                 PERFORM OPEN                    01000002
+         TM    USERDCB+48,X'10'         OPEN SUCCESSFUL                 01010002
+         BO    INT10                    ..YES, BRANCH                   01020002
+         MVC   EMSGID,=CL32'OPEN failed for EXCICCOD DD'                01030002
+         B     XIT00                    ..EXIT                          01040002
+*---------------------------------------------------------------------- 01050002
+*-  VERIFY REQUESTED COUNTRY CODE                                       01060002
+*---------------------------------------------------------------------- 01070002
+INT10    DS    0H                                                       01080002
+         MVC   USERCCOD,CCODID          SET COUNTRY CODE                01090002
+         MVC   USERSUFX,=C'EXCICD'      SET MEMBER SUFFIX               01100002
+         FIND  USERDCB,                                                *01110002
+               USERMEM,                                                *01120002
+               D                                                        01130002
+         LTR   RF,RF                    MEMBER FOUND                    01140002
+         BZ    INT30                    ..YES, BRANCH                   01150002
+         C     RF,=F'4'                 RC=4?                           01160002
+         BNE   INT20                    ..NO, BRANCH                    01170002
+         LR    RF,R0                    EC=4                            01180002
+         L     RF,EC4TBL(RF)            INDEX TO ERROR MSG              01190002
+         MVC   EMSGID,0(RF)             MOVE ERROR MSG                  01200002
+         B     XIT00                    ..EXIT                          01210002
+INT20    DS    0H                                                       01220002
+         LR    RF,R0                    EC=8                            01230002
+         L     RF,EC8TBL(RF)            INDEX TO ERROR MSG              01240002
+         MVC   EMSGID,0(RF)             MOVE ERROR MSG                  01250002
+         B     XIT00                    ..EXIT                          01260002
+*---------------------------------------------------------------------- 01270002
+*-  READ PDSE MEMBER                                                    01280002
+*---------------------------------------------------------------------- 01290002
+INT30    DS    0H                                                       01300002
+         LA    R2,USERREAD              LOAD DECB @                     01310002
+         LA    R3,USERDCB               LOAD DCB @                      01320002
+         LA    R4,USERBUFR              LOAD BUFFER @                   01330002
+         ST    RD,USERSV24+4            SAVE ABOVE SA @                 01340002
+         LA    RF,USERSV24              LOAD BELOW SA @                 01350002
+         ST    RF,8(,RD)                CHAIN SA                        01360002
+         LR    RD,RF                    USE BELOW SA @                  01370002
+         LA    R1,INT32                                                 01380002
+         N     R1,=X'7FFFFFFF'                                          01390002
+         BSM   0,R1                                                     01400002
+INT32    DS    0H                                                       01410002
+         READ  (R2),                                                   *01420002
+               SF,                                                     *01430002
+               (R3),                                                   *01440002
+               (R4),                                                   *01450002
+               MF=E                                                     01460002
+         CHECK (R2)                                                     01470002
+         LA    R1,INT34                                                 01480002
+         O     R1,=X'80000000'                                          01490002
+         BSM   0,R1                                                     01500002
+INT34    DS    0H                                                       01510002
+         L     RD,4(,RD)                LOAD ABOVE SA @                 01520002
+         XC    8(4,RD),8(RD)            CLEAR CHAIN @                   01530002
+         LA    R3,10                    LOAD LOOP INDEX                 01540002
+*---------------------------------------------------------------------- 01550002
+*-  SCAN BUFFER FOR CICS JOBNAME                                        01560002
+*---------------------------------------------------------------------- 01570002
+INT35    DS    0H                                                       01580002
+         ST    R3,USERLOOP              SAVE LOOP INDEX                 01590002
+         CLC   =CL8' ',0(R4)            JOBNAME BLANK                   01600002
+         BNE   INT40                                                    01610002
+         MVC   EMSGID,=CL32'No Eligible CICS JOB Available'             01620002
+         B     XIT00                    ..EXIT                          01630002
+*---------------------------------------------------------------------- 01640002
+*-  ATTEMPT EXCI CONNECT                                                01650002
+*---------------------------------------------------------------------- 01660002
+INT40    DS    0H                                                       01670002
+         MVC   USERSYS,0(R4)            SET CICS JOB NAME               01680002
+         MVC   USERREQ,REQBG            SET BEGIN REQUEST               01690002
+         XC    USERRSP,USERRSP          CLR RESP CODE                   01700002
+         LA    R1,USERREQ               SET CALL PARMS                  01710002
+         ST    R1,USERCALL                                              01720002
+         LA    R1,USERFUN               SET CALL PARMS                  01730002
+         ST    R1,USERCALL+4                                            01740002
+         LA    R1,USERRSP               SET CALL PARMS                  01750002
+         ST    R1,USERCALL+8                                            01760002
+         LA    R1,USERSYS               SET CALL PARMS                  01770002
+         ST    R1,USERCALL+12                                           01780002
+         OI    USERCALL+12,X'80'        SET VL FLAG                     01790002
+         LA    R1,USERCALL              LOAD PARM @                     01800002
+         L     RF,USER501               LOAD IEB501 @                   01810002
+         BASR  RE,RF                    CALL IEB501                     01820002
+         OC    USERRSP,USERRSP          CONNECTED                       01830002
+         BZ    INT50                    ..YES, BRANCH                   01840002
+         LA    R4,8(,R4)                INDEX BUFFER @                  01850002
+         L     R3,USERLOOP              LOAD LOOP INDEX                 01860002
+         BCT   R3,INT35                 ..LOOP                          01870002
+         B     INT30                    READ PDSE                       01880002
+*---------------------------------------------------------------------- 01890002
+*-  ISSUE EXCI DISCONNECT                                               01900002
+*---------------------------------------------------------------------- 01910002
+INT50    DS    0H                                                       01920002
+         MVC   JOBNID,USERSYS           RETURN CICS JOB NAME            01930002
+         MVC   USERSYS,0(R4)            SET CICS JOB NAME               01940002
+         MVC   USERREQ,REQEN            SET END REQUEST                 01950002
+         XC    USERRSP,USERRSP          CLR RESP CODE                   01960002
+         LA    R1,USERREQ               SET CALL PARMS                  01970002
+         ST    R1,USERCALL                                              01980002
+         LA    R1,USERFUN               SET CALL PARMS                  01990002
+         ST    R1,USERCALL+4                                            02000002
+         LA    R1,USERRSP               SET CALL PARMS                  02010002
+         ST    R1,USERCALL+8                                            02020002
+         LA    R1,USERSYS               SET CALL PARMS                  02030002
+         ST    R1,USERCALL+12                                           02040002
+         OI    USERCALL+12,X'80'        SET VL FLAG                     02050002
+         LA    R1,USERCALL              LOAD PARM @                     02060002
+         L     RF,USER501               LOAD IEB501 @                   02070002
+         BASR  RE,RF                    CALL IEB501                     02080002
+         OC    USERRSP,USERRSP          DISCONNECTED                    02090002
+         BZ    XIT00                    ..YES, BRANCH                   02100002
+         MVC   EMSGID,=CL32'IEB501 Disconnect Failed - SNO'             02110002
+         B     XIT00                    ..EXIT                          02120002
+*---------------------------------------------------------------------- 02130002
+*-  END OF DATA PDSE MEMBER                                             02140002
+*---------------------------------------------------------------------- 02150002
+EOD00    DS    0H                                                       02160002
+         MVC   EMSGID,=CL32'READ Member Not Found'                      02170002
+         B     XIT00                    ..EXIT                          02180002
+*---------------------------------------------------------------------- 02190002
+*-  TERMINATION                                                         02200002
+*---------------------------------------------------------------------- 02210002
+XIT00    DS    0H                                                       02220002
+         LA    R2,IEB501                LOAD CALLABLE CLIENT LMOD ID    02230002
+         DELETE EPLOC=(R2),                                            *02240002
+               RELATED=LOAD01                                           02250002
+         TM    USERDCB+48,X'10'         DCB OPEN                        02260002
+         BNO   XIT10                    ..NO, BRANCH                    02270002
+         BAS   R5,CLO00                 PERFORM CLOSE                   02280002
+XIT10    DS    0H                                                       02290002
+         LA    R1,0(0,R8)                                               02300002
+         L     R2,USER24LN                                              02310002
+         STORAGE RELEASE,                                              *02320002
+               ADDR=(R1),                                              *02330002
+               LENGTH=(R2),                                            *02340002
+               RELATED=GETM02                                           02350002
+         LAE   R1,0(0,RD)                                               02360002
+         LA    R2,USER31LN                                              02370002
+         STORAGE RELEASE,                                              *02380002
+               ADDR=(R1),                                              *02390002
+               LENGTH=(R2),                                            *02400002
+               RELATED=GETM01                                           02410002
+         SR    RF,RF                                                    02420002
+         PR                                                             02430002
+*---------------------------------------------------------------------- 02440002
+*-  OPEN PDSE DCB                                                       02450002
+*---------------------------------------------------------------------- 02460002
+OPN00    DS    0H                                                       02470002
+         LA    R2,USERDCB                                               02480002
+         OPEN  ((R2),(INPUT)),                                         *02490002
+               MF=(E,USEROPEN),                                        *02500002
+               MODE=31                                                  02510002
+         BR    R5                                                       02520002
+*---------------------------------------------------------------------- 02530002
+*-  CLOSE PDSE DCB                                                      02540002
+*---------------------------------------------------------------------- 02550002
+CLO00    DS    0H                                                       02560002
+         LA    R2,USERDCB                                               02570002
+         CLOSE ((R2)),                                                 *02580002
+               MF=(E,USEROPEN),                                        *02590002
+               MODE=31                                                  02600002
+         BR    R5                                                       02610002
+*---------------------------------------------------------------------- 02620002
+*-  CONSTANTS AND LITERALS                                              02630002
+*---------------------------------------------------------------------- 02640002
+*                                                                       02650002
+IEB501   DC    CL8'IEB501'              EXCI CALLABLE CLIENT LMOD ID    02660002
+*                                                                       02670002
+USER24LN DC    A(USER24L)               BELOW 16M USER STORAGE LENGTH   02680002
+*                                                                       02690002
+EC4TBL   DS    0F                                                       02700002
+         DC    A(EC4RC0)                                                02710002
+         DC    A(EC4RC4)                                                02720002
+         DC    A(EC4RC8)                                                02730002
+         DC    A(EC4RCC)                                                02740002
+*                                                                       02750002
+EC8TBL   DS    0F                                                       02760002
+         DC    A(EC8RC0)                                                02770002
+         DC    A(EC8RC4)                                                02780002
+         DC    A(EC8RC8)                                                02790002
+         DC    A(EC8RCC)                                                02800002
+         DC    A(EC8RC10)                                               02810002
+*                                                                       02820002
+EC4RC0   DC    CL32'FIND Member Not Found'                              02830002
+EC4RC4   DC    CL32'FIND RACF Authority Error'                          02840002
+EC4RC8   DC    CL32'FIND PDSE Share Option Error'                       02850002
+EC4RCC   DC    CL32'FIND PDSE Open Output Error'                        02860002
+*                                                                       02870002
+EC8RC0   DC    CL32'FIND Permanent Directory Error'                     02880002
+EC8RC4   DC    CL32'FIND Insufficient Storage Error'                    02890002
+EC8RC8   DC    CL32'FIND Invalid DEB in TCB Family'                     02900002
+EC8RCC   DC    CL32'FIND PDSE Buffer Flush Error'                       02910002
+EC8RC10  DC    CL32'FIND DCB Address Missing'                           02920002
+*                                                                       02930002
+REQBG    DC    CL2'BG'                  IEB501 BEGIN REQUEST            02940002
+REQEN    DC    CL2'EN'                  IEB501 END REQUEST              02950002
+*---------------------------------------------------------------------- 02960002
+*-  CONTROL BLOCK MODELS ABOVE 16M DYNAMIC STORAGE                      02970002
+*---------------------------------------------------------------------- 02980002
+EXCI31   DS    0D                                                       02990002
+*                                                                       03000002
+EXCIOPEN OPEN  (,),                                                    *03010002
+               MF=L,                                                   *03020002
+               MODE=31                                                  03030002
+OPENLN   EQU   *-EXCIOPEN               OPEN LENGTH                     03040002
+*                                                                       03050002
+EXCIREAD READ  EXCIECB,                                                *03060002
+               SF,                                                     *03070002
+               0,                                                      *03080002
+               0,                                                      *03090002
+               MF=L                                                     03100002
+READLN   EQU   *-EXCIREAD               READ LENGTH                     03110002
+*---------------------------------------------------------------------- 03120002
+*-  CONTROL BLOCK MODELS BELOW 16M DYNAMIC STORAGE                      03130002
+*---------------------------------------------------------------------- 03140002
+EXCI24   DS    0D                                                       03150002
+*                                                                       03160002
+EXCIDCB  DCB   DDNAME=EXCICCOD,         PDSE DCB                       *03170002
+               BLKSIZE=4000,                                           *03180002
+               DSORG=PO,                                               *03190002
+               EODAD=EOD00,                                            *03200002
+               LRECL=80,                                               *03210002
+               MACRF=(R)                                                03220002
+DCBLN    EQU   *-EXCIDCB                DCB LENGTH                      03230002
+*                                                                       03240002
+         LTORG                                                          03250002
+*                                                                       03260002
+*---------------------------------------------------------------------- 03270002
+*-  DSECTS                                                              03280002
+*---------------------------------------------------------------------- 03290002
+*=====================================================================* 03300002
+*   PROGRAM DYNAMIC STORAGE                                           * 03310002
+*=====================================================================* 03320002
+*                                                                       03330002
+USER31   DSECT                                                          03340002
+*                                                                       03350002
+USERSAVE DS    18F                      SAVE AREA                       03360002
+*                                                                       03370002
+USEROPEN DS    XL(OPENLN)               OPEN                            03380002
+*                                                                       03390002
+USER501  DS    A                        IEB501 ENTRY @                  03400002
+*                                                                       03410002
+USERCALL DS    A                        USERREQ                         03420002
+         DS    A                        USERFUN                         03430002
+         DS    A                        USERRSP                         03440002
+         DS    A                        USERSYS                         03450002
+*                                                                       03460002
+USERRSP  DS    F                        RESPONSE CODE                   03470002
+USERRSP2 DS    F                        RESPONSE CODE                   03480002
+*                                                                       03490002
+USERLOOP DS    F                        LOOP COUNTER                    03500002
+*                                                                       03510002
+USERMEM  DS    0CL8                     PDSE MEMBER NAME                03520002
+USERCCOD DS    CL2                      COUNTRY CODE                    03530002
+USERSUFX DS    CL6                      MEMBER SUFFIX 'EXCICD'          03540002
+*                                                                       03550002
+USERREQ  DS    CL2                      REQUEST TYPE                    03560002
+*                                                                       03570002
+USERFUN  DS    CL2                      FUNCTION TYPE                   03580002
+*                                                                       03590002
+USERSYS  DS    CL8                      CICS JOB NAME                   03600002
+USER31LN EQU   *-USER31                 DYNAMIC STORAGE LENGTH          03610002
+*                                                                       03620002
+*---------------------------------------------------------------------- 03630002
+*                                                                       03640002
+USER24   DSECT                                                          03650002
+*                                                                       03660002
+USERSV24 DS    18F                      SAVE AREA                       03670002
+*                                                                       03680002
+USERREAD DS    XL(READLN)               READ                            03690002
+*                                                                       03700002
+USERDCB  DS    XL(DCBLN)                PDSE DCB                        03710002
+*                                                                       03720002
+USERBUFR DS    XL4000                   READ BUFFER                     03730002
+*                                                                       03740002
+USER24L  EQU   *-USER24                 DYNAMIC STORAGE LENGTH          03750002
+*=====================================================================* 03760002
+*   CALLER'S PARM LIST                                                * 03770002
+*=====================================================================* 03780002
+*                                                                       03790002
+PARM     DSECT                                                          03800002
+PARMCCOD DS    A                        COUNTRY CODE @                  03810002
+PARMJOBN DS    A                        CICS JOBNAME @                  03820002
+PARMEMSG DS    A                        ERROR MESSAGE @                 03830002
+*---------------------------------------------------------------------- 03840002
+*                                                                       03850002
+CCOD     DSECT                                                          03860002
+CCODID   DS    CL2                      COUNTRY CODE ID                 03870002
+*---------------------------------------------------------------------- 03880002
+*                                                                       03890002
+JOBN     DSECT                                                          03900002
+JOBNID   DS    CL8                      JOB NAME ID                     03910002
+*---------------------------------------------------------------------- 03920002
+*                                                                       03930002
+EMSG     DSECT                                                          03940002
+EMSGID   DS    CL32                     ERROR MESSAGE                   03950002
+*---------------------------------------------------------------------- 03960002
+         END                                                            03970002
+

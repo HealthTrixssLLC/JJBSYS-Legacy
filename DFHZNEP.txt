@@ -1,0 +1,60 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,NATLANG(EN),SP)
+DFHZNEP  CSECT
+         DFHSNEP TYPE=INITIAL,                                         *
+               NAME=DFHZNEP,                                           *
+               NETNAME=DFHNET
+*
+         DFHSNEP TYPE=ERRPROC,CODE=(81),GROUP=01
+NEPROC81 DS    0H
+         STM   RE,RB,NEPEPRS            SAVE RETURN REGS
+         LR    R9,EPBAR                 LOAD BASE REG
+         USING NEPROC81,R9              DEFINE BASE
+         MVI   TWAOPT1,0                TURN OFF PRINT
+NEP81RET DS    0H
+         LM    RE,RB,NEPEPRS            LOAD RETURN REGS
+         BR    CSVTBAR                  RETURN TO NEP
+         LTORG
+*
+         DFHSNEP TYPE=ERRPROC,CODE=(88,D1,D8),GROUP=02
+NEPROC88 DS    0H
+         STM   RE,RB,NEPEPRS            SAVE RETURN REGS
+         LR    R9,EPBAR                 LOAD BASE REG
+         USING NEPROC81,R9              DEFINE BASE
+         MVI   TWAOPT1,0                TURN OFF PRINT
+         MVI   TWAOPT2,X'F0'            ABORT SEND, RECV, TASK, CANCEL
+*                                        TASK, AND PURGE BMS
+         MVI   TWAOPT3,X'8B'            ABORT SEND, RECV, TASK, CANCEL
+NEP88RET DS    0H .
+         LM    RE,RB,NEPEPRS            LOAD RETURN REGS
+         BR    CSVTBAR                  RETURN TO NEP
+         LTORG
+*
+         DFHSNEP TYPE=FINAL
+*
+DFHZNEP  CSECT
+         ORG   NEPVT
+         DC    A(NEPROC00)
+         ORG
+*
+NEPROC00 DS    0H
+         STM   RE,RB,NEPEPRS            SAVE RETURN REGS
+         LR    R9,EPBAR                 LOAD BASE REG
+         USING NEPROC81,R9              DEFINE BASE
+         MVI   TWAOPT1,0                TURN OFF PRINT
+         OC    TWASENSR(2),TWASENSR     SENSE RECEIVED
+         BZ    NEP00RET                 ..NO, RETURN
+         CLC   =X'0802',TWASENSR        I/R
+         BE    NEP00RET                 ..YES, RETURN
+         CLC   =X'0001',TWASENSR        DEVICE READY
+         BE    NEP00RET                 ..YES, RETURN
+         MVI   TWAOPT2,X'F0'            ABORT SEND, RECV, TASK, CANCEL
+*                                        TASK, AND PURGE BMS
+         MVI   TWAOPT3,X'8B'            ABORT SEND, RECV, TASK, CANCEL
+NEP00RET DS    0H .
+         LM    RE,RB,NEPEPRS            LOAD RETURN REGS
+         BR    CSVTBAR                  RETURN TO NEP
+         LTORG
+*
+*
+         DFHEND  DFHNEPNA
+

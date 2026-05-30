@@ -1,0 +1,109 @@
+//TSSS013C JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//         REGION=0M TYPRUN=SCAN
+//*--------------------------------------------------------------------
+//DFHEITVL PROC REG=0M,
+//         INDEX='CICSIE.TS42.RSU1208',
+//         PROGLIB='CICSIE.TS42.RSU1208.PROD.SYSLIB',
+//         DSCTLIB='CICSIE.TS42.XDFHINST',
+//         OUTC='*',
+//         LNKPARM='(RENT,LIST,XREF,MAP,AMODE(31),RMODE(ANY))',
+//         STUB='DFHEILIC',
+//         LIB='SDFHCOB',
+//         WORK=SYSDA
+//*
+//*      This procedure contains 4 steps
+//*      1.   Exec the COBOL compiler & CICS translator
+//*      2.   Reblock &LIB(&STUB) for use by the linkedit step
+//*      3.   Linkedit the output into dataset &PROGLIB
+//*
+//*      The following JCL should be used
+//*      to execute this procedure
+//*
+//*      //APPLPROG EXEC DFHEITVL
+//*      //TRN.SYSIN  DD *
+//*         .
+//*         . Application program
+//*         .
+//*      /*
+//*      //LKED.SYSIN DD *
+//*         NAME anyname(R)
+//*      /*
+//*
+//*      Where   anyname   is the name of your application program.
+//*      (Refer to the system definition guide for full details,
+//*      including what to do if your program contains calls to
+//*      the common programming interface.)
+//*
+//COB    EXEC PGM=IGYCRCTL,REGION=&REG,
+//       PARM=(NODYN,LIB,NONUM,APOST,XREF,VBREF,MAP,'DATA(31)',
+//       'LANG(UE)',S,NOWD,OFFSET,NOLIST,
+//       'CICS(''COBOL3,SP'')')
+//STEPLIB  DD DSN=IGY.SIGYCOMP,DISP=SHR
+//         DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//SYSLIB   DD DSN=&INDEX..SDFHCOB,DISP=SHR
+//         DD DSN=&DSCTLIB,DISP=SHR
+//         DD DSN=&INDEX..SDFHMAC,DISP=SHR
+//         DD DSN=&INDEX..SDFHSAMP,DISP=SHR
+//*SYSPRINT DD SYSOUT=&OUTC
+//SYSPRINT DD DSN=&&SYSPRINT,UNIT=VIO,DISP=(MOD,PASS),
+//            SPACE=(CYL,(5,2)),DCB=BLKSIZE=18997
+//SYSLIN   DD DSN=&&LOADSET,DISP=(MOD,PASS),
+//            UNIT=&WORK,SPACE=(CYL,(1,2))
+//SYSUT1   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT2   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT3   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT4   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT5   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT6   DD UNIT=&WORK,SPACE=(460,(350,100))
+//SYSUT7   DD UNIT=&WORK,SPACE=(460,(350,100))
+//*
+//SLF      EXEC PGM=CWPCDRVR,COND=(7,LT,COB)
+//STEPLIB  DD DSN=TECH.CSS880.RUNNING.SLCXLOAD,DISP=SHR
+//CWPERRM  DD SYSOUT=&OUTC
+//CWPPRTI  DD DSN=&&SYSPRINT,DISP=(OLD,DELETE)
+//CWPPRTO  DD SYSOUT=&OUTC
+//SYSOUT   DD SYSOUT=&OUTC
+//SORTWK01 DD SPACE=(CYL,(20,10)),UNIT=SYSALLDA
+//CWPWRK0  DD SPACE=(TRK,(60,30)),UNIT=SYSALLDA
+//CWPWRK1  DD SPACE=(CYL,(20,10)),UNIT=SYSALLDA
+//CWPWRK2  DD SPACE=(TRK,(60,30)),UNIT=SYSALLDA
+//CWPWRK3  DD SPACE=(TRK,(90,90)),UNIT=SYSALLDA
+//CWPWRK4  DD SPACE=(TRK,(60,30)),UNIT=SYSALLDA
+//CWPLOAD  DD DSN=*.COB.SYSLIN,DISP=(OLD,PASS)
+//CWPDECK  DD DUMMY
+//CWPDDIO  DD DSN=U99.TST1.SRCDIR,DISP=SHR
+//SYSUDUMP DD SYSOUT=&OUTC
+//SYSPRINT DD SYSOUT=&OUTC
+//CWPPRMO  DD DSN=TECH.CSS880.RUNNING.SLCXCNTL(CXCBPST3),
+//            DISP=SHR
+//*
+//COPYLINK EXEC PGM=IEBGENER,COND=(7,LT,COB)
+//SYSUT1   DD DSN=&INDEX..&LIB(&STUB),DISP=SHR
+//SYSUT2   DD DSN=&&COPYLINK,DISP=(NEW,PASS),
+//            DCB=(LRECL=80,BLKSIZE=400,RECFM=FB),
+//            UNIT=&WORK,SPACE=(400,(20,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DUMMY
+//*
+//LKED   EXEC PGM=IEWL,REGION=&REG,
+//            PARM='&LNKPARM',COND=(5,LT,COB)
+//SYSLIB   DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//         DD DSN=&INDEX..SDFHLPA,DISP=SHR
+//         DD DSN=CEE.SCEECICS,DISP=SHR
+//         DD DSN=CEE.SCEERUN,DISP=SHR
+//         DD DSN=CEE.SCEELKED,DISP=SHR
+//         DD DSN=&PROGLIB,DISP=SHR
+//SYSLMOD  DD DSN=&PROGLIB,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,DCB=BLKSIZE=1024,
+//            SPACE=(1024,(200,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSLIN   DD DSN=&&COPYLINK,DISP=(OLD,DELETE)
+//         DD DSN=&&LOADSET,DISP=(OLD,DELETE)
+//         DD DDNAME=SYSIN
+//         PEND
+//*--------------------------------------------------------------------
+//EITVL    EXEC DFHEITVL
+//COB.SYSIN  DD DISP=SHR,DSN=TECH.XPD920.RUNNING.SMXDSAMP(CWDEMCB2)
+//LKED.SYSIN DD *
+ NAME CWDEMCB2(R)
+

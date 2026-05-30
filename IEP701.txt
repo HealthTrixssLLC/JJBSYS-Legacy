@@ -1,0 +1,416 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP,FEPI)                              00010003
+IEP701   TITLE '**  CICS FEPI RESOURCE CONFIGURATION PROGRAM  **'       00020003
+*---------------------------------------------------------------------- 00030003
+*        REGISTERS                                                      00040003
+*---------------------------------------------------------------------- 00050003
+RF       EQU   15                                                       00060003
+RE       EQU   14                                                       00070003
+RD       EQU   13                                                       00080003
+RC       EQU   12                                                       00090003
+RB       EQU   11                                                       00100003
+RA       EQU   10                                                       00110003
+R9       EQU   9                                                        00120003
+R8       EQU   8                                                        00130003
+R7       EQU   7                                                        00140003
+R6       EQU   6                                                        00150003
+R5       EQU   5                                                        00160003
+R4       EQU   4                                                        00170003
+R3       EQU   3                                                        00180003
+R2       EQU   2                                                        00190003
+R1       EQU   1                                                        00200003
+R0       EQU   0                                                        00210003
+*---------------------------------------------------------------------- 00220003
+*  IEP701   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230003
+*---------------------------------------------------------------------- 00240003
+IEP701   DFHEIENT CODEREG=(12),                                        *00250003
+               DATAREG=(13),                                           *00260003
+               EIBREG=(11)                                              00270003
+         MVC   EISEYE,=CL16'IEP701 EI STORAGE'                          00280003
+         MVC   FAILRSP,=CL8'FAILRSP'    SET EYE CATCHER                 00290003
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300003
+         MVC   FAILFN,=CL8'FAILFN'      SET EYE CATCHER                 00310003
+         MVC   FAILRC,=CL8'FAILRC'      SET EYE CATCHER                 00320003
+         B     INT00                    BRANCH AROUND DUMP ID           00330003
+IEP701   AMODE 31                       MAY EXECUTE ABOVE 16M           00340003
+IEP701   RMODE ANY                      MAY RESIDE ABOVE 16M            00350003
+         DS    0H                                                       00360003
+         DC    CL8'IEP701'              DUMP PROGRAM ID                 00370003
+         DC    CL1' '                                                   00380003
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390003
+         DC    CL1' '                                                   00400003
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410003
+         DC    CL1' '                                                   00420003
+INT00    DS    0H                                                       00430003
+         EXEC  CICS,                                                   *00440003
+               ASSIGN,                                                 *00450003
+               SYSID(SYSID)                                             00460003
+         CLC   =C'PRD5',SYSID                                           00470003
+         BE    INT05                                                    00480003
+         CLC   =C'TST9',SYSID                                           00490003
+         BNE   XIT00                                                    00500003
+INT05    DS    0H                                                       00510003
+*---------------------------------------------------------------------- 00520003
+*        CREATE FEPI PROPERTYSET                                        00530003
+*---------------------------------------------------------------------- 00540003
+         MVC   PROPNAME(4),SYSID                                        00550003
+         MVC   PROPNAME+4(4),=C'PROP'                                   00560003
+         MVC   FORMATTED,DFHVALUE(FORMATTED)                            00570003
+         MVC   INBOUND,DFHVALUE(INBOUND)                                00580003
+         MVC   LOSE,DFHVALUE(LOSE)                                      00590003
+         MVC   NOMSGJRNL,DFHVALUE(NOMSGJRNL)                            00600003
+         MVC   POSITIVE,DFHVALUE(POSITIVE)                              00610003
+         MVC   T3278M2,DFHVALUE(T3278M2)                                00620003
+         EXEC  CICS,                                                   *00630003
+               FEPI,                                                   *00640003
+               INSTALL,                                                *00650003
+               PROPERTYSET(PROPNAME),                                  *00660003
+               BEGINSESSION(FEPITRAN),                                 *00670003
+               FORMAT(FORMATTED),                                      *00680003
+               INITIALDATA(INBOUND),                                   *00690003
+               CONTENTION(LOSE),                                       *00700003
+               MSGJRNL(NOMSGJRNL),                                     *00710003
+               MAXFLENGTH(FEPIOBUF),                                   *00720003
+               UNSOLDATACK(POSITIVE),                                  *00730003
+               DEVICE(T3278M2),                                        *00740003
+               RESP(RESP),                                             *00750003
+               RESP2(RESP2)                                             00760003
+         CLC   RESP,DFHRESP(NORMAL)                                     00770003
+         BNE   ABN01                                                    00780003
+*---------------------------------------------------------------------- 00790003
+*        CREATE FEPI NODE LISTS                                         00800003
+*---------------------------------------------------------------------- 00810003
+         CLC   =C'PRD5',SYSID                                           00820003
+         BNE   INT10                                                    00830003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              00840003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            00850003
+         L     R3,PRD0NNUM                                              00860003
+         ST    R3,FULWORK                                               00870003
+         LA    R3,PRD0NODE                                              00880003
+         BAS   R9,NOD00                                                 00890003
+         L     R3,PRD2NNUM                                              00900003
+         ST    R3,FULWORK                                               00910003
+         LA    R3,PRD2NODE                                              00920003
+         BAS   R9,NOD00                                                 00930003
+         B     INT15                                                    00940003
+INT10    DS    0H                                                       00950003
+         CLC   =C'TST9',SYSID                                           00960003
+         BNE   INT15                                                    00970003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              00980003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            00990003
+**       L     R3,TST0NNUM                                              01000003
+**       ST    R3,FULWORK                                               01010003
+**       LA    R3,TST0NODE                                              01020003
+**       BAS   R9,NOD00                                                 01030003
+         L     R3,TST1NNUM                                              01040003
+         ST    R3,FULWORK                                               01050003
+         LA    R3,TST1NODE                                              01060003
+         BAS   R9,NOD00                                                 01070003
+         B     INT15                                                    01080003
+INT15    DS    0H                                                       01090003
+*---------------------------------------------------------------------- 01100003
+*        CREATE FEPI TARGET LISTS                                       01110003
+*---------------------------------------------------------------------- 01120003
+         CLC   =C'PRD5',SYSID                                           01130003
+         BNE   INT20                                                    01140003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              01150003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            01160003
+         L     R3,PRD0TNUM                                              01170003
+         ST    R3,FULWORK                                               01180003
+         LA    R3,PRD0TARG                                              01190003
+         BAS   R9,TAR00                                                 01200003
+         L     R3,PRD2TNUM                                              01210003
+         ST    R3,FULWORK                                               01220003
+         LA    R3,PRD2TARG                                              01230003
+         BAS   R9,TAR00                                                 01240003
+         B     INT25                                                    01250003
+INT20    DS    0H                                                       01260003
+         CLC   =C'TST9',SYSID                                           01270003
+         BNE   INT25                                                    01280003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              01290003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            01300003
+**       L     R3,TST0TNUM                                              01310003
+**       ST    R3,FULWORK                                               01320003
+**       LA    R3,TST0TARG                                              01330003
+**       BAS   R9,TAR00                                                 01340003
+         L     R3,TST1TNUM                                              01350003
+         ST    R3,FULWORK                                               01360003
+         LA    R3,TST1TARG                                              01370003
+         BAS   R9,TAR00                                                 01380003
+         B     INT25                                                    01390003
+INT25    DS    0H                                                       01400003
+*---------------------------------------------------------------------- 01410003
+*        CREATE FEPI RESOURCE POOLS                                     01420003
+*---------------------------------------------------------------------- 01430003
+         CLC   =C'PRD5',SYSID                                           01440003
+         BNE   INT30                                                    01450003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              01460003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            01470003
+         MVC   POOLNAME+4(4),=C'POOL'                                   01480003
+         MVC   POOLNAME(4),=C'PRD0'                                     01490003
+         L     R3,PRD0NNUM                                              01500003
+         ST    R3,FULWORK                                               01510003
+         LA    R3,PRD0NODE                                              01520003
+         L     R4,PRD0TNUM                                              01530003
+         ST    R4,DBLWORK                                               01540003
+         LA    R4,PRD0TARG                                              01550003
+         BAS   R9,POL00                                                 01560003
+         MVC   POOLNAME(4),=C'PRD2'                                     01570003
+         L     R3,PRD2NNUM                                              01580003
+         ST    R3,FULWORK                                               01590003
+         LA    R3,PRD2NODE                                              01600003
+         L     R4,PRD2TNUM                                              01610003
+         ST    R4,DBLWORK                                               01620003
+         LA    R4,PRD2TARG                                              01630003
+         BAS   R9,POL00                                                 01640003
+         B     INT35                                                    01650003
+INT30    DS    0H                                                       01660003
+         CLC   =C'TST9',SYSID                                           01670003
+         BNE   INT35                                                    01680003
+         MVC   ACQUIRED,DFHVALUE(ACQUIRED)                              01690003
+         MVC   INSERVICE,DFHVALUE(INSERVICE)                            01700003
+         MVC   POOLNAME+4(4),=C'POOL'                                   01710003
+**       MVC   POOLNAME(4),=C'TST0'                                     01720003
+**       L     R3,TST0NNUM                                              01730003
+**       ST    R3,FULWORK                                               01740003
+**       LA    R3,TST0NODE                                              01750003
+**       L     R4,TST0TNUM                                              01760003
+**       ST    R4,DBLWORK                                               01770003
+**       LA    R4,TST0TARG                                              01780003
+**       BAS   R9,POL00                                                 01790003
+         MVC   POOLNAME(4),=C'TST1'                                     01800003
+         L     R3,TST1NNUM                                              01810003
+         ST    R3,FULWORK                                               01820003
+         LA    R3,TST1NODE                                              01830003
+         L     R4,TST1TNUM                                              01840003
+         ST    R4,DBLWORK                                               01850003
+         LA    R4,TST1TARG                                              01860003
+         BAS   R9,POL00                                                 01870003
+**       B     INT35                                                    01880003
+INT35    DS    0H                                                       01890003
+*                                                                       01900003
+         EXEC  CICS,                                                   *01910003
+               WRITE,                                                  *01920003
+               OPERATOR,                                               *01930003
+               TEXT(WTO00),                                            *01940003
+               TEXTLENGTH(WTO00LN),                                    *01950003
+               RESP(RESP),                                             *01960003
+               RESP2(RESP2)                                             01970003
+*                                                                       01980003
+         B     XIT00                                                    01990003
+*---------------------------------------------------------------------- 02000003
+*        CALLED ROUTINE - BUILD FEPI NODE LIST                          02010003
+*---------------------------------------------------------------------- 02020003
+NOD00    DS    0H                                                       02030003
+         EXEC  CICS,                                                   *02040003
+               FEPI,                                                   *02050003
+               INSTALL,                                                *02060003
+               NODELIST(0(,R3)),                                       *02070003
+               NODENUM(FULWORK),                                       *02080003
+               ACQSTATUS(ACQUIRED),                                    *02090003
+               SERVSTATUS(INSERVICE),                                  *02100003
+               RESP(RESP),                                             *02110003
+               RESP2(RESP2)                                             02120003
+         CLC   RESP,DFHRESP(NORMAL)                                     02130003
+         BNE   ABN02                                                    02140003
+         BR    R9                                                       02150003
+*---------------------------------------------------------------------- 02160003
+*        CALLED ROUTINE - BUILD FEPI TARGET LIST                        02170003
+*---------------------------------------------------------------------- 02180003
+TAR00    DS    0H                                                       02190003
+         EXEC  CICS,                                                   *02200003
+               FEPI,                                                   *02210003
+               INSTALL,                                                *02220003
+               APPLLIST(0(,R3)),                                       *02230003
+               TARGETLIST(0(,R3)),                                     *02240003
+               TARGETNUM(FULWORK),                                     *02250003
+               SERVSTATUS(INSERVICE),                                  *02260003
+               RESP(RESP),                                             *02270003
+               RESP2(RESP2)                                             02280003
+         CLC   RESP,DFHRESP(NORMAL)                                     02290003
+         BNE   ABN03                                                    02300003
+         BR    R9                                                       02310003
+*---------------------------------------------------------------------- 02320003
+*        CALLED ROUTINE - BUILD FEPI RESOURCE POOL                      02330003
+*---------------------------------------------------------------------- 02340003
+POL00    DS    0H                                                       02350003
+         EXEC  CICS,                                                   *02360003
+               FEPI,                                                   *02370003
+               INSTALL,                                                *02380003
+               POOL(POOLNAME),                                         *02390003
+               PROPERTYSET(PROPNAME),                                  *02400003
+               NODELIST(0(,R3)),                                       *02410003
+               NODENUM(FULWORK),                                       *02420003
+               TARGETLIST(0(,R4)),                                     *02430003
+               TARGETNUM(DBLWORK),                                     *02440003
+               ACQSTATUS(ACQUIRED),                                    *02450003
+               SERVSTATUS(INSERVICE),                                  *02460003
+               RESP(RESP),                                             *02470003
+               RESP2(RESP2)                                             02480003
+         CLC   RESP,DFHRESP(NORMAL)                                     02490003
+         BNE   ABN04                                                    02500003
+         BR    R9                                                       02510003
+*---------------------------------------------------------------------- 02520003
+*        ABNORMAL TERMINATION                                           02530003
+*---------------------------------------------------------------------- 02540003
+*                                                                       02550003
+ABN01    DS    0H                                                       02560003
+         LA    R2,MSG01                                                 02570003
+         LA    R3,L'MSG01                                               02580003
+         ICM   R4,B'1111',ABC01                                         02590003
+         B     ABN99                                                    02600003
+*                                                                       02610003
+ABN02    DS    0H                                                       02620003
+         LA    R2,MSG02                                                 02630003
+         LA    R3,L'MSG02                                               02640003
+         ICM   R4,B'1111',ABC02                                         02650003
+         B     ABN99                                                    02660003
+*                                                                       02670003
+ABN03    DS    0H                                                       02680003
+         LA    R2,MSG03                                                 02690003
+         LA    R3,L'MSG03                                               02700003
+         ICM   R4,B'1111',ABC03                                         02710003
+         B     ABN99                                                    02720003
+*                                                                       02730003
+ABN04    DS    0H                                                       02740003
+         LA    R2,MSG04                                                 02750003
+         LA    R3,L'MSG04                                               02760003
+         ICM   R4,B'1111',ABC04                                         02770003
+         B     ABN99                                                    02780003
+*                                                                       02790003
+ABN99    DS    0H                                                       02800003
+         MVC   SAVRESP,RESP                                             02810003
+         MVC   SAVRESP2,RESP2                                           02820003
+         MVC   SAVFN,EIBFN                                              02830003
+         MVC   SAVRC,EIBRCODE                                           02840003
+         EXEC  CICS,                                                   *02850003
+               WRITE,                                                  *02860003
+               OPERATOR,                                               *02870003
+               TEXT(WTO01),                                            *02880003
+               TEXTLENGTH(WTO01LN),                                    *02890003
+               RESP(RESP),                                             *02900003
+               RESP2(RESP2)                                             02910003
+         STH   R3,HLFWORK                                               02920003
+         EXEC  CICS,                                                   *02930003
+               WRITEQ,                                                 *02940003
+               TD,                                                     *02950003
+               QUEUE(=C'CSML'),                                        *02960003
+               FROM(0(,R2)),                                           *02970003
+               LENGTH(HLFWORK),                                        *02980003
+               RESP(RESP),                                             *02990003
+               RESP2(RESP2)                                             03000003
+         ST    R4,FULWORK                                               03010003
+         EXEC  CICS,                                                   *03020003
+               ABEND,                                                  *03030003
+               ABCODE(FULWORK),                                        *03040003
+               RESP(RESP),                                             *03050003
+               RESP2(RESP2)                                             03060003
+*---------------------------------------------------------------------- 03070003
+*        RETURN TO CICS                                                 03080003
+*---------------------------------------------------------------------- 03090003
+XIT00    DS    0H                                                       03100003
+         EXEC  CICS,                                                   *03110003
+               RETURN                                                   03120003
+         DFHEIRET                                                       03130003
+*---------------------------------------------------------------------- 03140003
+*        CONSTANTS                                                      03150003
+*---------------------------------------------------------------------- 03160003
+*                                                                       03170003
+MSG01    DC    C'IEP70101 FEPI INSTALL PROPERTYSET failed, abend 71PS i*03180003
+               nitiated.'                                               03190003
+ABC01    EQU   *-15                                                     03200003
+*                                                                       03210003
+MSG02    DC    C'IEP70102 FEPI INSTALL NODELIST failed, abend 71NL init*03220003
+               iated.'                                                  03230003
+ABC02    EQU   *-15                                                     03240003
+*                                                                       03250003
+MSG03    DC    C'IEP70103 FEPI INSTALL TARGETLIST failed, abend 71TL in*03260003
+               itiated.'                                                03270003
+ABC03    EQU   *-15                                                     03280003
+*                                                                       03290003
+MSG04    DC    C'IEP70104 FEPI INSTALL POOL failed, abend 71PL initiate*03300003
+               d.'                                                      03310003
+ABC04    EQU   *-15                                                     03320003
+*                                                                       03330003
+WTO00    DC    C'IEP70198I  FEPI Resource Pool Build Successful'        03340003
+WTO00LN  DC    A(*-WTO00)                                               03350003
+*                                                                       03360003
+WTO01    DC    C'IEP70199E  FEPI Resource Pool Build unsuccessful'      03370003
+WTO01LN  DC    A(*-WTO01)                                               03380003
+*                                                                       03390003
+FEPIOBUF DC    F'4096'                                                  03400003
+FEPITRAN DC    CL4'FESO'                                                03410003
+*                                                                       03420003
+PRD0NODE DS    0CL8                                                     03430003
+         DC    CL8'FEPPRD50'                                            03440003
+         DC    CL8'FEPPRD51'                                            03450003
+         DC    CL8'FEPPRD52'                                            03460003
+PRD0NNUM DC    A((*-PRD0NODE)/L'PRD0NODE)                               03470003
+PRD0TARG DS    0CL8                                                     03480003
+         DC    CL8'CICSPRD0'                                            03490003
+PRD0TNUM DC    A((*-PRD0TARG)/L'PRD0TARG)                               03500003
+*                                                                       03510003
+PRD2NODE DS    0CL8                                                     03520003
+         DC    CL8'FEPPRD53'                                            03530003
+         DC    CL8'FEPPRD54'                                            03540003
+         DC    CL8'FEPPRD55'                                            03550003
+PRD2NNUM DC    A((*-PRD2NODE)/L'PRD2NODE)                               03560003
+PRD2TARG DS    0CL8                                                     03570003
+         DC    CL8'CICSPRD2'                                            03580003
+PRD2TNUM DC    A((*-PRD2TARG)/L'PRD2TARG)                               03590003
+*                                                                       03600003
+**TST0NODE DS    0CL8                                                   03610003
+**         DC    CL8'FEPTST90'                                          03620003
+**         DC    CL8'FEPTST91'                                          03630003
+**         DC    CL8'FEPTST92'                                          03640003
+**TST0NNUM DC    A((*-TST0NODE)/L'TST0NODE)                             03650003
+**TST0TARG DS    0CL8                                                   03660003
+**         DC    CL8'CICSTST0'                                          03670003
+**TST0TNUM DC    A((*-TST0TARG)/L'TST0TARG)                             03680003
+*                                                                       03690003
+TST1NODE DS    0CL8                                                     03700003
+         DC    CL8'FEPTST93'                                            03710003
+         DC    CL8'FEPTST94'                                            03720003
+         DC    CL8'FEPTST95'                                            03730003
+TST1NNUM DC    A((*-TST1NODE)/L'TST1NODE)                               03740003
+TST1TARG DS    0CL8                                                     03750003
+         DC    CL8'CICSTST1'                                            03760003
+TST1TNUM DC    A((*-TST1TARG)/L'TST1TARG)                               03770003
+*                                                                       03780003
+*---------------------------------------------------------------------- 03790003
+*        DSECTS                                                       * 03800003
+*---------------------------------------------------------------------- 03810003
+*                                                                       03820003
+         DFHEISTG                                                       03830003
+EISEYE   DS    CL16                     EYE CATCHER                     03840003
+DBLWORK  DS    D                        DOUBLE WORD WORK                03850003
+FULWORK  DS    F                        FULL WORD WORK                  03860003
+RESP     DS    F                        EXEC COMMAND RESPONSE           03870003
+RESP2    DS    F                        EXEC COMMAND RESPONSE           03880003
+*                                                                       03890003
+FAILRSP  DS    CL8                      EYE CATCHER                     03900003
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     03910003
+FAILRSP2 DS    CL8                      EYE CATCHER                     03920003
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     03930003
+FAILFN   DS    CL8                      EYE CATCHER                     03940003
+SAVFN    DS    H                        SAVED EXEC EIBFN                03950003
+FAILRC   DS    CL8                      EYE CATCHER                     03960003
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             03970003
+*                                                                       03980003
+FORMATTED DS   A                                                        03990003
+INBOUND  DS    A                                                        04000003
+LOSE     DS    A                                                        04010003
+NOMSGJRNL DS   A                                                        04020003
+POSITIVE DS    A                                                        04030003
+T3278M2  DS    A                                                        04040003
+ACQUIRED DS    A                                                        04050003
+INSERVICE DS   A                                                        04060003
+PROPNAME DS    CL8                                                      04070003
+POOLNAME DS    CL8                                                      04080003
+SYSID     DS   CL4                                                      04090003
+*                                                                       04100003
+HLFWORK  DS    H                        HALF WORD WORK AREA             04110003
+*                                                                       04120003
+         DFHEIEND                                                       04130003
+*---------------------------------------------------------------------- 04140003
+         END                                                            04150003
+

@@ -1,0 +1,477 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IET201   TITLE '**  CICS/ESA INTERLINK TCP GENERAL CLIENT PROGRAM  **'  00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTER AND OTHER EQUATES                                     00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IET201   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IET201   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IET201 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         MVC   PARMEYE,=CL16'INTERLINK PARMS ' SET EYE CATCHER          00330002
+         B     INT00                    BRANCH AROUND DUMP ID           00340002
+IET201   AMODE 31                       MAY EXECUTE ABOVE 16M           00350002
+IET201   RMODE ANY                      MAY RESIDE ABOVE 16M            00360002
+         DS    0H                                                       00370002
+         DC    CL8'IET201'              DUMP PROGRAM ID                 00380002
+         DC    CL1' '                                                   00390002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00400002
+         DC    CL1' '                                                   00410002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00420002
+         DC    CL1' '                                                   00430002
+INT00    DS    0H                                                       00440002
+*---------------------------------------------------------------------- 00450002
+*        VERIFY TCP/IP CICS EXIT ACTIVE                                 00460002
+*---------------------------------------------------------------------- 00470002
+         EXEC  CICS,                                                   *00480002
+               INQUIRE,                                                *00490002
+               EXITPROGRAM('T09COMON'),                                *00500002
+               STARTSTATUS(FULWORK),                                   *00510002
+               RESP(RESP),                                             *00520002
+               RESP2(RESP2)                                             00530002
+         LA    RA,COMRSPTC              LOAD TCP/IP INACT RETURN CODE   00540002
+         CLC   RESP,DFHRESP(NORMAL)     EXIT PROGRAM FOUND              00550002
+         BNE   XIT00                    ..NO, BRANCH                    00560002
+         CLC   FULWORK,DFHVALUE(STARTED) EXIT ACTIVE                    00570002
+         BNE   XIT00                    ..NO, BRANCH                    00580002
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE         00590002
+*---------------------------------------------------------------------- 00600002
+*        VERIFY CALLER'S PARMS                                          00610002
+*---------------------------------------------------------------------- 00620002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00630002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00640002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00650002
+         EXEC  CICS,                                                   *00660002
+               ADDRESS,                                                *00670002
+               COMMAREA(R9),                                           *00680002
+               RESP(RESP),                                             *00690002
+               RESP2(RESP2)                                             00700002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00710002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00720002
+         USING COMPARM,R9                                               00730002
+*                                                                       00740002
+         LA    RA,COMRSILN              SET INBOUND LENGTH ZERO         00750002
+         OC    COMINLN,COMINLN          INBOUND LENGTH ZERO             00760002
+         BZ    XIT00                    ..YES, BRANCH                   00770002
+         LA    RA,COMRSOLN              SET OUTBOUND LENGTH ZERO        00780002
+         OC    COMOUTLN,COMOUTLN        MAX OUTBOUND LENGTH ZERO        00790002
+         BZ    XIT00                    ..YES, BRANCH                   00800002
+         LA    R2,COMMIN                LOAD MIN COMMAREA LEN           00810002
+         AH    R2,COMINLN               ADD INBOUND LEN                 00820002
+         AH    R2,COMOUTLN              ADD MAX OUTBOUND LEN            00830002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00840002
+         LA    RA,COMRSPCL              LOAD INVALID COMMAREA LEN       00850002
+         CR    R1,R2                    COMMAREA LARGE ENOUGH           00860002
+         BL    XIT00                    ..NO, BRANCH                    00870002
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE         00880002
+*                                                                       00890002
+         LA    R3,COMTIM00              LOAD ENTRY TIMER @              00900002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              00910002
+*                                                                       00920002
+         XC    COMTIM01(L'COMTIM00*11),COMTIM01 CLEAR TIMERS            00930002
+         LA    RE,SRVRTBL               LOAD SERVER TABLE @             00940002
+         LA    RF,SRVRTBL#              LOAD SERVER TABLE ENTRIES       00950002
+INT10    DS    0H                                                       00960002
+         CLC   COMSRV,0(RE)             VALID SERVER REQUEST            00970002
+         BE    TCP00                    ..YES, BRANCH                   00980002
+         BCT   RF,INT10                 ..LOOP                          00990002
+         LA    RA,COMRSPSI              SET INVALID SERVER ID           01000002
+         B     XIT00                    RETURN RESP CODE                01010002
+*---------------------------------------------------------------------- 01020002
+*        ISSUE TCP CONNECT CALL                                         01030002
+*---------------------------------------------------------------------- 01040002
+TCP00    DS    0H                                                       01050002
+         LA    R3,COMTIM01              LOAD ENTRY TIMER @              01060002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              01070002
+*                                                                       01080002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                01090002
+         LR    R4,R0                    SAVE BASE @                     01100002
+         LA    R1,ACMLEN                LOAD PARM AREA LEN              01110002
+         LR    R2,R0                    LOAD PARM AREA @                01120002
+         SR    R3,R3                    FORCE PAD FILL                  01130002
+         MVCL  R0,R2                    CLR PARM AREA                   01140002
+         USING CPTACM,R4                                                01150002
+*                                                                       01160002
+         OI    ACMOPTN1,ACMNODNR        SUPPRESS DNR LOOKUP             01170002
+         MVC   ACMRPORT,0(RE)           SET REMOTE PORT #               01180002
+         MVC   ACMRADDR,2(RE)           SET REMOTE IP @                 01190002
+*                                                                       01200002
+         T09MCALL CONNECT,                                             *01210002
+               PARM=CPTACM                                              01220002
+*                                                                       01230002
+         LA    R3,COMTIM02              LOAD ENTRY TIMER @              01240002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              01250002
+*                                                                       01260002
+         LTR   RF,RF                    CALL SUCCESSFUL                 01270002
+         BZ    TCP20                    ..YES, BRANCH                   01280002
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR          01290002
+         B     XIT00                    RETURN RESP CODE                01300002
+*                                                                       01310002
+*---------------------------------------------------------------------- 01320002
+*        TRANSLATE EBCDIC TO ASCII AND ISSUE TCP WRITE CALL             01330002
+*---------------------------------------------------------------------- 01340002
+TCP20    DS    0H                                                       01350002
+         MVC   SAVETOKN,ACMTOKEN        SAVE THE CONNECT TOKEN          01360002
+         DROP  R4                                                       01370002
+*                                                                       01380002
+         LA    R3,COMTIM03              LOAD ENTRY TIMER @              01390002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              01400002
+*                                                                       01410002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                01420002
+         LR    R4,R0                    SAVE BASE @                     01430002
+         LA    R1,AXLLEN                LOAD PARM AREA LEN              01440002
+         LR    R2,R0                    LOAD PARM AREA @                01450002
+         SR    R3,R3                    FORCE PAD FILL                  01460002
+         MVCL  R0,R2                    CLR PARM AREA                   01470002
+         USING CPTAXL,R4                                                01480002
+*                                                                       01490002
+         MVC   AXLTOKEN,SAVETOKN        SET THE CONNECT TOKEN           01500002
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     01510002
+         ST    R1,AXLSLENG              SET TCP TRANSLATE LEN           01520002
+         LA    R1,COMMIN(,R9)           LOAD CALLER'S INPUT MSG @       01530002
+         ST    R1,AXLSADDR              SET TCP TRANSLATE @             01540002
+         OI    AXLLTYP1,AXLTETOA        SET TRANSLATE EBCDIC TO ASCII   01550002
+*                                                                       01560002
+         T09MCALL TRANS,                                               *01570002
+               PARM=CPTAXL                                              01580002
+*                                                                       01590002
+         LTR   RF,RF                    CALL SUCCESSFUL                 01600002
+         BZ    TCP22                    ..YES, BRANCH                   01610002
+         LA    RA,COMRSXLT              SET TRANSLATE ERROR             01620002
+         B     XIT00                    RETURN RESP CODE                01630002
+         DROP  R4                                                       01640002
+*                                                                       01650002
+TCP22    DS    0H                                                       01660002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                01670002
+         LR    R4,R0                    SAVE BASE @                     01680002
+         LA    R1,ADTLEN                LOAD PARM AREA LEN              01690002
+         LR    R2,R0                    LOAD PARM AREA @                01700002
+         SR    R3,R3                    FORCE PAD FILL                  01710002
+         MVCL  R0,R2                    CLR PARM AREA                   01720002
+         USING CPTADT,R4                                                01730002
+*                                                                       01740002
+         MVC   ADTTOKEN,SAVETOKN        SET THE CONNECT TOKEN           01750002
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     01760002
+         ST    R1,ADTBUFFL              SET TCP TRANSLATE LEN           01770002
+         LA    R1,COMMIN(,R9)           LOAD CALLER'S INPUT MSG @       01780002
+         ST    R1,ADTBUFFA              SET TCP TRANSLATE @             01790002
+*                                                                       01800002
+         T09MCALL SEND,                                                *01810002
+               PARM=CPTADT                                              01820002
+*                                                                       01830002
+         LTR   RF,RF                    CALL SUCCESSFUL                 01840002
+         BZ    TCP24                    ..YES, BRANCH                   01850002
+         LA    RA,COMRSPWC              SET SEND ERROR                  01860002
+         B     XIT00                    RETURN RESP CODE                01870002
+         DROP  R4                                                       01880002
+*                                                                       01890002
+TCP24    DS    0H                                                       01900002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                01910002
+         LR    R4,R0                    SAVE BASE @                     01920002
+         LA    R1,AXLLEN                LOAD PARM AREA LEN              01930002
+         LR    R2,R0                    LOAD PARM AREA @                01940002
+         SR    R3,R3                    FORCE PAD FILL                  01950002
+         MVCL  R0,R2                    CLR PARM AREA                   01960002
+         USING CPTAXL,R4                                                01970002
+*                                                                       01980002
+         MVC   AXLTOKEN,SAVETOKN        SET THE CONNECT TOKEN           01990002
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02000002
+         ST    R1,AXLSLENG              SET TCP TRANSLATE LEN           02010002
+         LA    R1,COMMIN(,R9)           LOAD CALLER'S INPUT MSG @       02020002
+         ST    R1,AXLSADDR              SET TCP TRANSLATE @             02030002
+         OI    AXLLTYP1,AXLTATOE        SET TRANSLATE ASCII TO EBCDIC   02040002
+*                                                                       02050002
+         T09MCALL TRANS,                                               *02060002
+               PARM=CPTAXL                                              02070002
+*                                                                       02080002
+         LTR   RF,RF                    CALL SUCCESSFUL                 02090002
+         BZ    TCP26                    ..YES, BRANCH                   02100002
+         LA    RA,COMRSXLT              SET TRANSLATE ERROR             02110002
+         B     XIT00                    RETURN RESP CODE                02120002
+         DROP  R4                                                       02130002
+*                                                                       02140002
+TCP26    DS    0H                                                       02150002
+         LA    R3,COMTIM04              LOAD ENTRY TIMER @              02160002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              02170002
+*                                                                       02180002
+*---------------------------------------------------------------------- 02190002
+*        ISSUE TCP RECEIVE AND TRANSLATE ASCII TO EBCDIC                02200002
+*---------------------------------------------------------------------- 02210002
+         LA    R3,COMTIM05              LOAD ENTRY TIMER @              02220002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              02230002
+*                                                                       02240002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                02250002
+         LR    R4,R0                    SAVE BASE @                     02260002
+         LA    R1,ADTLEN                LOAD PARM AREA LEN              02270002
+         LR    R2,R0                    LOAD PARM AREA @                02280002
+         SR    R3,R3                    FORCE PAD FILL                  02290002
+         MVCL  R0,R2                    CLR PARM AREA                   02300002
+         USING CPTADT,R4                                                02310002
+*                                                                       02320002
+         MVC   ADTTOKEN,SAVETOKN        SET THE CONNECT TOKEN           02330002
+         LH    R1,COMOUTLN              LOAD CALLER'S OUTPUT MSG LEN    02340002
+         ST    R1,ADTBUFFL              SET TCP RECEIVE LEN             02350002
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02360002
+         LA    R1,COMMIN(R1,R9)         LOAD CALLER'S OUTPUT MSG @      02370002
+         ST    R1,ADTBUFFA              SET TCP RECEIVE @               02380002
+*                                                                       02390002
+         T09MCALL RECEIVE,                                             *02400002
+               PARM=CPTADT                                              02410002
+*                                                                       02420002
+         LTR   RF,RF                    CALL SUCCESSFUL                 02430002
+         BZ    TCP30                    ..YES, BRANCH                   02440002
+         LA    RA,COMRSPRC              SET RECEIVE ERROR               02450002
+         B     XIT00                    RETURN RESP CODE                02460002
+*                                                                       02470002
+TCP30    DS    0H                                                       02480002
+         L     RF,ADTBUFFL              LOAD TCP RECEIVE LEN            02490002
+         STH   RF,COMOUTLN              SAVE ACTUAL OUTPUT MSG LEN      02500002
+         DROP  R4                                                       02510002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                02520002
+         LR    R4,R0                    SAVE BASE @                     02530002
+         LA    R1,AXLLEN                LOAD PARM AREA LEN              02540002
+         LR    R2,R0                    LOAD PARM AREA @                02550002
+         SR    R3,R3                    FORCE PAD FILL                  02560002
+         MVCL  R0,R2                    CLR PARM AREA                   02570002
+         USING CPTAXL,R4                                                02580002
+*                                                                       02590002
+         MVC   AXLTOKEN,SAVETOKN        SET THE CONNECT TOKEN           02600002
+         LH    R1,COMOUTLN              LOAD CALLER'S OUTPUT MSG LEN    02610002
+         ST    R1,AXLSLENG              SET TCP TRANSLATE LEN           02620002
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02630002
+         LA    R1,COMMIN(R1,R9)         LOAD CALLER'S OUTPUT MSG @      02640002
+         ST    R1,AXLSADDR              SET TCP TRANSLATE @             02650002
+         OI    AXLLTYP1,AXLTATOE        SET TRANSLATE ASCII TO EBCDIC   02660002
+*                                                                       02670002
+         T09MCALL TRANS,                                               *02680002
+               PARM=CPTAXL                                              02690002
+*                                                                       02700002
+         LTR   RF,RF                    CALL SUCCESSFUL                 02710002
+         BZ    TCP32                    ..YES, BRANCH                   02720002
+         LA    RA,COMRSXLT              SET TRANSLATE ERROR             02730002
+         B     XIT00                    RETURN RESP CODE                02740002
+         DROP  R4                                                       02750002
+*                                                                       02760002
+TCP32    DS    0H                                                       02770002
+         LA    R3,COMTIM06              LOAD ENTRY TIMER @              02780002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              02790002
+*                                                                       02800002
+*---------------------------------------------------------------------- 02810002
+*        ISSUE TCP CLOSE CALL                                           02820002
+*---------------------------------------------------------------------- 02830002
+         LA    R3,COMTIM07              LOAD ENTRY TIMER @              02840002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              02850002
+*                                                                       02860002
+         LA    R0,CPTPARMS              LOAD PARM AREA @                02870002
+         LR    R4,R0                    SAVE BASE @                     02880002
+         LA    R1,ACLLEN                LOAD PARM AREA LEN              02890002
+         LR    R2,R0                    LOAD PARM AREA @                02900002
+         SR    R3,R3                    FORCE PAD FILL                  02910002
+         MVCL  R0,R2                    CLR PARM AREA                   02920002
+         USING CPTACL,R4                                                02930002
+*                                                                       02940002
+         MVC   ACLTOKEN,SAVETOKN        SET THE CONNECT TOKEN           02950002
+*                                                                       02960002
+         T09MCALL CLOSE,                                               *02970002
+               PARM=CPTACL                                              02980002
+*                                                                       02990002
+         LTR   RF,RF                    CALL SUCCESSFUL                 03000002
+         BZ    TCP40                    ..YES, BRANCH                   03010002
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR          03020002
+         B     XIT00                    RETURN RESP CODE                03030002
+         DROP  R4                                                       03040002
+*                                                                       03050002
+TCP40    DS    0H                                                       03060002
+         LA    R3,COMTIM08              LOAD ENTRY TIMER @              03070002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              03080002
+         B     XIT00                    ..EXIT                          03090002
+*                                                                       03100002
+*---------------------------------------------------------------------- 03110002
+*        OBTAIN ABSOLUTE TIME ROUTINE                                   03120002
+*---------------------------------------------------------------------- 03130002
+ABS00    DS    0H                                                       03140002
+         EXEC  CICS,                                                   *03150002
+               ASKTIME,                                                *03160002
+               ABSTIME(0(R3)),                                         *03170002
+               RESP(RESP),                                             *03180002
+               RESP2(RESP2)                                             03190002
+         BR    R8                                                       03200002
+*---------------------------------------------------------------------- 03210002
+*        VARIOUS ERROR MSGS AND ABENDS                                  03220002
+*---------------------------------------------------------------------- 03230002
+ABN01    DS    0H                                                       03240002
+         LA    R2,MSG01                                                 03250002
+         LA    R3,L'MSG01                                               03260002
+         ICM   R4,B'1111',ABC01                                         03270002
+         B     ABN99                                                    03280002
+ABN02    DS    0H                                                       03290002
+         LA    R2,MSG02                                                 03300002
+         LA    R3,L'MSG02                                               03310002
+         ICM   R4,B'1111',ABC02                                         03320002
+         B     ABN99                                                    03330002
+ABN99    DS    0H                                                       03340002
+         MVC   SAVRESP,RESP                                             03350002
+         MVC   SAVRESP2,RESP2                                           03360002
+         MVC   SAVFN,EIBFN                                              03370002
+         MVC   SAVRC,EIBRCODE                                           03380002
+         STH   R3,HLFWRK                                                03390002
+         EXEC  CICS,                                                   *03400002
+               WRITEQ,                                                 *03410002
+               TD,                                                     *03420002
+               QUEUE(=C'CSMT'),                                        *03430002
+               FROM(0(,R2)),                                           *03440002
+               LENGTH(HLFWRK),                                         *03450002
+               RESP(RESP),                                             *03460002
+               RESP2(RESP2)                                             03470002
+         ST    R4,FULWORK                                               03480002
+         EXEC  CICS,                                                   *03490002
+               ABEND,                                                  *03500002
+               ABCODE(FULWORK),                                        *03510002
+               RESP(RESP),                                             *03520002
+               RESP2(RESP2)                                             03530002
+*---------------------------------------------------------------------- 03540002
+*        RETURN TO CICS                                                 03550002
+*---------------------------------------------------------------------- 03560002
+XIT00    DS    0H                                                       03570002
+         STC   RA,COMRSP                SET RETURN CODE                 03580002
+         LA    R3,COMTIM11              LOAD ENTRY TIMER @              03590002
+         BAS   R8,ABS00                 SET ENTRY ABS TIME              03600002
+         CLI   COMRSP,COMRSPOK          NORMAL RESPONSE                 03610002
+         BE    XIT10                    ..YES, BRANCH                   03620002
+         MVC   COMTIM11,CPTPARMS+16     SEND TCP ERRS TO CALLER         03630002
+XIT10    DS    0H                                                       03640002
+         EXEC  CICS,                                                   *03650002
+               RETURN                                                   03660002
+         DFHEIRET                                                       03670002
+*---------------------------------------------------------------------- 03680002
+*        CONSTANTS                                                      03690002
+*---------------------------------------------------------------------- 03700002
+*                                                                       03710002
+SRVRTBL  DS    0XL8                                                     03720002
+SRVRFEDX DC    C'X'                     SERVER CODE                     03730002
+         DC    X'00'                    RESERVED                        03740002
+         DC    AL2(2000)                SERVER PORT NUMBER              03750002
+         DC    AL1(192),AL1(168),AL1(016),AL1(139) SERVER IP ADDR       03760002
+SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL                                    03770002
+*                                                                       03780002
+MSG01    DC    C'IET201001  COMMAREA Length passed from caller is too s*03790002
+               mall, T201 Abend initiated.'                             03800002
+ABC01    EQU   *-21                                                     03810002
+*                                                                       03820002
+MSG02    DC    C'IET201002  COMMAREA Address can not be located, T202 A*03830002
+               bend initiated.'                                         03840002
+ABC02    EQU   *-21                                                     03850002
+*                                                                       03860002
+*---------------------------------------------------------------------- 03870002
+*        CICS WORKING STORAGE DSECT                                     03880002
+*---------------------------------------------------------------------- 03890002
+         DFHEISTG                                                       03900002
+EISEYE   DS    CL16                     EYE CATCHER                     03910002
+*                                                                       03920002
+DBLWORK  DS    D                        DOUBLE WORD WORK                03930002
+FULWORK  DS    F                        FULL WORD WORK                  03940002
+*                                                                       03950002
+RESP     DS    F                        EXEC COMMAND RESPONSE           03960002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           03970002
+*                                                                       03980002
+FAILRSP  DS    CL8                      EYE CATCHER                     03990002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     04000002
+FAILRSP2 DS    CL8                      EYE CATCHER                     04010002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     04020002
+FAILFN   DS    CL8                      EYE CATCHER                     04030002
+SAVFN    DS    H                        SAVED EXEC EIBFN                04040002
+FAILRC   DS    CL8                      EYE CATCHER                     04050002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             04060002
+*                                                                       04070002
+HLFWRK   DS    H                        HALF WORD WORK                  04080002
+*                                                                       04090002
+SAVETOKN DS    A                        TOKEN SAVE AREA                 04100002
+*                                                                       04110002
+         DS    0F                                                       04120002
+PARMEYE  DS    CL16                     EYE CATCHER                     04130002
+CPTPARMS DS    0F                       TCP CALL PARMS                  04140002
+PARMACL  DS    XL(ACLLEN)               CLOSE PARMS                     04150002
+         ORG   CPTPARMS                                                 04160002
+PARMACM  DS    XL(ACMLEN)               CONNECT PARMS                   04170002
+         ORG   CPTPARMS                                                 04180002
+PARMADT  DS    XL(ADTLEN)               SEND/RECEIVE PARMS              04190002
+         ORG   CPTPARMS                                                 04200002
+PARMXLT  DS    XL(AXLLEN)               TRANSLATE PARMS                 04210002
+         ORG                                                            04220002
+*                                                                       04230002
+         DFHEIEND                                                       04240002
+*---------------------------------------------------------------------- 04250002
+*        CLIENT'S COMMAREA PARM LIST DSECT                              04260002
+*---------------------------------------------------------------------- 04270002
+*                                                                       04280002
+COMPARM  DSECT                                                          04290002
+*                                                                       04300002
+COMSRV   DS    CL1                      TCP SERVER ID                   04310002
+COMSRCX  EQU   C'X'                     ..X = FEDERAL EXPRESS           04320002
+*                                                                       04330002
+COMRSP   DS    CL1                      RESPONSE CODE                   04340002
+COMRSPOK EQU   C' '                     ..NORMAL                        04350002
+COMRSPTC EQU   C'0'                     ..CICS TCP EXIT INACTIVE        04360002
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LENGTH       04370002
+COMRSPSI EQU   C'2'                     ..INVALID SERVER ID             04380002
+COMRSPSC EQU   C'3'                     ..TCP SOCKET CALL ERROR         04390002
+COMRSPCC EQU   C'4'                     ..TCP CONNECT CALL ERROR        04400002
+COMRSPWC EQU   C'5'                     ..TCP WRITE CALL ERROR          04410002
+COMRSPRC EQU   C'6'                     ..TCP READ CALL ERROR           04420002
+COMRSPLC EQU   C'7'                     ..TCP CLOSE CALL ERROR          04430002
+COMRSILN EQU   C'8'                     ..INBOUND MSG TO SRVR LEN=0     04440002
+COMRSOLN EQU   C'9'                     ..OUTBOUND MSG FRM SRVR LEN=0   04450002
+COMRSXLT EQU   C'X'                     ..TRANSLATE ERROR               04460002
+*                                                                       04470002
+COMINLN  DS    H                        CALLERS INBOUND MSG LEN         04480002
+COMOUTLN DS    H                        SERVERS OUTBOUND MSG LEN        04490002
+*                                                                       04500002
+COMRSV   DS    CL2                      RESERVED                        04510002
+*                                                                       04520002
+COMTIM00 DS    XL8                      ABS TIME IET201 ENTRY           04530002
+COMTIM01 DS    XL8                      ABS TIME SOCKET CALL            04540002
+COMTIM02 DS    XL8                      ABS TIME SOCKET RETURN          04550002
+COMTIM03 DS    XL8                      ABS TIME CONNECT CALL           04560002
+COMTIM04 DS    XL8                      ABS TIME CONNECT RETURN         04570002
+COMTIM05 DS    XL8                      ABS TIME WRITE CALL             04580002
+COMTIM06 DS    XL8                      ABS TIME WRITE RETURN           04590002
+COMTIM07 DS    XL8                      ABS TIME READ CALL              04600002
+COMTIM08 DS    XL8                      ABS TIME READ RETURN            04610002
+COMTIM09 DS    XL8                      ABS TIME CLOSE CALL             04620002
+COMTIM10 DS    XL8                      ABS TIME CLOSE RETURN           04630002
+COMTIM11 DS    XL8                      ABS TIME IET201 EXIT            04640002
+*                                                                       04650002
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         04660002
+*                                                                       04670002
+         T09DACM MF=DSECT               CONNECT DSECT                   04680002
+*                                                                       04690002
+         T09DACL MF=DSECT               CLOSE DSECT                     04700002
+*                                                                       04710002
+         T09DADT MF=DSECT               SEND/RECEIVE DSECT              04720002
+*                                                                       04730002
+         T09DAXL MF=DSECT               TRANSLATE DSECT                 04740002
+*---------------------------------------------------------------------- 04750002
+         END                                                            04760002
+

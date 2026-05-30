@@ -1,0 +1,70 @@
+//TSSS013A JOB 1,J.BAKER,
+//         CLASS=S,
+//         MSGCLASS=M,
+//         REGION=0M,
+//         NOTIFY=TSSS013
+//*        TYPRUN=SCAN
+//*--------------------------------------------------------------------
+//DFHEITAL PROC SUFFIX=1$,
+//         ASMBLR=ASMA90,
+//         INDEX='CICSIE.TS51.RSU1408',
+//         INDEX2='CICSIE.TS51.RSU1408',
+//         OUTC='*',
+//         REG=4M,
+//         LNKPARM='(LIST,LET,XREF,MAP)',
+//         WORK=SYSDA
+//*--------------------------------------------------------------------
+//TRN      EXEC PGM=DFHEAP&SUFFIX,
+//         REGION=&REG
+//STEPLIB  DD DSN=&INDEX2..SDFHLPA,DISP=SHR
+//         DD DSN=&INDEX2..SDFHLOAD,DISP=SHR
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSPUNCH DD DSN=&&SYSCIN,
+//         DISP=(,PASS),UNIT=&WORK,
+//         DCB=BLKSIZE=400,
+//         SPACE=(400,(400,100))
+//*--------------------------------------------------------------------
+//ASM      EXEC PGM=&ASMBLR,
+//         REGION=&REG,
+//         PARM=('DECK,NOOBJECT,LIST(133),SIZE(MAX,ABOVE)',
+//         'PROFILE(JJBSYS90)')
+//SYSLIB   DD DSN=&INDEX..SDFHMAC,DISP=SHR
+//         DD DSN=SYS1.MACLIB,DISP=SHR
+//         DD DSN=SYS1.MODGEN,DISP=SHR
+//         DD DSN=CICSIE.TS51.PTABLES,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSPUNCH DD DSN=&&LOADSET,
+//         UNIT=&WORK,DISP=(,PASS),
+//         SPACE=(400,(100,100,1))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DSN=&&SYSCIN,DISP=(OLD,DELETE)
+//*--------------------------------------------------------------------
+//COPYLINK EXEC PGM=IEBGENER,COND=(7,LT,ASM)
+//SYSUT1   DD DSN=&INDEX..SDFHMAC(DFHEILIA),DISP=SHR
+//SYSUT2   DD DSN=&&COPYLINK,DISP=(NEW,PASS),
+//         DCB=(LRECL=80,BLKSIZE=400,RECFM=FB),
+//         UNIT=&WORK,SPACE=(400,(20,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DUMMY
+//*--------------------------------------------------------------------
+//LKED     EXEC PGM=IEWL,REGION=&REG,
+//         PARM=&LNKPARM,COND=(7,LT,ASM)
+//SYSLIB   DD DSN=&INDEX2..SDFHLOAD,DISP=SHR
+//         DD DSN=&INDEX2..SDFHLPA,DISP=SHR
+//         DD DSN=TCPIP.SEZATCP,DISP=SHR
+//SYSLMOD  DD DSN=&INDEX2..PROD.SYSLIB,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,DCB=BLKSIZE=1024,
+//         SPACE=(1024,(200,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSLIN   DD DSN=&&COPYLINK,DISP=(OLD,PASS)
+//         DD DSN=&&LOADSET,DISP=(OLD,PASS)
+//         DD DDNAME=SYSIN
+//         PEND
+//*--------------------------------------------------------------------
+//EITAL    EXEC DFHEITAL
+//TRN.SYSIN  DD DISP=SHR,DSN=CICSIE.TS51.PTABLES(IET121N)
+//LKED.SYSIN DD *
+  INCLUDE SYSLIB(EZACICAL)
+  ENTRY IET121
+  NAME IET121N(R)
+

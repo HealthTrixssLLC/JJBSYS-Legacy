@@ -1,0 +1,1250 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP,CPSM)
+IEP003   TITLE '**  CICS/TS TERMINAL MONITOR PROGRAM **'
+*---------------------------------------------------------------------*
+*        REGISTER AND OTHER EQUATES                                   *
+*---------------------------------------------------------------------*
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*---------------------------------------------------------------------*
+*  IEP003   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*---------------------------------------------------------------------*
+IEP003   RSECT ,                        Reentrant CSECT
+IEP003   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEP003   RMODE ANY                      MAY RESIDE ABOVE 16M
+         SYSSTATE AMODE64=NO            SET AMODE=31
+IEP003   DFHEIENT STATIC=LITPOOL,                                      *
+               DATAREG=(13),                                           *
+               EIBREG=(10),                                            *
+               STATREG=(RC,RB)
+         MVC   EISEYE,=CL16'IEP003 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+*---------------------------------------------------------------------*
+*        CHECK TASK TYPE                                              *
+*---------------------------------------------------------------------*
+INT01    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               SYSTEM,                                                 *
+               JOBNAME(SCOPE)
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               FCI(TASKTYPE),                                          *
+               SYSID(SYSID)
+*---------------------------------------------------------------------*
+*        HANDLE ALL ABENDS                                            *
+*---------------------------------------------------------------------*
+*        EXEC  CICS,
+*              HANDLE,
+*              ABEND,
+*              LABEL(INT90),  <== NOT AMODE=64 SUPPORTED
+*              RESP(RESP),
+*              RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        START SCAN FOR INTRA TD QUEUES                               *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TDQUEUE,                                                *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN12
+*---------------------------------------------------------------------*
+*        LOCATE NEXT INTRA TD QUEUE                                   *
+*---------------------------------------------------------------------*
+INT01A   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TDQUEUE(TDQUEUE),                                       *
+               ENABLESTATUS(ENABLST),                                  *
+               NUMITEMS(NUMITEMS),                                     *
+               TRIGGERLEVEL(TRIGGER),                                  *
+               TYPE(QUETYP),                                           *
+               NEXT,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(END)
+         JE    INT01B
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN13
+*---------------------------------------------------------------------*
+*        CHECK QUEUE TYPE, STATUS, AND COUNT                          *
+*---------------------------------------------------------------------*
+         CLC   QUETYP,DFHVALUE(INTRA)
+         JNE   INT01A
+         CLC   ENABLST,DFHVALUE(ENABLED)
+         JNE   INT01A
+         CLC   NUMITEMS,TRIGGER
+         JL    INT01A
+*---------------------------------------------------------------------*
+*        SET TERMINAL IN-SERVICE                                      *
+*---------------------------------------------------------------------*
+         MVC   SERVST,DFHVALUE(INSERVICE)
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TERMINAL(TDQUEUE),                                      *
+               COLDACQ,                                                *
+               SERVSTATUS(SERVST),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     INT01A
+*---------------------------------------------------------------------*
+*        END SCAN OF INTRA TD QUEUES                                  *
+*---------------------------------------------------------------------*
+INT01B   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TDQUEUE,                                                *
+               END,                                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN14
+*---------------------------------------------------------------------*
+*        START SCAN FOR DISABLED PROGRAMS                             *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               PROGRAM,                                                *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   INT01D
+*---------------------------------------------------------------------*
+*        LOCATE NEXT PROGRAM                                          *
+*---------------------------------------------------------------------*
+INT01C   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               PROGRAM(PGMNAME),                                       *
+               STATUS(ENABLST),                                        *
+               NEXT,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   INT01D
+*---------------------------------------------------------------------*
+*        BYPASS EXCLUDED PROGRAMS                                     *
+*---------------------------------------------------------------------*
+         CLC   =C'DFH',PGMNAME
+         JE    INT01C
+         CLC   =C'GTA',PGMNAME
+         JE    INT01C
+         CLC   =C'GWA',PGMNAME
+         JE    INT01C
+         CLC   =C'IEP',PGMNAME
+         JE    INT01C
+*---------------------------------------------------------------------*
+*        CHECK PROGRAM STATUS                                         *
+*---------------------------------------------------------------------*
+         CLC   ENABLST,DFHVALUE(ENABLED)
+         JE    INT01C
+*---------------------------------------------------------------------*
+*        SET PROGRAM ENABLED                                          *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               PROGRAM(PGMNAME),                                       *
+               ENABLED,                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         MVI   MSGBUF,C' '
+         MVC   MSGBUF+1(L'MSGBUF-1),MSGBUF
+         MVC   MSGBUF(L'MSG11),MSG11
+         EXEC  CICS,                                                   *
+               ASKTIME,                                                *
+               ABSTIME(DBLWORK),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LA    R2,MSGBUF+(MSG11PGM-MSG11)
+         MVC   0(L'PGMNAME,R2),PGMNAME
+         LA    R2,MSGBUF+(MSG11TIM-MSG11)
+         EXEC  CICS,                                                   *
+               FORMATTIME,                                             *
+               ABSTIME(DBLWORK),                                       *
+               TIME(0(,R2)),                                           *
+               TIMESEP(':'),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LA    R2,L'MSGBUF
+         STH   R2,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSML'),                                        *
+               FROM(MSGBUF),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     INT01C
+*---------------------------------------------------------------------*
+*        END SCAN OF PROGRAMS                                         *
+*---------------------------------------------------------------------*
+INT01D   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               PROGRAM,                                                *
+               END,                                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN14
+*---------------------------------------------------------------------*
+*        START SCAN FOR OUT-OF-SERVICE TERMINALS                      *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL,                                               *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN02
+*---------------------------------------------------------------------*
+*        LOCATE NEXT TERMINAL                                         *
+*---------------------------------------------------------------------*
+INT02    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL(TERMID),                                       *
+               ATISTATUS(ATIST),                                       *
+               DEVICE(DEVTYP),                                         *
+               SERVSTATUS(SERVST),                                     *
+               NEXT,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(END)
+         JE    INT03
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN03
+*---------------------------------------------------------------------*
+*        CHECK TERMINAL DEVICE TYPE FOR 3270                          *
+*---------------------------------------------------------------------*
+         CLC   DEVTYP,DFHVALUE(T3790SCSP)
+         JE    INT02A
+         CLC   DEVTYP,DFHVALUE(T3277R)
+         JL    INT02
+         CLC   DEVTYP,DFHVALUE(T3286R)
+         JH    INT02
+INT02A   DS    0H
+*---------------------------------------------------------------------*
+*        CHECK TERMINAL STATUS                                        *
+*---------------------------------------------------------------------*
+         CLC   SERVST,DFHVALUE(OUTSERVICE)
+         JE    INT02B
+         CLC   ATIST,DFHVALUE(NOATI)
+         JNE   INT02
+INT02B   DS    0H
+*---------------------------------------------------------------------*
+*        SET TERMINAL IN-SERVICE                                      *
+*---------------------------------------------------------------------*
+         MVC   SERVST,DFHVALUE(INSERVICE)
+         MVC   ATIST,DFHVALUE(ATI)
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TERMINAL(TERMID),                                       *
+               ATISTATUS(ATIST),                                       *
+               COLDACQ,                                                *
+               SERVSTATUS(SERVST),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     INT02
+*---------------------------------------------------------------------*
+*        END SCAN FOR OUT-OF-SERVICE TERMINALS                        *
+*---------------------------------------------------------------------*
+INT03    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL,                                               *
+               END,                                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN04
+*---------------------------------------------------------------------*
+*        UNLOCK TERMINAL KEYBOARD                                     *
+*---------------------------------------------------------------------*
+         CLI   TASKTYPE,TERMINAL
+         JNE   INT04
+         EXEC  CICS,                                                   *
+               SEND,                                                   *
+               CONTROL,                                                *
+               ERASE,                                                  *
+               FREEKB,                                                 *
+               ALARM,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN01
+INT04    DS    0H
+*---------------------------------------------------------------------*
+*        SET AUTOINSTALL TERMINAL DELETE                              *
+*---------------------------------------------------------------------*
+         LA    R3,=P'010000'            SET IDLE DELETE 1 HR
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               DELETSHIPPED,                                           *
+               IDLE(0(R3)),                                            *
+               INTERVAL(001500),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        TURN TRACE ON/OFF                                            *
+*---------------------------------------------------------------------*
+*        CLC   SYSID,=C'TST9'
+*        JNE   INT10
+         EXEC  CICS,                                                   *
+               ASKTIME
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               SET(R9),                                                *
+               FLENGTH(=A(TRCLN)),                                     *
+               INITIMG(=AL1(0))
+         USING TRACELVL,R9
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TRACETYPE,                                              *
+               STANDARD,                                               *
+               DS(DSLVL)
+         CP    EIBTIME,=PL4'170000'
+         JL    INT06
+         CP    EIBTIME,=PL4'070000'
+         JH    INT06
+         CLC   DSLVL,=4X'FF'
+         JE    INT10
+         MVC   DSLVL,=4X'FF'
+         MVI   EILVL,X'C0'
+         MVI   TSLVL,X'80'
+         MVI   UELVL,X'80'
+         MVI   SMLVL,X'80'
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TRACEFLAG,                                              *
+               SYSTEMOFF
+         J     INT07
+INT06    DS    0H
+         CLC   DSLVL,=X'FFFFFFFE'
+         JE    INT10
+         MVC   APLVL,=X'80000000'
+         MVC   BALVL(TRCLN-L'APLVL),APLVL
+         MVC   DSLVL,=X'FFFFFFFE'
+         MVI   EILVL,X'C0'
+         MVI   SOLVL,X'C0'
+         MVI   WBLVL,X'C0'
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TRACEFLAG,                                              *
+               SYSTEMON
+INT07    DS    0H
+         EXEC  CICS,SET,TRACETYPE,STANDARD,AP(APLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,BA(BALVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,BM(BMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,BR(BRLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,CP(CPLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DC(DCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DD(DDLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DH(DHLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DM(DMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DP(DPLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DS(DSLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,DU(DULVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,EC(ECLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,EI(EILVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,EJ(EJLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,EM(EMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,EP(EPLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,FC(FCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,GC(GCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,IC(ICLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,IE(IELVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,IS(ISLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,KC(KCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,KE(KELVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,LC(LCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,LD(LDLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,LG(LGLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,LM(LMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,ME(MELVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,ML(MLLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,MN(MNLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,MP(MPLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,NQ(NQLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,OT(OTLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,PA(PALVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,PC(PCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,PG(PGLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,PI(PILVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,PT(PTLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RA(RALVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RI(RILVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RL(RLLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RM(RMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RS(RSLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RX(RXLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,RZ(RZLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SC(SCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SH(SHLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SJ(SJLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SM(SMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SO(SOLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,ST(STLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,SZ(SZLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,TC(TCLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,TD(TDLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,TI(TILVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,TR(TRLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,TS(TSLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,UE(UELVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,US(USLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,WB(WBLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,WU(WULVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,W2(W2LVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,XM(XMLVL)
+         EXEC  CICS,SET,TRACETYPE,STANDARD,XS(XSLVL)
+         DROP  R9
+INT10    DS    0H
+*---------------------------------------------------------------------*
+*        INITIALIZE CICSPRD5 READ ONLY FILES:                         *
+*          DLRPRCAI (DLRPRIC)                                         *
+*          ITMMSTAI (ITMMSTR) (READ AND UPDATE)                       *
+*          PPKDISAI (PPKDIS)                                          *
+*          ITMPKGAI (ITMPKG)                                          *
+*          DLPKGAI  (DLRPKG)                                          *
+*          VTSDCSAI (VTSDCS)                                          *
+*        INITIALIZE CICSPRD6 UPS LOG PROGRAM                          *
+*---------------------------------------------------------------------*
+         CLC   SYSID,=C'PRD5'
+         JNE   INT26
+*---------------------------------------------------------------------*
+*        TEST PRD0 MRO CONNECTION                                     *
+*---------------------------------------------------------------------*
+         LA    R1,L'P003TEST
+         STH   R1,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               QUEUE(P003TEST),                                        *
+               FROM(P003TEST),                                         *
+               LENGTH(HLFWORK),                                        *
+               MAIN,                                                   *
+               SYSID(=C'PRD0'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   INT19
+*---------------------------------------------------------------------*
+*        DISCARD *AI FILES                                            *
+*---------------------------------------------------------------------*
+         LA    R2,=CL8'DLRPRCAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT11
+         LA    R2,=CL8'DLRPRCAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'DLRPRCAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'DLRPRIC'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT11
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT11
+         LA    R2,=CL8'DLRPRIC'
+         JAS   R8,FEN00
+INT11    DS    0H
+         LA    R2,=CL8'PPKDISAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT12
+         LA    R2,=CL8'PPKDISAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'PPKDISAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'PPKDIS'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT12
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT12
+         LA    R2,=CL8'PPKDIS'
+         JAS   R8,FEN00
+INT12    DS    0H
+         LA    R2,=CL8'ITMMSTAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT14
+         LA    R2,=CL8'ITMMSTAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'ITMMSTAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'ITMMSTR'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT14
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT14
+         LA    R2,=CL8'ITMMSTR'
+         JAS   R8,FEN00
+INT14    DS    0H
+         LA    R2,=CL8'ITMPKGAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT15
+         LA    R2,=CL8'ITMPKGAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'ITMPKGAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'ITMPKG'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT15
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT15
+         LA    R2,=CL8'ITMPKG'
+         JAS   R8,FEN00
+INT15    DS    0H
+         LA    R2,=CL8'DLPKGAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT16
+         LA    R2,=CL8'DLPKGAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'DLPKGAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'DLRPKG'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT16
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT16
+         LA    R2,=CL8'DLRPKG'
+         JAS   R8,FEN00
+INT16    DS    0H
+         LA    R2,=CL8'VTSDCSAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT17
+         LA    R2,=CL8'VTSDCSAI'
+         JAS   R8,FCD00
+         LA    R2,=CL8'VTSDCSAI'
+         JAS   R8,FDD00
+         LA    R2,=CL8'VTSDCS'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(FILENOTFOUND)
+         JE    INT17
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT17
+         LA    R2,=CL8'VTSDCS'
+         JAS   R8,FEN00
+INT17    DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(P003TEST),                                        *
+               SYSID(=C'PRD0'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     INT26                    ..CONTINUE
+*---------------------------------------------------------------------*
+*        CREATE READ ONLY FILES WHILST PRD0 IS DOWN                   *
+*          DLRPRCAI (DLRPRIC)                                         *
+*          ITMMSTAI (ITMMSTR) (READ AND UPDATE)                       *
+*          PPKDISAI (PPKDIS)                                          *
+*          ITMPKGAI (ITMPKG)                                          *
+*          DLPKGAI  (DLRPKG)                                          *
+*          VTSDCSAI (VTSDCS)                                          *
+*---------------------------------------------------------------------*
+INT19    DS    0H
+         LA    R2,=CL8'DLRPRCAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT20
+         LA    R2,=CL8'DLRPRCAI'
+         LA    R3,DLRPRCAI
+         LA    R4,DLRPRCAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'DLRPRIC'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT20
+         LA    R2,=CL8'DLRPRIC'
+         JAS   R8,FCD00
+INT20    DS    0H
+         LA    R2,=CL8'PPKDISAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT21
+         LA    R2,=CL8'PPKDISAI'
+         LA    R3,PPKDISAI
+         LA    R4,PPKDISAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'PPKDIS'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT21
+         LA    R2,=CL8'PPKDIS'
+         JAS   R8,FCD00
+INT21    DS    0H
+         LA    R2,=CL8'ITMMSTAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT23
+         LA    R2,=CL8'ITMMSTAI'
+         LA    R3,ITMMSTAI
+         LA    R4,ITMMSTAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'ITMMSTR'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT23
+         LA    R2,=CL8'ITMMSTR'
+         JAS   R8,FCD00
+INT23    DS    0H
+         LA    R2,=CL8'ITMPKGAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT24
+         LA    R2,=CL8'ITMPKGAI'
+         LA    R3,ITMPKGAI
+         LA    R4,ITMPKGAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'ITMPKG'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT24
+         LA    R2,=CL8'ITMPKG'
+         JAS   R8,FCD00
+INT24    DS    0H
+         LA    R2,=CL8'DLPKGAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT25
+         LA    R2,=CL8'DLPKGAI'
+         LA    R3,DLPKGAI
+         LA    R4,DLPKGAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'DLRPKG'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT25
+         LA    R2,=CL8'DLRPKG'
+         JAS   R8,FCD00
+INT25    DS    0H
+         LA    R2,=CL8'VTSDCSAI'
+         JAS   R8,FNQ00
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT26
+         LA    R2,=CL8'VTSDCSAI'
+         LA    R3,VTSDCSAI
+         LA    R4,VTSDCSAL
+         JAS   R8,FCR00
+         LA    R2,=CL8'VTSDCS'
+         JAS   R8,FNQ00
+         CLC   FULWORK,DFHVALUE(VSAM)
+         JNE   INT26
+         LA    R2,=CL8'VTSDCS'
+         JAS   R8,FCD00
+INT26    DS    0H
+*---------------------------------------------------------------------*
+*        Check GLUE GAA FOR O462 Start interval                       *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               EXTRACT,                                                *
+               EXIT,                                                   *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               GASET(R3),                                              *
+               GALENGTH(HLFWORK),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   INT29
+         USING USRXITGA,R3
+         OC    DDUO462I,DDUO462I
+         JZ    INT29
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(DDUO462I),                                     *
+               TRANSID(=C'O462'),                                      *
+               REQID('$IEO462$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         XC    DDUO462I,DDUO462I
+INT29    DS    0H
+*---------------------------------------------------------------------*
+*        Check TRUE CICSPlex/SM Active                                *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               EXITPROGRAM('EYU9XLAP'),                                *
+               CONNECTST(FULWORK),                                     *
+               QUALIFIER(CONTEXT),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   INT40
+         CLC   FULWORK,DFHVALUE(CONNECTED)
+         JNE   INT40
+*---------------------------------------------------------------------*
+*        Connect a CICSPlex/SM Thread                                 *
+*---------------------------------------------------------------------*
+         EXEC  CPSM,                                                   *
+               CONNECT,                                                *
+               VERSION('0510'),                                        *
+               THREAD(THREAD),                                         *
+               RESPONSE(EYURESP),                                      *
+               REASON(EYUREAS)
+         CLC   EYURESP,EYUVALUE(OK)
+         JNE   ABN15
+*---------------------------------------------------------------------*
+*        GET CICSPlex/SM TASK Result Set                              *
+*---------------------------------------------------------------------*
+         EXEC  CPSM,                                                   *
+               GET,                                                    *
+               OBJECT('TASK'),                                         *
+               CONTEXT(CONTEXT),                                       *
+               SCOPE(SCOPE),                                           *
+               CRITERIA(TSKFILTR),                                     *
+               LENGTH(=A(L'TSKFILTR)),                                 *
+               RESULT(RESULT),                                         *
+               THREAD(THREAD),                                         *
+               RESPONSE(EYURESP),                                      *
+               REASON(EYUREAS)
+         CLC   EYURESP,EYUVALUE(OK)
+         JE    INT30
+         CLC   EYURESP,EYUVALUE(NODATA)
+         JE    INT35
+         J     ABN17
+*---------------------------------------------------------------------*
+*        FETCH CICSPlex/SM TASK Result Set                            *
+*---------------------------------------------------------------------*
+INT30    DS    0H
+         MVC   FULWORK,=A(TASK_TBL_LEN)
+         EXEC  CPSM,                                                   *
+               FETCH,                                                  *
+               DATA,                                                   *
+               INTO(BUFFER),                                           *
+               LENGTH(FULWORK),                                        *
+               RESULT(RESULT),                                         *
+               THREAD(THREAD),                                         *
+               RESPONSE(EYURESP),                                      *
+               REASON(EYUREAS)
+         CLC   EYURESP,EYUVALUE(OK)
+         JE    INT32
+         CLC   EYURESP,EYUVALUE(NODATA)
+         JE    INT35
+         J     ABN18
+INT32    DS    0H
+         LA    R3,BUFFER
+         USING TASK,R3
+*---------------------------------------------------------------------*
+*        SAVE CICSPlex/SM TASK Result Set in TS Queue                 *
+*---------------------------------------------------------------------*
+         MVC   DBLWORK,=C'CPSMTASK'
+         MVC   FULWORK,=A(TASK_TBL_LEN)
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               QUEUE(DBLWORK),                                         *
+               FROM(0(R3)),                                            *
+               LENGTH(FUlWORK+2),                                      *
+               MAIN
+         J     INT30
+INT35    DS    0H
+*---------------------------------------------------------------------*
+*        Disconnect a CICSPlex/SM Thread                              *
+*---------------------------------------------------------------------*
+         EXEC  CPSM,                                                   *
+               DISCONNECT,                                             *
+               THREAD(THREAD),                                         *
+               RESPONSE(EYURESP),                                      *
+               REASON(EYUREAS)
+         CLC   EYURESP,EYUVALUE(OK)
+         JNE   ABN16
+INT40    DS    0H
+*---------------------------------------------------------------------*
+*        SCHEDULE NEXT INTERVAL TO INITIATE THE SCAN                  *
+*---------------------------------------------------------------------*
+INT90    DS    0H
+         EXEC  CICS,                                                   *
+               CANCEL,                                                 *
+               REQID('$IEP003$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    INT90
+         ZAP   FULWORK,=P'100'
+         CLC   SYSID,=C'PRD5'
+         JNE   INT95
+         ZAP   FULWORK,=P'005'
+INT95    DS    0H
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(FULWORK),                                      *
+               TRANSID(EIBTRNID),                                      *
+               REQID('$IEP003$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN06
+         J     XIT01
+*---------------------------------------------------------------------*
+*        FILE INQUIRE ROUTINE                                         *
+*---------------------------------------------------------------------*
+FNQ00    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               FILE(0(R2)),                                            *
+               ACCESSMETHOD(FULWORK),                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*---------------------------------------------------------------------*
+*        FILE CLOSE/DISABLE                                           *
+*---------------------------------------------------------------------*
+FCD00    DS    0H
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               FILE(0(R2)),                                            *
+               CLOSED,                                                 *
+               DISABLED,                                               *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*---------------------------------------------------------------------*
+*        FILE ENABLE                                                  *
+*---------------------------------------------------------------------*
+FEN00    DS    0H
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               FILE(0(R2)),                                            *
+               ENABLED,                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*---------------------------------------------------------------------*
+*        FILE CREATE                                                  *
+*---------------------------------------------------------------------*
+FCR00    DS    0H
+         EXEC  CICS,                                                   *
+               CREATE,                                                 *
+               FILE(0(R2)),                                            *
+               ATTRIBUTES(0(R3)),                                      *
+               ATTRLEN(0(R4)),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*---------------------------------------------------------------------*
+*        FILE DISCARD                                                 *
+*---------------------------------------------------------------------*
+FDD00    DS    0H
+         EXEC  CICS,                                                   *
+               DISCARD,                                                *
+               FILE(0(R2)),                                            *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*---------------------------------------------------------------------*
+*        ABNORMAL TERMINATION                                         *
+*---------------------------------------------------------------------*
+ABN01    DS    0H
+         LA    R2,MSG01
+         LA    R3,L'MSG01
+         ICM   R4,B'1111',ABC01
+         J     ABN99
+ABN02    DS    0H
+         LA    R2,MSG02
+         LA    R3,L'MSG02
+         ICM   R4,B'1111',ABC02
+         J     ABN99
+ABN03    DS    0H
+         LA    R2,MSG03
+         LA    R3,L'MSG03
+         ICM   R4,B'1111',ABC03
+         J     ABN99
+ABN04    DS    0H
+         LA    R2,MSG04
+         LA    R3,L'MSG04
+         ICM   R4,B'1111',ABC04
+         J     ABN99
+ABN06    DS    0H
+         LA    R2,MSG06
+         LA    R3,L'MSG06
+         ICM   R4,B'1111',ABC06
+         J     ABN99
+ABN07    DS    0H
+         LA    R2,MSG07
+         LA    R3,L'MSG07
+         ICM   R4,B'1111',ABC07
+         J     ABN99
+ABN12    DS    0H
+         LA    R2,MSG12
+         LA    R3,L'MSG12
+         ICM   R4,B'1111',ABC12
+         J     ABN99
+ABN13    DS    0H
+         LA    R2,MSG13
+         LA    R3,L'MSG13
+         ICM   R4,B'1111',ABC13
+         J     ABN99
+ABN14    DS    0H
+         LA    R2,MSG14
+         LA    R3,L'MSG14
+         ICM   R4,B'1111',ABC14
+         J     ABN99
+ABN15    DS    0H
+         LA    R2,MSG15
+         LA    R3,L'MSG15
+         ICM   R4,B'1111',ABC15
+         J     ABN99
+ABN16    DS    0H
+         LA    R2,MSG16
+         LA    R3,L'MSG16
+         ICM   R4,B'1111',ABC16
+         J     ABN99
+ABN17    DS    0H
+         LA    R2,MSG17
+         LA    R3,L'MSG17
+         ICM   R4,B'1111',ABC17
+         J     ABN99
+ABN18    DS    0H
+         LA    R2,MSG18
+         LA    R3,L'MSG18
+         ICM   R4,B'1111',ABC18
+         J     ABN99
+ABN99    DS    0H
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSML'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         ST    R4,FULWORK
+         EXEC  CICS,                                                   *
+               ABEND,                                                  *
+               ABCODE(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        RETURN TO CICS                                               *
+*---------------------------------------------------------------------*
+XIT01    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*---------------------------------------------------------------------*
+*        CONSTANTS                                                    *
+*---------------------------------------------------------------------*
+*
+LITPOOL  DS    0F
+         LTORG
+*
+P003TEST DC    C'P003TEST'
+*
+MSG01    DC    C'IEP003001  Error resetting the terminal keyboard, Aben*
+               d P3KB initiated.'
+ABC01    EQU   *-15
+MSG02    DC    C'IEP003002  Error starting the terminal scan browse, Ab*
+               end P3SB initiated.'
+ABC02    EQU   *-15
+MSG03    DC    C'IEP003003  Error during the terminal scan browse, Aben*
+               d P3TB initiated.'
+ABC03    EQU   *-15
+MSG04    DC    C'IEP003004  Error ending the terminal scan browse, Aben*
+               d P3EB initiated.'
+ABC04    EQU   *-15
+MSG06    DC    C'IEP003006  Error scheduling interval initiate, Abend P*
+               3IC initiated.'
+ABC06    EQU   *-15
+MSG07    DC    C'IEP003007  Error during trace flags update, Abend P3TR*
+                initiated.'
+ABC07    EQU   *-15
+MSG11    DC    C'IEP003011  HH:MM:SS  Disabled program XXXXXXXX has bee*
+               n enabled.'
+MSG11TIM EQU   MSG11+11
+MSG11PGM EQU   MSG11+38
+MSG12    DC    C'IEP003012  Error starting the TD queue scan browse, Ab*
+               end P3SB initiated.'
+ABC12    EQU   *-15
+MSG13    DC    C'IEP003013  Error during the TD queue scan browse, Aben*
+               d P3TB initiated.'
+ABC13    EQU   *-15
+MSG14    DC    C'IEP003014  Error ending the TD queue scan browse, Aben*
+               d P3EB initiated.'
+ABC14    EQU   *-15
+MSG15    DC    C'IEP003015  CICSPlex/SM CONNECT Error, Abend P3CO initi*
+               ated.'
+ABC15    EQU   *-15
+MSG16    DC    C'IEP003016  CICSPlex/SM DISCONNECT Error, Abend P3DC in*
+               itiated.'
+ABC16    EQU   *-15
+MSG17    DC    C'IEP003017  CICSPlex/SM GET Error, Abend P3GT initiated*
+               .'
+ABC17    EQU   *-15
+MSG18    DC    C'IEP003018  CICSPlex/SM FETCH Error, Abend P3FT initiat*
+               ed.'
+ABC18    EQU   *-15
+*
+DLPKGAI  DC    C'DSNAME(PEAI.DEALER.PACKAGE) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(NO) '
+         DC    C'RECOVERY(NONE) '
+DLPKGAE  EQU   *
+DLPKGAL  DC    AL2(DLPKGAE-DLPKGAI)
+*
+DLRPRCAI DC    C'DSNAME(PEAI.DEALER.PRICING.$IAM) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(NO) '
+         DC    C'RECOVERY(NONE) '
+DLRPRCAE EQU   *
+DLRPRCAL DC    AL2(DLRPRCAE-DLRPRCAI)
+*
+ITMPKGAI DC    C'DSNAME(PEAI.ITEM.PACKAGE) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(NO) '
+         DC    C'RECOVERY(NONE) '
+ITMPKGAE EQU   *
+ITMPKGAL DC    AL2(ITMPKGAE-ITMPKGAI)
+*
+ITMMSTAI DC    C'DSNAME(PEAI.ITEM.MASTER.$IAM) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(YES) '
+         DC    C'RECOVERY(NONE) '
+ITMMSTAE EQU   *
+ITMMSTAL DC    AL2(ITMMSTAE-ITMMSTAI)
+*
+PPKDISAI DC    C'DSNAME(PEAI.PREPACK.DISASSEM) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(NO) '
+         DC    C'RECOVERY(NONE) '
+PPKDISAE EQU   *
+PPKDISAL DC    AL2(PPKDISAE-PPKDISAI)
+*
+VTSDCSAI DC    C'DSNAME(PEAI.STAX.VTSDCS) '
+         DC    C'LSRPOOLID(NONE) '
+         DC    C'STRINGS(3) '
+         DC    C'STATUS(ENABLED) '
+         DC    C'OPENTIME(FIRSTREF) '
+         DC    C'DISPOSITION(SHARE) '
+         DC    C'DATABUFFERS(4) '
+         DC    C'INDEXBUFFERS(3) '
+         DC    C'RECORDFORMAT(F) '
+         DC    C'ADD(NO) '
+         DC    C'BROWSE(YES) '
+         DC    C'DELETE(NO) '
+         DC    C'READ(YES) '
+         DC    C'UPDATE(NO) '
+         DC    C'RECOVERY(NONE) '
+VTSDCSAE EQU   *
+VTSDCSAL DC    AL2(VTSDCSAE-VTSDCSAI)
+*
+TSKFILTR DC    C'(DISPTIME>00:01:00 OR SUSPTIME>00:12:00) AND NOT (TRAN*
+               ID=C* OR TRANID=TM* OR TRANID=AAON OR TRANID=XP* OR TRAN*
+               ID=SYSI OR TRANID=XSKL OR TRANID=GTRV).'
+*
+*---------------------------------------------------------------------*
+*        DSECTS                                                       *
+*---------------------------------------------------------------------*
+*
+TRACELVL DSECT
+TRCLVL   DS    0AL4
+APLVL    DS    AL4(0)
+BALVL    DS    AL4(0)
+BMLVL    DS    AL4(0)
+BRLVL    DS    AL4(0)
+CPLVL    DS    AL4(0)
+DCLVL    DS    AL4(0)
+DDLVL    DS    AL4(0)
+DHLVL    DS    AL4(0)
+DMLVL    DS    AL4(0)
+DPLVL    DS    AL4(0)
+DSLVL    DS    AL4(0)
+DULVL    DS    AL4(0)
+ECLVL    DS    AL4(0)
+EILVL    DS    AL4(0)
+EJLVL    DS    AL4(0)
+EMLVL    DS    AL4(0)
+EPLVL    DS    AL4(0)
+FCLVL    DS    AL4(0)
+GCLVL    DS    AL4(0)
+ICLVL    DS    AL4(0)
+IELVL    DS    AL4(0)
+ISLVL    DS    AL4(0)
+KCLVL    DS    AL4(0)
+KELVL    DS    AL4(0)
+LCLVL    DS    AL4(0)
+LDLVL    DS    AL4(0)
+LGLVL    DS    AL4(0)
+LMLVL    DS    AL4(0)
+MELVL    DS    AL4(0)
+MLLVL    DS    AL4(0)
+MNLVL    DS    AL4(0)
+MPLVL    DS    AL4(0)
+NQLVL    DS    AL4(0)
+OTLVL    DS    AL4(0)
+PALVL    DS    AL4(0)
+PCLVL    DS    AL4(0)
+PGLVL    DS    AL4(0)
+PILVL    DS    AL4(0)
+PTLVL    DS    AL4(0)
+RILVL    DS    AL4(0)
+RALVL    DS    AL4(0)
+RLLVL    DS    AL4(0)
+RMLVL    DS    AL4(0)
+RSLVL    DS    AL4(0)
+RXLVL    DS    AL4(0)
+RZLVL    DS    AL4(0)
+SCLVL    DS    AL4(0)
+SHLVL    DS    AL4(0)
+SJLVL    DS    AL4(0)
+SMLVL    DS    AL4(0)
+SOLVL    DS    AL4(0)
+STLVL    DS    AL4(0)
+SZLVL    DS    AL4(0)
+TCLVL    DS    AL4(0)
+TDLVL    DS    AL4(0)
+TILVL    DS    AL4(0)
+TRLVL    DS    AL4(0)
+TSLVL    DS    AL4(0)
+UELVL    DS    AL4(0)
+USLVL    DS    AL4(0)
+WBLVL    DS    AL4(0)
+WULVL    DS    AL4(0)
+W2LVL    DS    AL4(0)
+XMLVL    DS    AL4(0)
+XSLVL    DS    AL4(0)
+TRCLN    EQU   *-TRCLVL
+TRCNT    EQU   (*-TRCLVL)/L'TRCLVL
+*
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+EYURESP  DS    F                        CPSM COMMAND RESPONSE
+EYUREAS  DS    F                        CPSM COMMAND RESPONSE
+SYSID    DS    CL4                      SYSTEM ID
+TRACE    DS    F                        TRACE FLAGS STATUS
+TERMID   DS    CL4                      TERMINAL ID
+TDQUEUE  DS    CL4                      TD QUEUE ID
+PGMNAME  DS    CL8                      PROGRAM ID
+ATIST    DS    F                        AUTO TERMINAL INITIATE STATUS
+SERVST   DS    F                        TERMINAL STATUS
+DEVTYP   DS    F                        TERMINAL DEVICE TYPE
+QUETYP   DS    F                        TD QUEUE TYPE
+ENABLST  DS    F                        TD QUEUE ENABLE STATUS
+NUMITEMS DS    F                        TD QUEUE QUEUE COUNT
+TRIGGER  DS    F                        TD QUEUE TRIGGER LEVEL
+THREAD   DS    F                        CPSM THREAD TOKEN
+RESULT   DS    F                        CPSM RESULT SET TOKEN
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+HLFWORK  DS    H                        HALF WORD WORK
+CONTEXT  DS    CL8                      CICSPLEX CONTEXT
+SCOPE    DS    CL8                      CICSPLEX SCOPE
+TASKTYPE DS    X                        TASK FACILITY TYPE
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY
+MSGBUF   DS    CL80                     MESSAGE BUFFER
+BUFFER   DS    CL(TASK_TBL_LEN)         CPSM RESULT SET RECORD BUFFER
+*---------------------------------------------------------------------*
+USRXITGA DSECT ,                        USER EXIT GAA DSECT
+DPESYSID DS    CL4                      SYSID
+DPESUFIX DS    CL2                      DLI PSB SUFFIX CHARACTER
+         DS    XL2                      ..FILLER
+DTSQTABL DS    A                        @ CEBR TS QUEUE NAME TABLE
+DDUO462I DS    PL4                      NEXT INTERVAL TO START O462
+USRXITLN EQU   *-USRXITGA               GLOBAL AREA LENGTH
+*---------------------------------------------------------------------*
+         COPY  TASK                     CPSM TASK RESOUCE TABLE
+*---------------------------------------------------------------------*
+         DFHEIEND
+         END
+

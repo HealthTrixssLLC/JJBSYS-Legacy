@@ -1,0 +1,703 @@
+IEB502   TITLE '**  EXCI CALLABLE CLIENT TRACE ROUTINE **'              00010002
+*********************************************************************** 00020002
+*                                                                     * 00030002
+* MODULE NAME = IEB502                                                * 00040002
+*                                                                     * 00050002
+* DESCRIPTIVE NAME = ASSEMBLER EXCI CALLABLE CLIENT TRACE             * 00060002
+*                                                                     * 00070002
+* ENTRY POINT = IEB502                                                * 00080002
+*                                                                     * 00090002
+* DESCRIPTION:  PROVIDE BATCH PROGRAMS A TRACE FACILITY WHEN          * 00100002
+*               EXECUTING THE CICS EXCI CALLABLE CLIENT.              * 00110002
+*                                                                     * 00120002
+*                                                                     * 00130002
+*                                                                     * 00140002
+*********************************************************************** 00150002
+IEB502   CSECT                                                          00160002
+*---------------------------------------------------------------------- 00170002
+*-  MODES AND EQUATES                                                   00180002
+*---------------------------------------------------------------------- 00190002
+         ENTRY IEB502                                                   00200002
+IEB502   AMODE 31                                                       00210002
+IEB502   RMODE 24                                                       00220002
+R0       EQU   0                                                        00230002
+R1       EQU   1                                                        00240002
+R2       EQU   2                                                        00250002
+R3       EQU   3                                                        00260002
+R4       EQU   4                                                        00270002
+R5       EQU   5                                                        00280002
+R6       EQU   6                                                        00290002
+R7       EQU   7                                                        00300002
+R8       EQU   8                                                        00310002
+R9       EQU   9                                                        00320002
+RA       EQU   10                                                       00330002
+RB       EQU   11                                                       00340002
+RC       EQU   12                                                       00350002
+RD       EQU   13                                                       00360002
+RE       EQU   14                                                       00370002
+RF       EQU   15                                                       00380002
+*---------------------------------------------------------------------- 00390002
+*-  ENTRY                                                               00400002
+*---------------------------------------------------------------------- 00410002
+         BAKR  RE,R0                    SAVE CALLERS REGS               00420002
+         LAE   RC,0(RF,0)               LOAD BASE                       00430002
+         USING IEB502,RC                                                00440002
+         LR    RB,R1                    SAVE PARM @                     00450002
+         USING PARMS,RB                                                 00460002
+         STORAGE OBTAIN,                                               *00470002
+               LENGTH=72,                                              *00480002
+               RELATED=GETM01                                           00490002
+         LAE   RD,0(R1,0)               LOAD SAVE AREA @                00500002
+         MVC   4(4,RD),=C'F1SA'         SET EYE CATCHER                 00510002
+         B     INT00                                                    00520002
+         DC    CL8'IEB502'              CSECT EYECATCHER                00530002
+         DC    CL8'&SYSDATE',C' '       ASSEMBLE DATE                   00540002
+         DC    CL5'&SYSTIME',C' '       ASSEMBLE TIME                   00550002
+*---------------------------------------------------------------------- 00560002
+*-  INITIALIZATION                                                      00570002
+*---------------------------------------------------------------------- 00580002
+INT00    DS    0H                                                       00590002
+         L     RA,PARMUSER                                              00600002
+         L     R9,PARMTARG                                              00610002
+         L     RB,PARMTRAC                                              00620002
+         DROP  RB                                                       00630002
+         USING USRPARM,RA                                               00640002
+         USING TARGETS,R9                                               00650002
+         USING TRACE,RB                                                 00660002
+*---------------------------------------------------------------------- 00670002
+*-  TRACE DATA SET STATE PROCESSING                                     00680002
+*---------------------------------------------------------------------- 00690002
+         CLI   TRACSTAT,TRACEON         TRACE STATE ON                  00700002
+         BNE   INT10                    ..NO, BRANCH                    00710002
+         TM    EXCITRAC+48,X'10'        DATA SET OPEN                   00720002
+         BO    INT20                    ..YES, BRANCH                   00730002
+         BAS   R5,OPN10                 PERFORM OPEN                    00740002
+         TM    EXCITRAC+48,X'10'        OPEN SUCCESSFUL                 00750002
+         BO    INT20                    ..YES, BRANCH                   00760002
+         MVI   TRACSTAT,TRACEOFF        SET STATE OFF                   00770002
+         LA    R2,WTOC00                                                00780002
+         LA    R3,WTOD01                                                00790002
+         LA    R4,WTOD98                                                00800002
+         WTO   TEXT=(((R2),),((R3),),((R4),)),                         *00810002
+               MF=(E,WTOERROR)                                          00820002
+         B     XIT00                    ..EXIT                          00830002
+INT10    DS    0H                                                       00840002
+         TM    EXCITRAC+48,X'10'        DATA SET OPEN                   00850002
+         BZ    XIT00                    ..NO, BRANCH                    00860002
+INT20    DS    0H                                                       00870002
+*---------------------------------------------------------------------- 00880002
+*-  FORMAT TRACE DATA                                                   00890002
+*---------------------------------------------------------------------- 00900002
+         LA    R7,REPA                  LOAD REPORT AREA @              00910002
+         USING REPORT,R7                                                00920002
+         TIME  DEC,                                                    *00930002
+               DBLDBLWK,                                               *00940002
+               DATETYPE=MMDDYYYY,                                      *00950002
+               ZONE=LT,                                                *00960002
+               LINKAGE=SYSTEM,                                         *00970002
+               MF=(E,TIMEPARM)                                          00980002
+         LTR   RF,RF                    TIME SUCCESSFUL                 00990002
+         BNZ   FMT20                    ..NO, BRANCH                    01000002
+         CLI   REPT+8,C'M'              DATE SET                        01010002
+         BNE   FMT10                    ..YES,BRANCH                    01020002
+         SR    R0,R0                    CLR REG                         01030002
+         L     R1,DBLWORK               LOAD MMDDYYYY                   01040002
+         SLDL  R0,4                     0000000M MDDYYYY0               01050002
+         STM   R0,R1,DBLWORK            STORE MMDDYYYY0                 01060002
+         OI    DBLWORK+7,X'0F'          SET PACKED                      01070002
+         MVC   REPT+6(12),=X'402120206120206120202020'                  01080002
+         ED    REPT+6(12),DBLWORK+3     EDIT DATE                       01090002
+FMT10    DS    0H                                                       01100002
+         SR    R0,R0                    CLR REG                         01110002
+         ICM   R1,B'1111',DBLDBLWK+1    LOAD MMSSTHMI                   01120002
+         SLDL  R0,4                     0000000M MSSTHMI0               01130002
+         STM   R0,R1,DBLDBLWK           STORE MMSSTHMI0                 01140002
+         OI    DBLDBLWK+7,X'0F'         SET PACKED                      01150002
+         MVC   REPLINE(12),=X'402120207A20204B20202020'                 01160002
+         ED    REPLINE(12),DBLDBLWK+3   EDIT TIME                       01170002
+*                                                                       01180002
+FMT20    DS    0H                                                       01190002
+         LA    R1,REQTBL                LOAD REQUEST TYPE TABLE @       01200002
+         LA    R2,REQTBLE               LOAD # TABLE ENTRIES            01210002
+         L     R3,USRA00                LOAD USER REQUEST               01220002
+FMT22    DS    0H                                                       01230002
+         CLC   0(2,R1),0(R3)            THIS REQUEST                    01240002
+         BE    FMT24                                                    01250002
+         LA    R1,L'REQTBL(,R1)         INDEX TO NEXT ENTRY             01260002
+         BCT   R2,FMT22                 ..LOOP                          01270002
+         MVC   REPREQ,=CL8'XX-UNKWN'    UNKNOWN TRACE ENTRY             01280002
+         MVC   REPREQ(2),2(R3)          UNKNOWN TRACE ENTRY             01290002
+         B     FMT26                                                    01300002
+FMT24    DS    0H                                                       01310002
+         MVC   REPREQ,2(R1)             KNOWN TRACE ENTRY               01320002
+FMT26    DS    0H                                                       01330002
+*                                                                       01340002
+         L     R1,USRA08                LOAD RESP CODE @                01350002
+         L     R1,0(,R1)                LOAD RESP CODE                  01360002
+         CLI   PROCESS,C' '             INTERNAL PROCESS                01370002
+         BE    FMT29                    ..NO, BRANCH                    01380002
+         CVD   R1,DBLWORK                                               01390002
+         OI    DBLWORK+L'DBLWORK-1,X'0F'                                01400002
+         LA    R1,PROCTBL               LOAD PROCESS ERROR TABLE @      01410002
+         LA    R2,PROCTBLE              LOAD # TABLE ENTRIES            01420002
+FMT27    DS    0H                                                       01430002
+         CLC   PROCESS,0(R1)            THIS THE PROCESS ERROR          01440002
+         BE    FMT28                    ..YES, BRANCH                   01450002
+         LA    R1,L'PROCTBL(,R1)        INDEX ERROR TABLE               01460002
+         BCT   R2,FMT27                 ..LOOP                          01470002
+         MVC   REPRSP,=CL12'PROC-UKN'   SET UNKNOWN PROCESS ERROR       01480002
+         B     FMT28A                                                   01490002
+FMT28    DS    0H                                                       01500002
+         MVC   REPRSP,1(R1)             SET KNOWN PROCESS ERROR         01510002
+FMT28A   DS    0H                                                       01520002
+         UNPK  REPRSP+9(3),DBLWORK+6(2) INCLUDE ERROR CODE              01530002
+         B     FMT36                                                    01540002
+*                                                                       01550002
+FMT29    DS    0H                                                       01560002
+         CH    R1,=H'98'                CICS RESP                       01570002
+         BH    FMT30                    ..NO BRANCH                     01580002
+         MH    R1,=H'12'                CALC RESP OFFSET                01590002
+         LA    R1,RSPTBL(R1)            LOAD ENTRY @                    01600002
+         MVC   REPRSP,0(R1)             INTERPRET RESP CODE             01610002
+         B     FMT36                                                    01620002
+FMT30    DS    0H                                                       01630002
+         CH    R1,=H'255'               NOTPOSS                         01640002
+         BNE   FMT32                                                    01650002
+         MVC   REPRSP,=CL12'NOTPOSS'    SET NOTPOSS RESP                01660002
+         B     FMT36                                                    01670002
+FMT32    DS    0H                                                       01680002
+         CH    R1,=H'1041'              CALLABLE CLIENT RESP            01690002
+         BH    FMT33                    ..NO BRANCH                     01700002
+         LR    R2,R1                                                    01710002
+         SH    R2,=H'1001'              CALC INDEX                      01720002
+         BM    FMT34                                                    01730002
+         MH    R2,=H'12'                CALC RESP OFFSET                01740002
+         LA    R1,RSPSRV(R2)            LOAD ENTRY @                    01750002
+         MVC   REPRSP,0(R1)             INTERPRET RESP CODE             01760002
+         B     FMT36                                                    01770002
+FMT33    DS    0H                                                       01780002
+         CH    R1,=H'1514'              CALLABLE CLIENT RESP            01790002
+         BH    FMT34                    ..NO BRANCH                     01800002
+         LR    R2,R1                                                    01810002
+         SH    R2,=H'1501'              CALC INDEX                      01820002
+         BM    FMT34                                                    01830002
+         MH    R2,=H'12'                CALC RESP OFFSET                01840002
+         LA    R1,RSPCAL(R2)            LOAD ENTRY @                    01850002
+         MVC   REPRSP,0(R1)             INTERPRET RESP CODE             01860002
+         B     FMT36                                                    01870002
+FMT34    DS    0H                                                       01880002
+         CVD   R1,DBLWORK                                               01890002
+         OI    DBLWORK+L'DBLWORK-1,X'0F'                                01900002
+         MVC   REPRSP,=CL12'XXXX-UNKNOWN'                               01910002
+         UNPK  REPRSP(4),DBLWORK+5(3)                                   01920002
+FMT36    DS    0H                                                       01930002
+*                                                                       01940002
+         L     R1,USRA08                LOAD RESP CODE @                01950002
+         L     R1,4(,R1)                LOAD RESP2 CODE                 01960002
+         CVD   R1,DBLWORK                                               01970002
+         OI    DBLWORK+L'DBLWORK-1,X'0F'                                01980002
+         UNPK  REPRSP2,DBLWORK+5(3)                                     01990002
+*                                                                       02000002
+         L     R1,USRA12                LOAD CICS SYSID @               02010002
+         MVC   REPSYS,0(R1)                                             02020002
+         TM    USRA12,X'80'             SHORT PARM CALL                 02030002
+         BO    FMT99                    ..YES, BRANCH                   02040002
+         CLC   REPREQ,REQRS+2           RESOURCE REQUEST                02050002
+         BNE   FMT99                    ..NO, BRANCH                    02060002
+*                                                                       02070002
+         LA    R1,FUNTBL                LOAD FUNCTION TABLE @           02080002
+         LA    R2,FUNTBLE               LOAD # TABLE ENTRIES            02090002
+         L     R3,USRA04                LOAD USER REQUEST               02100002
+FMT38    DS    0H                                                       02110002
+         CLC   0(2,R1),0(R3)            THIS REQUEST                    02120002
+         BE    FMT40                                                    02130002
+         LA    R1,L'FUNTBL(,R1)         INDEX TO NEXT ENTRY             02140002
+         BCT   R2,FMT38                 ..LOOP                          02150002
+         MVC   REPFUN,=CL8'XX-UNKWN'    UNKNOWN TRACE ENTRY             02160002
+         MVC   REPFUN(2),2(R3)          UNKNOWN TRACE ENTRY             02170002
+         B     FMT42                                                    02180002
+FMT40    DS    0H                                                       02190002
+         MVC   REPFUN,2(R1)             KNOWN TRACE ENTRY               02200002
+FMT42    DS    0H                                                       02210002
+*                                                                       02220002
+         LA    R1,RTYPTBL               LOAD RESOURCE TYPE TABLE @      02230002
+         LA    R2,RTYPTBLE              LOAD # TABLE ENTRIES            02240002
+         L     R3,USRA20                LOAD USER REQUEST               02250002
+FMT44    DS    0H                                                       02260002
+         CLC   0(2,R1),0(R3)            THIS REQUEST                    02270002
+         BE    FMT46                                                    02280002
+         LA    R1,L'RTYPTBL(,R1)        INDEX TO NEXT ENTRY             02290002
+         BCT   R2,FMT44                 ..LOOP                          02300002
+         MVC   REPRTYP,=CL7'XX-UNKN'    UNKNOWN TRACE ENTRY             02310002
+         MVC   REPRTYP(2),2(R3)         UNKNOWN TRACE ENTRY             02320002
+         B     FMT48                                                    02330002
+FMT46    DS    0H                                                       02340002
+         MVC   REPRTYP,2(R1)            KNOWN TRACE ENTRY               02350002
+FMT48    DS    0H                                                       02360002
+*                                                                       02370002
+         L     R1,USRA16                LOAD RESOURCE @                 02380002
+         MVC   REPRSC,0(R1)                                             02390002
+*                                                                       02400002
+         CLC   =C'FI',0(R3)             RESOURCE TYPE FILE              02410002
+         BNE   FMT50                    ..NO                            02420002
+         L     R1,USRA24                LOAD KEY LENGTH @               02430002
+         LH    R1,0(,R1)                LOAD KEY LENGTH                 02440002
+         CVD   R1,DBLWORK                                               02450002
+         OI    DBLWORK+L'DBLWORK-1,X'0F'                                02460002
+         UNPK  REPKEYL,DBLWORK+5(3)                                     02470002
+*                                                                       02480002
+FMT50    DS    0H                                                       02490002
+         L     R1,USRA32                LOAD AREA LENGTH @              02500002
+         LH    R1,0(,R1)                LOAD AREA LENGTH                02510002
+         CVD   R1,DBLWORK                                               02520002
+         OI    DBLWORK+L'DBLWORK-1,X'0F'                                02530002
+         UNPK  REPARAL,DBLWORK+5(3)                                     02540002
+*                                                                       02550002
+FMT99    DS    0H                                                       02560002
+         BAS   R5,OUT00                 WRITE TRACE RECORD              02570002
+*---------------------------------------------------------------------- 02580002
+*-  TERMINATION                                                         02590002
+*---------------------------------------------------------------------- 02600002
+XIT00    DS    0H                                                       02610002
+         CLI   TRACSTAT,TRACEON         TRACE STATE ON                  02620002
+         BE    XIT10                    ..YES, BRANCH                   02630002
+         TM    EXCITRAC+48,X'10'        DATA SET OPEN                   02640002
+         BZ    XIT10                    ..NO, BRANCH                    02650002
+         BAS   R5,CLO10                 PERFORM CLOSE                   02660002
+XIT10    DS    0H                                                       02670002
+         LAE   R1,0(0,RD)                                               02680002
+         STORAGE RELEASE,                                              *02690002
+               ADDR=(R1),                                              *02700002
+               LENGTH=72,                                              *02710002
+               RELATED=GETM01                                           02720002
+         SR    RF,RF                                                    02730002
+         PR                                                             02740002
+*---------------------------------------------------------------------- 02750002
+*-  WRITE REPORT LINES                                                  02760002
+*---------------------------------------------------------------------- 02770002
+OUT00    DS    0H                                                       02780002
+         LA    R1,OUT05                                                 02790002
+         N     R1,=X'7FFFFFFF'                                          02800002
+         BSM   0,R1                                                     02810002
+OUT05    DS    0H                                                       02820002
+         L     R1,LC                                                    02830002
+         LTR   R1,R1                                                    02840002
+         BNZ   OUT10                                                    02850002
+         PUT   EXCITRAC,REPT                                            02860002
+         PUT   EXCITRAC,REPH                                            02870002
+OUT10    DS    0H                                                       02880002
+         PUT   EXCITRAC,REPA                                            02890002
+         L     R1,LC                                                    02900002
+         LA    R1,1(,R1)                                                02910002
+         C     R1,=F'60'                                                02920002
+         ST    R1,LC                                                    02930002
+         BL    OUT15                                                    02940002
+         XC    LC,LC                                                    02950002
+         AP    PC,=P'1'                                                 02960002
+         OI    PC+L'PC-1,X'0F'                                          02970002
+         UNPK  REPT+96(5),PC                                            02980002
+OUT15    DS    0H                                                       02990002
+         LA    R1,OUT95                                                 03000002
+         O     R1,=X'80000000'                                          03010002
+         BSM   0,R1                                                     03020002
+OUT95    DS    0H                                                       03030002
+         MVI   REPA,C' '                                                03040002
+         MVC   REPA+1(L'REPA-1),REPA                                    03050002
+         BR    R5                                                       03060002
+*---------------------------------------------------------------------- 03070002
+*-  OPEN REPORT DCB                                                     03080002
+*---------------------------------------------------------------------- 03090002
+OPN00    DS    0H                                                       03100002
+         LA    R1,OPN10                                                 03110002
+         N     R1,=X'7FFFFFFF'                                          03120002
+         BSM   0,R1                                                     03130002
+OPN10    DS    0H                                                       03140002
+         OPEN  (EXCITRAC,(OUTPUT))                                      03150002
+         LA    R1,OPN20                                                 03160002
+         O     R1,=X'80000000'                                          03170002
+         BSM   0,R1                                                     03180002
+OPN20    DS    0H                                                       03190002
+         BR    R5                                                       03200002
+*---------------------------------------------------------------------- 03210002
+*-  CLOSE REPORT DCB                                                    03220002
+*---------------------------------------------------------------------- 03230002
+CLO00    DS    0H                                                       03240002
+         LA    R1,CLO10                                                 03250002
+         N     R1,=X'7FFFFFFF'                                          03260002
+         BSM   0,R1                                                     03270002
+CLO10    DS    0H                                                       03280002
+         CLOSE (EXCITRAC)                                               03290002
+         LA    R1,CLO20                                                 03300002
+         O     R1,=X'80000000'                                          03310002
+         BSM   0,R1                                                     03320002
+CLO20    DS    0H                                                       03330002
+         BR    R5                                                       03340002
+*---------------------------------------------------------------------- 03350002
+*-  NON-REENTRANT WORK AREAS AND CONTROL BLOCKS                         03360002
+*---------------------------------------------------------------------- 03370002
+DBLDBLWK DC    D'0'                     DBL DBL WORD WORK AREA          03380002
+DBLWORK  DC    D'0'                     DBL WORD WORK AREA              03390002
+*                                                                       03400002
+LC       DC    F'0'                     LINE COUNTER                    03410002
+PC       DC    PL3'1'                   PAGE COUNTER                    03420002
+*                                                                       03430002
+REPA     DC    CL101' '                 REPORT AREA                     03440002
+*                                                                       03450002
+REPT     DC    AL1(REPNP)                REPORT HEADER                  03460002
+         DC    CL100'Date:  MM/DD/YYYY                 CICS EXCI Callab*03470002
+               le Client Trace                   PAGE:  00001'          03480002
+REPH     DC    AL1(REPDS)                REPORT HEADER                  03490002
+         DC    CL100'   Time      Request    Response      Resp2  Syste*03500002
+               m     Function  Res-Type   Resource  KeyLN  AreaLN'      03510002
+*                                                                       03520002
+EXCITRAC DCB   DDNAME=EXCITRAC,                                        *03530002
+               MACRF=(PM),                                             *03540002
+               DSORG=PS,                                               *03550002
+               LRECL=101,                                              *03560002
+               BLKSIZE=3030,                                           *03570002
+               RECFM=FBA                                                03580002
+*                                                                       03590002
+TIMEPARM TIME  LINKAGE=SYSTEM,                                         *03600002
+               MF=L                                                     03610002
+*                                                                       03620002
+WTOERROR WTO   TEXT=((,C),(,D),(,DE)),                                 *03630002
+               ROUTCDE=(2,11),                                         *03640002
+               DESC=(6),                                               *03650002
+               MF=L                                                     03660002
+*                                                                       03670002
+*---------------------------------------------------------------------- 03680002
+*-  CONSTANTS AND LITERALS                                              03690002
+*---------------------------------------------------------------------- 03700002
+*                                                                       03710002
+REQTBL   DS    0CL10                                                    03720002
+REQRS    DC    CL2'RS',CL8'RESOURCE'                                    03730002
+         DC    CL2'BG',CL8'BEGIN'                                       03740002
+         DC    CL2'EN',CL8'END'                                         03750002
+         DC    CL2'TB',CL8'TRC-BEGN'                                    03760002
+         DC    CL2'TE',CL8'TRC-END'                                     03770002
+REQTBLE  EQU   (*-REQTBL)/L'REQTBL                                      03780002
+*                                                                       03790002
+RTYPTBL  DS    0CL9                                                     03800002
+         DC    CL2'FI',CL7'VSAMFIL'                                     03810002
+         DC    CL2'PG',CL7'PROGRAM'                                     03820002
+         DC    CL2'TD',CL7'TRANDAT'                                     03830002
+         DC    CL2'TS',CL7'TEMPDAT'                                     03840002
+RTYPTBLE EQU   (*-RTYPTBL)/L'RTYPTBL                                    03850002
+*                                                                       03860002
+FUNTBL   DS    0CL10                                                    03870002
+         DC    CL2'AD',CL8'ADD'                                         03880002
+         DC    CL2'DL',CL8'DELETE'                                      03890002
+         DC    CL2'DQ',CL8'DELETEQ'                                     03900002
+         DC    CL2'LK',CL8'LINK'                                        03910002
+         DC    CL2'RD',CL8'READ'                                        03920002
+         DC    CL2'RN',CL8'READNEXT'                                    03930002
+         DC    CL2'RP',CL8'READPREV'                                    03940002
+         DC    CL2'RQ',CL8'READQ'                                       03950002
+         DC    CL2'UP',CL8'UPDATE'                                      03960002
+         DC    CL2'WQ',CL8'WRITEQ'                                      03970002
+FUNTBLE  EQU   (*-FUNTBL)/L'FUNTBL                                      03980002
+*                                                                       03990002
+PROCTBL  DS    0CL13                                                    04000002
+         DC    AL1(PROCOUTI),CL12'INIT-USR    '                         04010002
+         DC    AL1(PROCOUTA),CL12'ALC-PIPE    '                         04020002
+         DC    AL1(PROCOUTO),CL12'OPN-PIPE    '                         04030002
+         DC    AL1(PROCOUTC),CL12'CLS-PIPE    '                         04040002
+         DC    AL1(PROCOUTD),CL12'DAL-PIPE    '                         04050002
+         DC    AL1(PROCOUTP),CL12'DPL-CALL    '                         04060002
+PROCTBLE EQU   (*-PROCTBL)/L'PROCTBL                                    04070002
+*                                                                       04080002
+RSPSRV   DS    0CL12                                                    04090002
+         DC    CL12'NOT-FISRVREQ'       1001                            04100002
+         DC    CL12'NOT-TDSRVREQ'       1002                            04110002
+         DC    CL12'NOT-TSSRVREQ'       1003                            04120002
+         DC    CL12'FUNCDE-INVLD'       1004                            04130002
+         DC    CL12'CMAREA-SMALL'       1005                            04140002
+         DC    CL12'UNKNOWN-CODE'       1006                            04150002
+         DC    CL12'UNKNOWN-CODE'       1007                            04160002
+         DC    CL12'UNKNOWN-CODE'       1008                            04170002
+         DC    CL12'UNKNOWN-CODE'       1009                            04180002
+         DC    CL12'UNKNOWN-CODE'       1010                            04190002
+         DC    CL12'AREALEN-ZERO'       1011                            04200002
+         DC    CL12'UNKNOWN-CODE'       1012                            04210002
+         DC    CL12'KEYLEN-ZERO '       1013                            04220002
+         DC    CL12'UNKNOWN-CODE'       1014                            04230002
+         DC    CL12'UNKNOWN-CODE'       1015                            04240002
+         DC    CL12'UNKNOWN-CODE'       1016                            04250002
+         DC    CL12'UNKNOWN-CODE'       1017                            04260002
+         DC    CL12'UNKNOWN-CODE'       1018                            04270002
+         DC    CL12'UNKNOWN-CODE'       1019                            04280002
+         DC    CL12'UNKNOWN-CODE'       1020                            04290002
+         DC    CL12'NOT-VSAMFILE'       1021                            04300002
+         DC    CL12'NOT-KS-ES-RR'       1022                            04310002
+         DC    CL12'VSAM-KEYLERR'       1023                            04320002
+         DC    CL12'VSAM-RECLERR'       1024                            04330002
+         DC    CL12'VSAM-OPENERR'       1025                            04340002
+         DC    CL12'UNKNOWN-CODE'       1026                            04350002
+         DC    CL12'UNKNOWN-CODE'       1027                            04360002
+         DC    CL12'UNKNOWN-CODE'       1028                            04370002
+         DC    CL12'UNKNOWN-CODE'       1029                            04380002
+         DC    CL12'UNKNOWN-CODE'       1030                            04390002
+         DC    CL12'TD-NOT-INTRA'       1031                            04400002
+         DC    CL12'UNKNOWN-CODE'       1032                            04410002
+         DC    CL12'UNKNOWN-CODE'       1033                            04420002
+         DC    CL12'UNKNOWN-CODE'       1034                            04430002
+         DC    CL12'UNKNOWN-CODE'       1035                            04440002
+         DC    CL12'UNKNOWN-CODE'       1036                            04450002
+         DC    CL12'UNKNOWN-CODE'       1037                            04460002
+         DC    CL12'UNKNOWN-CODE'       1038                            04470002
+         DC    CL12'UNKNOWN-CODE'       1039                            04480002
+         DC    CL12'UNKNOWN-CODE'       1040                            04490002
+         DC    CL12'PROG-NOT-FND'       1041                            04500002
+*                                                                       04510002
+RSPCAL   DS    0CL12                                                    04520002
+         DC    CL12'NOPARMLIST  '       1501                            04530002
+         DC    CL12'TOOFEWPARMS '       1502                            04540002
+         DC    CL12'EXCEED25CONN'       1503                            04550002
+         DC    CL12'REQUESTINVAL'       1504                            04560002
+         DC    CL12'REQUESTILLOG'       1505                            04570002
+         DC    CL12'CICSSTATEERR'       1506                            04580002
+         DC    CL12'RESOURCETYPE'       1507                            04590002
+         DC    CL12'FUNCTIONCODE'       1508                            04600002
+         DC    CL12'GTMAINFAIL04'       1509                            04610002
+         DC    CL12'GTMAINFAIL08'       1510                            04620002
+         DC    CL12'GTMAINFAIL12'       1511                            04630002
+         DC    CL12'GTMAINFAIL16'       1512                            04640002
+         DC    CL12'TRACESTATEER'       1513                            04650002
+         DC    CL12'TRACELOADERR'       1514                            04660002
+*                                                                       04670002
+RSPTBL   DS    0CL12                                                    04680002
+         DC    CL12'NORMAL'                                             04690002
+         DC    CL12'ERROR'                                              04700002
+         DC    CL12'RDATT'                                              04710002
+         DC    CL12'WRBRK'                                              04720002
+         DC    CL12'EOF'                                                04730002
+*                                                                       04740002
+         DC    CL12'EODS'                                               04750002
+         DC    CL12'EOC'                                                04760002
+         DC    CL12'INBFMH'                                             04770002
+         DC    CL12'ENDINPT'                                            04780002
+         DC    CL12'NONVAL'                                             04790002
+*                                                                       04800002
+         DC    CL12'NOSTART'                                            04810002
+         DC    CL12'TERMIDERR'                                          04820002
+         DC    CL12'FILENOTFOUND'                                       04830002
+         DC    CL12'NOTFOUND'                                           04840002
+         DC    CL12'DUPREC'                                             04850002
+*                                                                       04860002
+         DC    CL12'DUPKEY'                                             04870002
+         DC    CL12'INVREQ'                                             04880002
+         DC    CL12'IOERR'                                              04890002
+         DC    CL12'NOSPACE'                                            04900002
+         DC    CL12'NOTOPEN'                                            04910002
+*                                                                       04920002
+         DC    CL12'ENDFILE'                                            04930002
+         DC    CL12'ILLOGIC'                                            04940002
+         DC    CL12'LENGERR'                                            04950002
+         DC    CL12'QZERO'                                              04960002
+         DC    CL12'SIGNAL'                                             04970002
+*                                                                       04980002
+         DC    CL12'QBUSY'                                              04990002
+         DC    CL12'ITEMERR'                                            05000002
+         DC    CL12'PGMIDERR'                                           05010002
+         DC    CL12'TRANSIDERR'                                         05020002
+         DC    CL12'ENDDATA'                                            05030002
+*                                                                       05040002
+         DC    CL12'INVTSREQ'                                           05050002
+         DC    CL12'EXPIRED'                                            05060002
+         DC    CL12'RETPAGE'                                            05070002
+         DC    CL12'RTEFAIL'                                            05080002
+         DC    CL12'RTESOME'                                            05090002
+*                                                                       05100002
+         DC    CL12'TSIOERR'                                            05110002
+         DC    CL12'MAPFAIL'                                            05120002
+         DC    CL12'INVERRTERM'                                         05130002
+         DC    CL12'INVMPSZ'                                            05140002
+         DC    CL12'IGREQID'                                            05150002
+*                                                                       05160002
+         DC    CL12'OVERFLOW'                                           05170002
+         DC    CL12'INVLDC'                                             05180002
+         DC    CL12'NOSTG'                                              05190002
+         DC    CL12'JIDERR'                                             05200002
+         DC    CL12'QIDERR'                                             05210002
+*                                                                       05220002
+         DC    CL12'NOJBUFSP'                                           05230002
+         DC    CL12'DSSTAT'                                             05240002
+         DC    CL12'SELNERR'                                            05250002
+         DC    CL12'FUNCERR'                                            05260002
+         DC    CL12'UNEXPIN'                                            05270002
+*                                                                       05280002
+         DC    CL12'NOPASSBKRD'                                         05290002
+         DC    CL12'NOPASSBKWR'                                         05300002
+         DC    CL12'52-UNDEFINED'                                       05310002
+         DC    CL12'SYSIDERR'                                           05320002
+         DC    CL12'ISCINVREQ'                                          05330002
+*                                                                       05340002
+         DC    CL12'ENQBUSY'                                            05350002
+         DC    CL12'ENVDEFERR'                                          05360002
+         DC    CL12'IGREQCD'                                            05370002
+         DC    CL12'SESSIONERR'                                         05380002
+         DC    CL12'SYSBUSY'                                            05390002
+*                                                                       05400002
+         DC    CL12'SESSBUSY'                                           05410002
+         DC    CL12'NOTALLOC'                                           05420002
+         DC    CL12'CBIDERR'                                            05430002
+         DC    CL12'INVEXITREQ'                                         05440002
+         DC    CL12'INVPARTNSET'                                        05450002
+*                                                                       05460002
+         DC    CL12'INVPARTN'                                           05470002
+         DC    CL12'PARTNFAIL'                                          05480002
+         DC    CL12'67-UNDEFINED'                                       05490002
+         DC    CL12'68-UNDEFINED'                                       05500002
+         DC    CL12'USERIDERR'                                          05510002
+*                                                                       05520002
+         DC    CL12'NOTAUTH'                                            05530002
+         DC    CL12'VOLIDERR'                                           05540002
+         DC    CL12'SUPPRESSED'                                         05550002
+         DC    CL12'73-UNDEFINED'                                       05560002
+         DC    CL12'74-UNDEFINED'                                       05570002
+*                                                                       05580002
+         DC    CL12'RESIDERR'                                           05590002
+         DC    CL12'76-UNDEFINED'                                       05600002
+         DC    CL12'77-UNDEFINED'                                       05610002
+         DC    CL12'78-UNDEFINED'                                       05620002
+         DC    CL12'79-UNDEFINED'                                       05630002
+*                                                                       05640002
+         DC    CL12'NOSPOOL'                                            05650002
+         DC    CL12'TERMERR'                                            05660002
+         DC    CL12'ROLLEDBACK'                                         05670002
+         DC    CL12'END'                                                05680002
+         DC    CL12'DISABLED'                                           05690002
+*                                                                       05700002
+         DC    CL12'ALLOCERR'                                           05710002
+         DC    CL12'STRELERR'                                           05720002
+         DC    CL12'OPENERR'                                            05730002
+         DC    CL12'SPOLBUSY'                                           05740002
+         DC    CL12'SPOLERR'                                            05750002
+*                                                                       05760002
+         DC    CL12'NODEIDERR'                                          05770002
+         DC    CL12'TASKIDERR'                                          05780002
+         DC    CL12'TCIDERR'                                            05790002
+         DC    CL12'DSNNOTFOUND'                                        05800002
+         DC    CL12'LOADING'                                            05810002
+*                                                                       05820002
+         DC    CL12'MODELIDERR'                                         05830002
+         DC    CL12'OUTDESCRERR'                                        05840002
+         DC    CL12'PARTNERIDERR'                                       05850002
+         DC    CL12'PROFILEIDERR'                                       05860002
+         DC    CL12'99-UNDEFINED'                                       05870002
+*                                                                       05880002
+WTOC00   DC   AL2(L'WTOC00M)                                            05890002
+WTOC00M  DC   C'IEB50200 IEI EXCI Callable Client Trace'                05900002
+WTOD01   DC   AL2(L'WTOD01M)                                            05910002
+WTOD01M  DC   C'IEB50201 Trace data set failed to open'                 05920002
+WTOD98   DC   AL2(L'WTOD98M)                                            05930002
+WTOD98M  DC   C'IEB50298 Processing will continue without trace active' 05940002
+*                                                                       05950002
+         LTORG                                                          05960002
+*                                                                       05970002
+*---------------------------------------------------------------------- 05980002
+*-  DSECTS                                                              05990002
+*---------------------------------------------------------------------- 06000002
+*=====================================================================* 06010002
+*   REPORT OUTPUT LINE                                                * 06020002
+*=====================================================================* 06030002
+*                                                                       06040002
+REPORT   DSECT                                                          06050002
+REPLINE  DS    0CL101                                                   06060002
+REPFC    DS    CL1                      FORM CONTROL                    06070002
+REPNP    EQU   C'1'                     ..NEW PAGE                      06080002
+REPSS    EQU   C' '                     ..SINGLE SPACE                  06090002
+REPDS    EQU   C'0'                     ..DOUBLE SPACE                  06100002
+REPTS    EQU   C'-'                     ..TRIPLE SPACE                  06110002
+REPDATA  DS    CL100                                                    06120002
+         ORG   REPDATA                                                  06130002
+REPTIME  DS    CL11                                                     06140002
+         DS    CL2                                                      06150002
+REPREQ   DS    CL8                                                      06160002
+         DS    CL3                                                      06170002
+REPRSP   DS    CL12                                                     06180002
+         DS    CL2                                                      06190002
+REPRSP2  DS    CL5                                                      06200002
+         DS    CL2                                                      06210002
+REPSYS   DS    CL8                                                      06220002
+         DS    CL3                                                      06230002
+REPFUN   DS    CL8                                                      06240002
+         DS    CL2                                                      06250002
+REPRTYP  DS    CL7                                                      06260002
+         DS    CL4                                                      06270002
+REPRSC   DS    CL8                                                      06280002
+         DS    CL2                                                      06290002
+REPKEYL  DS    CL5                                                      06300002
+         DS    CL3                                                      06310002
+REPARAL  DS    CL5                                                      06320002
+         DS    CL7                                                      06330002
+         ORG                                                            06340002
+*=====================================================================* 06350002
+*   CALLER'S PARM LIST                                                * 06360002
+*=====================================================================* 06370002
+*                                                                       06380002
+PARMS    DSECT                                                          06390002
+PARMUSER DS    A                        USER PARAMETER LIST @           06400002
+PARMTARG DS    A                        TARGET CONTROL BLOCK @          06410002
+PARMTRAC DS    A                        TRACE CONTROL BLOCK @           06420002
+*=====================================================================* 06430002
+*   TARGET SYSTEMS WORKAREA DSECT                                     * 06440002
+*=====================================================================* 06450002
+*                                                                       06460002
+TARGETS  DSECT                                                          06470002
+TARGSYSI DS    CL8                      TARGET CICS SYSTEM              06480002
+TARGPROG DS    CL8                      TARGET SERVER PROGRAM           06490002
+TARGTRAN DS    CL4                      TARGET TRANSACTION NAME         06500002
+EXCIUTOK DS    F                        USER TOKEN                      06510002
+EXCIPTOK DS    F                        PIPE TOKEN                      06520002
+EXCIVERS DS    F                        VERSION NUMBER                  06530002
+EXCITYPE DS    F                        CALL TYPE                       06540002
+CALLRC1  DS    F                        RETURN CODE 1 SAVE AREA         06550002
+CALLRC2  DS    F                        RETURN CODE 2 SAVE AREA         06560002
+TARGSTAT DS    CL2                      TARGET STATE                    06570002
+EXCIOPTS DS    XL1                      DPL AND ALLOCATE OPTIONS        06580002
+PROCESS  DS    CL1                      INTERNAL TRACE INDICATOR        06590002
+*                                                                       06600002
+PROCINNI EQU   C'A'                     ..INIT USER CALL IN             06610002
+PROCINNA EQU   C'B'                     ..ALLOCATE PIPE CALL IN         06620002
+PROCINNO EQU   C'C'                     ..OPEN PIPE CALL IN             06630002
+PROCINNC EQU   C'D'                     ..CLOSE PIPE CALL IN            06640002
+PROCINND EQU   C'E'                     ..DEALLOCATE PIPE CALL IN       06650002
+PROCINNP EQU   C'F'                     ..DPL CALL IN                   06660002
+*                                                                       06670002
+PROCOUTI EQU   C'U'                     ..INIT USER CALL OUT            06680002
+PROCOUTA EQU   C'V'                     ..ALLOCATE PIPE CALL OUT        06690002
+PROCOUTO EQU   C'W'                     ..OPEN PIPE CALL OUT            06700002
+PROCOUTC EQU   C'X'                     ..CLOSE PIPE CALL OUT           06710002
+PROCOUTD EQU   C'Y'                     ..DEALLOCATE PIPE CALL OUT      06720002
+PROCOUTP EQU   C'Z'                     ..DPL CALL OUT                  06730002
+*                                                                       06740002
+TARGETSL EQU   *-TARGETS                TARGET TABLE LENGTH             06750002
+TARGETSM EQU   25                       MAX TARGET TABLE ENTRIES        06760002
+*=====================================================================* 06770002
+*   USER'S PARAMETER LIST DSECT                                       * 06780002
+*=====================================================================* 06790002
+*                                                                       06800002
+USRPARM  DSECT                                                          06810002
+USRA00   DS    A                        REQUEST TYPE @                  06820002
+USRA04   DS    A                        FUNCTION TYPE @                 06830002
+USRA08   DS    A                        RETURN CODE @                   06840002
+USRA12   DS    A                        CICS SYSTEM APPL @              06850002
+USRA16   DS    A                        CICS RESOURCE NAME @            06860002
+USRA20   DS    A                        CICS RESOURCE TYPE @            06870002
+USRA24   DS    A                        RESOURCE KEY LEN @              06880002
+USRA28   DS    A                        RESOURCE KEY @                  06890002
+USRA32   DS    A                        RESOURCE AREA LEN @             06900002
+USRA36   DS    A                        RESOURCE AREA @                 06910002
+*=====================================================================* 06920002
+*   TRACE STATE DSECT                                                 * 06930002
+*=====================================================================* 06940002
+*                                                                       06950002
+TRACE    DSECT                                                          06960002
+TRACSTAT DS    CL1                      TRACE STATE                     06970002
+TRACEON  EQU   C'B'                     ..TRACE BEGIN STATE             06980002
+TRACEOFF EQU   C'E'                     ..TRACE ENDED STATE             06990002
+         DS    3X                       FILLER                          07000002
+*---------------------------------------------------------------------- 07010002
+         END                                                            07020002
+

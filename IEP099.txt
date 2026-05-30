@@ -1,0 +1,132 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IEP099   TITLE '**  CICS/TS SYSTEM SHUTDOWN  **'
+*---------------------------------------------------------------------*
+*        REGISTER AND OTHER EQUATES                                   *
+*---------------------------------------------------------------------*
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*---------------------------------------------------------------------*
+*  IEP099   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*---------------------------------------------------------------------*
+IEP099   RSECT
+IEP099   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEP099   RMODE ANY                      MAY RESIDE ABOVE 16M
+IEP099   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IEP099 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         J     INT00                    BRANCH AROUND DUMP ID
+         DS    0H
+         DC    CL8'IEP099'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*---------------------------------------------------------------------*
+*        OBTAIN FACILITY TYPE                                         *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               FCI(TASKTYPE)
+         CLI   TASKTYPE,TERMINAL        TERMINAL ATTACHED
+         JNE   SHT00                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*        RECEIVE TERMINAL INPUT
+*----------------------------------------------------------------------
+         XC    HLFWORK,HLFWORK          CLR TERMNL INPUT LENGTH
+         EXEC  CICS,                                                   *
+               RECEIVE,                                                *
+               SET(R4),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(EOC)        EXEC COMMAND RESPONSE EOC
+         JE    INT01                    ..YES, BRANCH
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JNE   INT03                    ..NO, BRANCH
+INT01    DS    0H
+         CLI   0(R4),X'11'              3270 SBA INPUT
+         JNE   INT02                    ..NO, BRANCH
+         LA    R4,3(,R4)                INDEX PAST 3270 SBA
+INT02    DS    0H
+         LA    R5,MSG01                 LOAD SHUTDOWN MSG @
+         LA    R6,L'MSG01               LOAD SHUTDOWN MSG LEN
+INT03    DS    0H
+*---------------------------------------------------------------------*
+*        SEND TERMINAL OUTPUT                                         *
+*---------------------------------------------------------------------*
+         STH   R6,HLFWORK
+         EXEC  CICS,                                                   *
+               SEND,                                                   *
+               FROM(0(R5)),                                            *
+               LENGTH(HLFWORK),                                        *
+               CTLCHAR(=AL1(194)),                                     *
+               ERASE,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        ISSUE SHUTDOWN                                               *
+*---------------------------------------------------------------------*
+SHT00    DS    0H
+         EXEC  CICS,                                                   *
+               PERFORM,                                                *
+               SHUTDOWN,                                               *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        RETURN TO CICS                                               *
+*---------------------------------------------------------------------*
+XIT01    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*---------------------------------------------------------------------*
+*        CONSTANTS                                                    *
+*---------------------------------------------------------------------*
+*
+MSG01    DC    C'IEP09901I  Shutdown process initiated...'
+*
+*---------------------------------------------------------------------*
+*        DSECTS                                                       *
+*---------------------------------------------------------------------*
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+HLFWORK  DS    H                        HALF WORD WORK
+TASKTYPE DS    X                        TASK FACILITY TYPE
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY
+*---------------------------------------------------------------------*
+         DFHEIEND
+         END
+

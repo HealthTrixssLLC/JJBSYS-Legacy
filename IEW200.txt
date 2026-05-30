@@ -1,0 +1,658 @@
+*ASM XOPTS(CICS,OP,EDF,NOPROLOG,NOEPILOG,NATLANG(EN),SP)                00010002
+IEW200   TITLE '** CICS/TS WEB STATE MANAGER **'                        00020002
+*---------------------------------------------------------------------* 00030002
+*                                                                     * 00040002
+* MODULE NAME = IEW200                                                * 00050002
+*                                                                     * 00060002
+* DESCRIPTIVE NAME = Program for CICS transactions that are designed  * 00070002
+*                    to utilize State Management.                     * 00080002
+*                                                                     * 00090002
+*                    This program offers non terminal-oriented        * 00100002
+*                    tasks, such as programs designed to interface    * 00110002
+*                    with the Web, a facility to allow one CICS       * 00120002
+*                    task to save information to be retrieved by      * 00130002
+*                    another task using a unique identifier which     * 00140002
+*                    is stored elsewhere, for example; in a hidden    * 00150002
+*                    field in a form.                                 * 00160002
+*                                                                     * 00170002
+*                    The program can be run to delete ALL state data  * 00180002
+*                    resources using transaction CWBP.                * 00190002
+*                                                                     * 00200002
+*                    The program can be run to purge ALL state data   * 00210002
+*                    resources older than a given time interval       * 00220002
+*                    using transaction CWBT.                          * 00230002
+*                                                                     * 00240002
+*                    Allows callers to CREATE, RETRIEVE, UPDATE       * 00250002
+*                    and DESTROY state information.                   * 00260002
+*                                                                     * 00270002
+*---------------------------------------------------------------------* 00280002
+*        REGISTER AND OTHER EQUATES                                   * 00290002
+*---------------------------------------------------------------------* 00300002
+RF       EQU   15                                                       00310002
+RE       EQU   14                                                       00320002
+RD       EQU   13                                                       00330002
+RC       EQU   12                                                       00340002
+RB       EQU   11                                                       00350002
+RA       EQU   10                                                       00360002
+R9       EQU   9                                                        00370002
+R8       EQU   8                                                        00380002
+R7       EQU   7                                                        00390002
+R6       EQU   6                                                        00400002
+R5       EQU   5                                                        00410002
+R4       EQU   4                                                        00420002
+R3       EQU   3                                                        00430002
+R2       EQU   2                                                        00440002
+R1       EQU   1                                                        00450002
+R0       EQU   0                                                        00460002
+*---------------------------------------------------------------------* 00470002
+*  IEW200   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             * 00480002
+*---------------------------------------------------------------------* 00490002
+IEW200   DFHEIENT CODEREG=(12),                                        *00500002
+               DATAREG=(13),                                           *00510002
+               EIBREG=(11)                                              00520002
+         MVC   EISEYE,=CL16'IEW200 EI STORAGE'                          00530002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00540002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00550002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00560002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00570002
+         B     INT00                    BRANCH AROUND DUMP ID           00580002
+IEW200   AMODE 31                       MAY EXECUTE ABOVE 16M           00590002
+IEW200   RMODE ANY                      MAY RESIDE ABOVE 16M            00600002
+         DS    0H                                                       00610002
+         DC    CL8'IEW200'              DUMP PROGRAM ID                 00620002
+         DC    CL1' '                                                   00630002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00640002
+         DC    CL1' '                                                   00650002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00660002
+         DC    CL1' '                                                   00670002
+*---------------------------------------------------------------------* 00680002
+*        CONVERTER INITIALIZATION                                     * 00690002
+*---------------------------------------------------------------------* 00700002
+INT00    DS    0H                                                       00710002
+         XC    MESSAGES,MESSAGES        Clear message field             00720002
+*---------------------------------------------------------------------* 00730002
+*        Issue an ENQ for the State Management lock                   * 00740002
+*---------------------------------------------------------------------* 00750002
+         EXEC  CICS,                                                   *00760002
+               ENQ,                                                    *00770002
+               RESOURCE(STATE_MANAGER),                                *00780002
+               LENGTH(L'STATE_MANAGER),                                *00790002
+               RESP(RESP)                                               00800002
+*********************************************************************** 00810002
+*   Call GETANCH to retrieve the TS record containing our anchor      * 00820002
+*   information. If no address is returned, this must be the first    * 00830002
+*   time we have been invoked, so call INIT_ANCHOR to get the         * 00840002
+*   anchor block storage and initialise the TS record.                * 00850002
+*********************************************************************** 00860002
+ANCHOR_PTR EQU R9                    Pointer to Anchor block            00870002
+STATE_PTR  EQU RA                    Pointer to State Control Block     00880002
+         LA    ANCHOR_PTR,ANCHOR_STG                                    00890002
+         USING ANCHOR_BLOCK,ANCHOR_PTR                                  00900002
+         USING STATE_BLOCK,STATE_PTR                                    00910002
+         BAL   R7,GETANCH       Get the state control block anchor      00920002
+         LTR   ANCHOR_PTR,ANCHOR_PTR  If the get for the anchor is OK   00930002
+         BNZ   CHKFUNC          ..continue                              00940002
+         BAL   R7,INIT_ANCHOR   Else initialise the anchor              00950002
+         LTR   ANCHOR_PTR,ANCHOR_PTR  If this fails as well........     00960002
+         BZ    ENDFUNC          Give up !                               00970002
+CHKFUNC  DS    0H                                                       00980002
+         CLC   EIBTRNID,CWBT         Is it the timeout transaction ?    00990002
+         BE    TIMEOUT_RTN           ..Yes, go do it.                   01000002
+         CLC   EIBTRNID,CWBP         Is it the purge transaction ?      01010002
+         BE    PURGE_RTN             ..Yes, go do it.                   01020002
+*********************************************************************** 01030002
+*        If we get here, we have been linked to from another program. * 01040002
+*        See whether there is a commarea for us to use.               * 01050002
+*        If not, there is an error, as we should always be called     * 01060002
+*        a commarea.                                                  * 01070002
+*********************************************************************** 01080002
+COMPTR   EQU   R8                Pointer to Commarea                    01090002
+         EXEC  CICS,                                                   *01100002
+               ADDRESS,                                                *01110002
+               COMMAREA(COMPTR)                                         01120002
+         USING COMMAREA,COMPTR                                          01130002
+         LTR   COMPTR,COMPTR                                            01140002
+         BZ    BADCOM                                                   01150002
+         LH    R7,EIBCALEN                                              01160002
+         LTR   R7,R7                                                    01170002
+         BZ    BADCOM                                                   01180002
+*********************************************************************** 01190002
+*        Check the function code in the commarea to see why we have     01200002
+*        been invoked, and call the appropriate routine.                01210002
+*********************************************************************** 01220002
+         MVI   RETCODE,GOODRC        Preset good return code            01230002
+*                                                                       01240002
+         L     R7,=AL4(CREATE_RTN)   If function is create              01250002
+         CLI   FUNCTION,CREATE       invoke the CREATE routine          01260002
+         BE    CALLFUNC                                                 01270002
+*                                                                       01280002
+         L     R7,=AL4(RETRIEVE_RTN) If function is retrieve            01290002
+         CLI   FUNCTION,RETRIEVE     invoke the RETRIEVE routine        01300002
+         BE    CALLFUNC                                                 01310002
+*                                                                       01320002
+         L     R7,=AL4(STORE_RTN)    If function is store               01330002
+         CLI   FUNCTION,STORE        invoke the STORE routine           01340002
+         BE    CALLFUNC                                                 01350002
+*                                                                       01360002
+         L     R7,=AL4(DESTROY_RTN)  If function is destroy             01370002
+         CLI   FUNCTION,DESTROY      invoke the destroy routine         01380002
+         BE    CALLFUNC                                                 01390002
+         B     INVFUNC                                                  01400002
+CALLFUNC DS    0H                                                       01410002
+         BR    R7            Invoke the requested routine               01420002
+*********************************************************************** 01430002
+*        Create a new handle for a conversation and                   * 01440002
+*        aquire storage for a new state block                         * 01450002
+*********************************************************************** 01460002
+*                                                                       01470002
+CREATE_RTN DS  0H                                                       01480002
+WK1      EQU   R6                                                       01490002
+WK2      EQU   R5                                                       01500002
+         L     WK1,ANCHOR_COUNTER       Get the current count           01510002
+         LA    WK1,1(,WK1)              Increment it by one             01520002
+         ST    WK1,ANCHOR_COUNTER       Put it back                     01530002
+*        Get storage for the new state block                            01540002
+         MVC   GETMAIN_LENGTH,=AL4(STATE_LEN)                           01550002
+         EXEC  CICS,                                                   *01560002
+               GETMAIN,                                                *01570002
+               SHARED,                                                 *01580002
+               SET(STATE_PTR),                                         *01590002
+               RESP(RESP),                                             *01600002
+               FLENGTH(GETMAIN_LENGTH),                                *01610002
+               INITIMG(X'00')                                           01620002
+         CLC   RESP,DFHRESP(NORMAL)    Storage acquired OK ?            01630002
+         BNE   NOSTG                   No, check for no queue           01640002
+**********************************************************************  01650002
+*        Add new state block to the chain                            *  01660002
+**********************************************************************  01670002
+         L     WK1,ANCHOR_BACKWARD_PTR                                  01680002
+         LTR   WK1,WK1                                                  01690002
+         BNZ   ADDELEM                                                  01700002
+**********************************************************************  01710002
+*        No elements currently in chain                              *  01720002
+**********************************************************************  01730002
+         ST    STATE_PTR,ANCHOR_BACKWARD_PTR                            01740002
+         ST    STATE_PTR,ANCHOR_FORWARD_PTR                             01750002
+         B     CONTINUE                                                 01760002
+**********************************************************************  01770002
+*        Add element to existing chain                               *  01780002
+**********************************************************************  01790002
+ADDELEM  DS   0H                                                        01800002
+         L    WK1,ANCHOR_BACKWARD_PTR                                   01810002
+         ST   STATE_PTR,STATE_FORWARD_PTR-STATE_BLOCK(,WK1)             01820002
+         XC   STATE_FORWARD_PTR,STATE_FORWARD_PTR                       01830002
+         ST   WK1,STATE_BACKWARD_PTR                                    01840002
+         ST   STATE_PTR,ANCHOR_BACKWARD_PTR                             01850002
+CONTINUE DS   0H                                                        01860002
+**********************************************************************  01870002
+*        Write the anchor block back to TS                           *  01880002
+**********************************************************************  01890002
+         BAL   R7,REWRITE                                               01900002
+**********************************************************************  01910002
+*        Initialise element                                          *  01920002
+*        The method of state token generation should be revised if   *  01930002
+*        a more sophisticated method is required by the user.        *  01940002
+**********************************************************************  01950002
+         MVC  STATE_EYECATCHER,STATE_EYE_INIT                           01960002
+         BAL  R7,TIMSTAMP                                               01970002
+         MVC  STATE_USER_DATA,USERDATA                                  01980002
+CLOCKOUT DS   0H                                                        01990002
+         STCK TIME                          Read the TOD clock          02000002
+         MVC  HANDLE,TIME+4                 Save clock value as handle  02010002
+         BAL  R7,LOCATE_STATE_BLOCK         See if handle is in use     02020002
+         LTR  STATE_PTR,STATE_PTR           Found block with my handle? 02030002
+         BNZ  CLOCKOUT                      Yes, get another value      02040002
+         L    STATE_PTR,ANCHOR_BACKWARD_PTR No, restore my pointer      02050002
+         MVC  STATE_HANDLE,HANDLE           Save unique handle          02060002
+         MVI  RETCODE,GOODRC                                            02070002
+         B    ENDFUNC                                                   02080002
+*********************************************************************** 02090002
+*        This routine does the following:                             * 02100002
+*        1. Retrieve the state data for a handle passed in the        * 02110002
+*           Commarea.                                                 * 02120002
+*        2. Update the timestamp in the state block.                  * 02130002
+*        3. Return the state data to the application                  * 02140002
+*********************************************************************** 02150002
+*                                                                       02160002
+RETRIEVE_RTN DS 0H                                                      02170002
+         BAL  R7,LOCATE_STATE_BLOCK                                     02180002
+         LTR  STATE_PTR,STATE_PTR                                       02190002
+         BZ   RETRIEVE_NO_MATCH                                         02200002
+         BAL  R7,TIMSTAMP                                               02210002
+         MVC  USERDATA,STATE_USER_DATA                                  02220002
+         B   ENDFUNC                                                    02230002
+*********************************************************************** 02240002
+*        No match was found for the handle passed by the caller.      * 02250002
+*        Either it has timed out, or there is a logic error.          * 02260002
+*********************************************************************** 02270002
+RETRIEVE_NO_MATCH DS 0H                                                 02280002
+         B   NOMATCH                                                    02290002
+*********************************************************************** 02300002
+*        Find the requested handle,                                   * 02310002
+*        Update the timestamp,                                        * 02320002
+*        Store the new state data in the block.                       * 02330002
+*********************************************************************** 02340002
+*                                                                       02350002
+STORE_RTN DS 0H                                                         02360002
+         BAL  R7,LOCATE_STATE_BLOCK                                     02370002
+         LTR  STATE_PTR,STATE_PTR                                       02380002
+         BZ   STORE_NO_MATCH                                            02390002
+         BAL  R7,TIMSTAMP                                               02400002
+         MVC  STATE_USER_DATA,USERDATA                                  02410002
+         MVI  RETCODE,GOODRC                                            02420002
+         B ENDFUNC                                                      02430002
+STORE_NO_MATCH DS 0H                                                    02440002
+         B NOMATCH                                                      02450002
+*********************************************************************** 02460002
+*        Find the requested block,                                    * 02470002
+*        Call FREE_STATE_BLOCK to destroy the element,                * 02480002
+*        Freemain the state block.                                    * 02490002
+*********************************************************************** 02500002
+*                                                                       02510002
+DESTROY_RTN   DS 0H                                                     02520002
+         BAL  R7,LOCATE_STATE_BLOCK                                     02530002
+         LTR  STATE_PTR,STATE_PTR                                       02540002
+         BZ   DESTROY_NO_MATCH                                          02550002
+         BAL  R7,FREE_STATE_BLOCK                                       02560002
+         MVI  RETCODE,GOODRC                                            02570002
+         B    ENDFUNC                                                   02580002
+DESTROY_NO_MATCH DS 0H                                                  02590002
+         B    NOMATCH                                                   02600002
+*********************************************************************** 02610002
+*        Routine to loop through all state control blocks             * 02620002
+*        and delete those that have been time expired.                * 02630002
+*********************************************************************** 02640002
+*                                                                       02650002
+TIMEOUT_RTN DS 0H                                                       02660002
+         EXEC  CICS,                                                   *02670002
+               ASKTIME,                                                *02680002
+               ABSTIME(CURRENT_TIME),                                  *02690002
+               RESP(RESP)                                               02700002
+         CLC   RESP,DFHRESP(NORMAL)     Timestamp made OK ?             02710002
+         BNE   TIMEFAIL                                                 02720002
+         L     STATE_PTR,ANCHOR_FORWARD_PTR Initialise state ptr        02730002
+TIMELOOP DS    0H                                                       02740002
+         LTR   STATE_PTR,STATE_PTR      If nulls, we are done           02750002
+         BZ    ALLDONE                                                  02760002
+         MVC   TEMP_TIME,STATE_TIMESTAMP If (last update time +         02770002
+         AP    TEMP_TIME,EXPIRY_INTERVAL     expiry interval)           02780002
+         CP    TEMP_TIME,CURRENT_TIME       is less than current        02790002
+         BNL   TIMEOK                       then remove it              02800002
+         MVC   TEMP_STATE_PTR,STATE_FORWARD_PTR else remove this block  02810002
+         BAL   R7,FREE_STATE_BLOCK                                      02820002
+         L     STATE_PTR,TEMP_STATE_PTR                                 02830002
+         B     TIMELOOP                                                 02840002
+TIMEOK   DS    0H                                                       02850002
+         L     STATE_PTR,STATE_FORWARD_PTR                              02860002
+ALLDONE  DS    0H                                                       02870002
+         B     ENDFUNC                                                  02880002
+*********************************************************************** 02890002
+*        Routine to loop through all state control blocks             * 02900002
+*        and delete them, then delete the anchor block.               * 02910002
+*********************************************************************** 02920002
+*                                                                       02930002
+PURGE_RTN  DS  0H                                                       02940002
+PURGE_LOOP DS  0H                                                       02950002
+         L     STATE_PTR,ANCHOR_FORWARD_PTR Initialise state ptr        02960002
+         LTR   STATE_PTR,STATE_PTR                                      02970002
+         BZ    PURGE_DONE                                               02980002
+         BAL   R7,FREE_STATE_BLOCK                                      02990002
+         B     PURGE_LOOP                                               03000002
+PURGE_DONE DS  0H                                                       03010002
+         EXEC  CICS,                                                   *03020002
+               DELETEQ,                                                *03030002
+               TS,                                                     *03040002
+               QUEUE(WEBQUEUE),                                        *03050002
+               RESP(RESP)                                               03060002
+         CLC   RESP,DFHRESP(NORMAL)     Timestamp made OK ?             03070002
+         BNE   DELEFAIL                                                 03080002
+         EXEC  CICS,                                                   *03090002
+               WRITE,                                                  *03100002
+               OPERATOR,                                               *03110002
+               TEXT(TERMMSG),                                          *03120002
+               TEXTLENGTH(L'TERMMSG)                                    03130002
+         B     ENDFUNC                                                  03140002
+*********************************************************************** 03150002
+*        Retrieve the TS Q record containing the anchor block         * 03160002
+*        if it's not there, create a new one                          * 03170002
+*********************************************************************** 03180002
+*                                                                       03190002
+GETANCH  DS    0H                                                       03200002
+         SR    WK1,WK1                                                  03210002
+         LA    WK1,1(,WK1)                                              03220002
+         STCM  WK1,B'0011',ITEMNUM                                      03230002
+         MVC   TSLEN,=AL2(ANCHOR_LEN)                                   03240002
+         EXEC  CICS,                                                   *03250002
+               READQ,                                                  *03260002
+               TS,                                                     *03270002
+               QUEUE(WEBQUEUE),                                        *03280002
+               INTO(ANCHOR_BLOCK),                                     *03290002
+               LENGTH(TSLEN),                                          *03300002
+               ITEM(ITEMNUM),                                          *03310002
+               RESP(RESP)                                               03320002
+         CLC   RESP,DFHRESP(NORMAL)    Record read OK ?                 03330002
+         BNE   NOQUEUE                 No, check for no queue           03340002
+         LA    ANCHOR_PTR,ANCHOR_BLOCK                                  03350002
+         BR    R7                                                       03360002
+*                                                                       03370002
+NOQUEUE  DS    0H                                                       03380002
+         SR    ANCHOR_PTR,ANCHOR_PTR                                    03390002
+         CLC   RESP,DFHRESP(QIDERR)    No queue found ?                 03400002
+         BNE   BADQNM                  No, unexpected error             03410002
+         BR    R7                      Return to the caller             03420002
+*********************************************************************** 03430002
+*        This routine is responsible for acquiring and initialising   * 03440002
+*        the state control block anchor. It is a TS record,           * 03450002
+*        written the first time invoked.                              * 03460002
+*********************************************************************** 03470002
+*                                                                       03480002
+INIT_ANCHOR DS 0H                                                       03490002
+         LA    ANCHOR_PTR,ANCHOR_STG                                    03500002
+         XC    ANCHOR_BLOCK,ANCHOR_BLOCK                                03510002
+         MVC   ANCHOR_EYECATCHER,ANCHOR_EYE_INIT                        03520002
+         MVC   TSLEN,=AL2(ANCHOR_LEN)                                   03530002
+         EXEC  CICS,                                                   *03540002
+               ASKTIME,                                                *03550002
+               ABSTIME(ANCHOR_TIMESTAMP),                              *03560002
+               RESP(RESP)                                               03570002
+         EXEC  CICS,                                                   *03580002
+               WRITEQ,                                                 *03590002
+               TS,                                                     *03600002
+               MAIN,                                                   *03610002
+               QUEUE(WEBQUEUE),                                        *03620002
+               RESP(RESP),                                             *03630002
+               FROM(ANCHOR_BLOCK),                                     *03640002
+               LENGTH(TSLEN)                                            03650002
+         CLC   RESP,DFHRESP(NORMAL)    Record written OK ?              03660002
+         BNE   WRITERR                 No, check for no queue           03670002
+         EXEC  CICS,                                                   *03680002
+               WRITE,                                                  *03690002
+               OPERATOR,                                               *03700002
+               TEXT(INITMSG),                                          *03710002
+               TEXTLENGTH(L'INITMSG)                                    03720002
+         BR    R7                      Return to the caller             03730002
+WRITERR  DS    0H                                                       03740002
+         SR    ANCHOR_PTR,ANCHOR_PTR                                    03750002
+         B     TSWERR                                                   03760002
+*********************************************************************   03770002
+*        Subroutine to locate state block using handle from         *   03780002
+*        COMMAREA. If we find it, load the address into STATE_PTR.  *   03790002
+*        Otherwise set STATE_PTR to nulls before returning.         *   03800002
+*********************************************************************   03810002
+*                                                                       03820002
+LOCATE_STATE_BLOCK DS 0H                                                03830002
+         L     STATE_PTR,ANCHOR_FORWARD_PTR                             03840002
+         LTR   STATE_PTR,STATE_PTR       Is list empty                  03850002
+         BZ    LOCATE_NO_MATCH           ..Yes, branch                  03860002
+LOCATE_SEARCH_LOOP DS 0H                                                03870002
+         L     WK1,HANDLE                                               03880002
+         C     WK1,STATE_HANDLE                                         03890002
+         BE    LOCATE_FOUND                                             03900002
+         L     STATE_PTR,STATE_FORWARD_PTR                              03910002
+         LTR   STATE_PTR,STATE_PTR                                      03920002
+         BZ    LOCATE_NO_MATCH                                          03930002
+         B     LOCATE_SEARCH_LOOP                                       03940002
+LOCATE_FOUND   DS 0H                                                    03950002
+         BR    R7                                                       03960002
+LOCATE_NO_MATCH DS 0H                                                   03970002
+         SR    STATE_PTR,STATE_PTR                                      03980002
+         BR    R7                                                       03990002
+*********************************************************************   04000002
+*        Subroutine to free a state block,                          *   04010002
+*        unchaining it from the list,                               *   04020002
+*        and then FREEMAIN the storage.                             *   04030002
+*********************************************************************   04040002
+*                                                                       04050002
+FREE_STATE_BLOCK DS 0H                                                  04060002
+         L     WK1,STATE_FORWARD_PTR                                    04070002
+         LTR   WK1,WK1                                                  04080002
+         BZ    FREE1                                                    04090002
+         MVC   STATE_BACKWARD_PTR-STATE_BLOCK(4,WK1),STATE_BACKWARD_PTR 04100002
+         B     FREE2                                                    04110002
+FREE1    DS    0H                                                       04120002
+         L     WK1,STATE_BACKWARD_PTR                                   04130002
+         ST    WK1,ANCHOR_BACKWARD_PTR                                  04140002
+FREE2    DS    0H                                                       04150002
+*********************************************************************   04160002
+*        Sort out forward pointers                                  *   04170002
+*********************************************************************   04180002
+         L     WK1,STATE_BACKWARD_PTR                                   04190002
+         LTR   WK1,WK1                                                  04200002
+         BZ    FREE3                                                    04210002
+         MVC   STATE_FORWARD_PTR-STATE_BLOCK(,WK1),STATE_FORWARD_PTR    04220002
+         B     FREE4                                                    04230002
+FREE3    DS    0H                                                       04240002
+         L     WK1,STATE_FORWARD_PTR                                    04250002
+         ST    WK1,ANCHOR_FORWARD_PTR                                   04260002
+*********************************************************************   04270002
+*        Freemain the state block storage                           *   04280002
+*********************************************************************   04290002
+FREE4    DS    0H                                                       04300002
+         EXEC  CICS,                                                   *04310002
+               FREEMAIN,                                               *04320002
+               DATAPOINTER(STATE_PTR),                                 *04330002
+               RESP(RESP)                                               04340002
+         ST    R7,FREE_SAVE_R7               Save R7 across call        04350002
+         BAL   R7,REWRITE                    to update anchor           04360002
+         L     R7,FREE_SAVE_R7               Restore R7                 04370002
+         BR    R7                            Return                     04380002
+*********************************************************************   04390002
+*        Subroutine to timestamp a state block                      *   04400002
+*********************************************************************   04410002
+*                                                                       04420002
+TIMSTAMP DS    0H                                                       04430002
+         EXEC  CICS,                                                   *04440002
+               ASKTIME,                                                *04450002
+               ABSTIME(STATE_TIMESTAMP),                               *04460002
+               RESP(RESP)                                               04470002
+         CLC   RESP,DFHRESP(NORMAL)    Timestamp made OK ?              04480002
+         BNE   NOSTMP                  No, raise error.                 04490002
+         BR    R7                                                       04500002
+*********************************************************************   04510002
+*        Subroutine to write updated anchor block back to TS        *   04520002
+*********************************************************************   04530002
+*                                                                       04540002
+REWRITE  DS    0H                                                       04550002
+         MVC   ITEMNUM,=AL2(1)                                          04560002
+         MVC   TSLEN,=AL2(ANCHOR_LEN)                                   04570002
+         EXEC  CICS,                                                   *04580002
+               WRITEQ,                                                 *04590002
+               TS,                                                     *04600002
+               QUEUE(WEBQUEUE),                                        *04610002
+               RESP(RESP),                                             *04620002
+               FROM(ANCHOR_BLOCK),                                     *04630002
+               LENGTH(TSLEN),                                          *04640002
+               ITEM(ITEMNUM),                                          *04650002
+               REWRITE                                                  04660002
+         CLC   RESP,DFHRESP(NORMAL)    Record written OK ?              04670002
+         BNE   TSWERR2                 No, raise error                  04680002
+         BR    R7                                                       04690002
+*********************************************************************   04700002
+*        Error Routines                                             *   04710002
+*********************************************************************   04720002
+*                                                                       04730002
+BADCOM   DS    0H                  DUPLICATE RECORD                     04740002
+         MVC   MESSAGES,=CL80'IEW20011E Invalid COMMAREA passed.'       04750002
+         B     ENDFUNC_NO_COMMAREA    COMPLETE, GO FINISH               04760002
+*                                                                       04770002
+INVFUNC  DS    0H                  DUPLICATE RECORD                     04780002
+         MVC   MESSAGES,=CL80'IEW20012E Invalid function passed.'       04790002
+         MVI   RETCODE,INVFUNRC                                         04800002
+         B     ENDFUNC                COMPLETE, GO FINISH               04810002
+*                                                                       04820002
+BADQNM   DS    0H                                                       04830002
+         MVC   MESSAGES,=CL80'IEW20013E Unable to READ STATE Control Bl*04840002
+               ock ANCHOR from TS QUEUE.'                               04850002
+         MVI   RETCODE,BADQNMRC                                         04860002
+         B     ENDFUNC                                                  04870002
+*                                                                       04880002
+TSWERR   DS    0H                                                       04890002
+         MVC   MESSAGES,=CL80'IEW20014E Initial TS WRITE for STATE Cont*04900002
+               rol Block ANCHOR failed.'                                04910002
+         MVI   RETCODE,TSWERRC                                          04920002
+         B     ENDFUNC                                                  04930002
+*                                                                       04940002
+TSWERR2  DS    0H                                                       04950002
+         MVC   MESSAGES,=CL80'IEW20015E Update TS REWRITE for STATE Con*04960002
+               trol Block ANCHOR failed.'                               04970002
+         MVI   RETCODE,TSWER2RC                                         04980002
+         B     ENDFUNC                                                  04990002
+*                                                                       05000002
+NOSTG    DS    0H                                                       05010002
+         MVC   MESSAGES,=CL80'IEW20016E GETMAIN for STATE Control Block*05020002
+                failed.'                                                05030002
+         B     ENDFUNC                                                  05040002
+*                                                                       05050002
+NOSTMP   DS    0H                                                       05060002
+         MVC   MESSAGES,=CL80'IEW20017E TIMESTAMP of STATE Control Bloc*05070002
+               k failed'                                                05080002
+         MVI   RETCODE,NOSTMPRC                                         05090002
+         B     ENDFUNC                                                  05100002
+*                                                                       05110002
+NOMATCH  DS    0H                                                       05120002
+         MVC   MESSAGES,=CL80'IEW20018E STATE data not found for handle*05130002
+                xxxxxxxx '                                              05140002
+         UNPK  MESSAGES+42(9),HANDLE(5)                                 05150002
+         TR    MESSAGES+42(8),=C'0123456789ABCDEF'-C'0'                 05160002
+         MVI   MESSAGES+50,C' '                                         05170002
+         MVI   RETCODE,NOMATRC                                          05180002
+         B     ENDFUNC                                                  05190002
+*                                                                       05200002
+TIMEFAIL DS    0H                                                       05210002
+         MVC   MESSAGES,=CL80'IEW20019E Unable to get current time from*05220002
+                ASKTIME.'                                               05230002
+         B     ENDFUNC                                                  05240002
+*                                                                       05250002
+DELEFAIL DS    0H                                                       05260002
+         MVC   MESSAGES,=CL80'IEW20020E TS DELETEQ for STATE Control Bl*05270002
+               ock ANCHOR failed.   '                                   05280002
+         B     ENDFUNC                                                  05290002
+*                                                                       05300002
+*********************************************************************** 05310002
+*       If an error was raised, issue message to operator             * 05320002
+*********************************************************************** 05330002
+*                                                                       05340002
+ENDFUNC  DS    0H                                                       05350002
+         CLI   RETCODE,GOODRC                                           05360002
+         BE    ENDNOERR                                                 05370002
+ENDFUNC_NO_COMMAREA DS 0H                                               05380002
+         EXEC  CICS,                                                   *05390002
+               WRITEQ,                                                 *05400002
+               TD,                                                     *05410002
+               QUEUE(=C'CSSL'),                                        *05420002
+               FROM(MESSAGES),                                         *05430002
+               LENGTH(=AL2(L'MESSAGES))                                 05440002
+ENDNOERR DS    0H                                                       05450002
+*********************************************************************** 05460002
+*        Issue an DEQ to release the State Management lock            * 05470002
+*********************************************************************** 05480002
+         EXEC  CICS,                                                   *05490002
+               DEQ,                                                    *05500002
+               RESOURCE(STATE_MANAGER),                                *05510002
+               LENGTH(L'STATE_MANAGER),                                *05520002
+               RESP(RESP)                                               05530002
+         EXEC  CICS,                                                   *05540002
+               RETURN                                                   05550002
+         DFHEIRET                                                       05560002
+*---------------------------------------------------------------------- 05570002
+*        CONSTANTS                                                      05580002
+*---------------------------------------------------------------------- 05590002
+ANCHORID        DC CL8'$ANCHOR$'                                        05600002
+WEBQUEUE        DC CL8'$IEW200$'                                        05610002
+EXPIRY_INTERVAL DC XL8'00000000900000C' * 15 minutes absolute time      05620002
+ANCHOR_EYE_INIT DC CL4'SCBA'                                            05630002
+STATE_EYE_INIT  DC CL4'SCBE'                                            05640002
+CWBP            DC CL4'CWBP'                                            05650002
+CWBT            DC CL4'CWBT'                                            05660002
+STATE_MANAGER   DC CL14'IEW200 ENQUEUE'                                 05670002
+INITMSG         DC CL80'IEW20001 Web State Manager IEW200 initialized'  05680002
+TERMMSG         DC CL80'IEW20009 Web State Manager IEW200 terminated'   05690002
+MSGROUTE        DC X'0B'           * Message routecode (11)             05700002
+*                                                                       05710002
+         LTORG                                                          05720002
+*---------------------------------------------------------------------- 05730002
+*        DSECTs                                                         05740002
+*---------------------------------------------------------------------- 05750002
+*        Commarea Structure                                             05760002
+*---------------------------------------------------------------------- 05770002
+COMMAREA   DSECT ,                                                      05780002
+COMM_START DS    0F                                                     05790002
+EYECATCH   DS    CL4                                                    05800002
+FUNCTION   DS    XL1                                                    05810002
+CREATE     EQU   X'C3'             Create a new handle and state stg    05820002
+RETRIEVE   EQU   X'D9'             Retrieve state info for a handle     05830002
+STORE      EQU   X'E2'             Store state info for a handle        05840002
+DESTROY    EQU   X'C4'             Destroy handle and state stg         05850002
+RETCODE    DS    XL1                                                    05860002
+GOODRC     EQU   X'0'                                                   05870002
+BADCOMRC   EQU   X'1'                                                   05880002
+INVFUNRC   EQU   X'2'                                                   05890002
+NOSTGRC    EQU   X'3'                                                   05900002
+NOMATRC    EQU   X'4'                                                   05910002
+TSWERRC    EQU   X'5'                                                   05920002
+NOSTMPRC   EQU   X'7'                                                   05930002
+BADQNMRC   EQU   X'8'                                                   05940002
+TIMEFRC    EQU   X'9'                                                   05950002
+TSWER2RC   EQU   X'A'                                                   05960002
+SHTSCERR   EQU   X'B'                                                   05970002
+SHTSRERR   EQU   X'C'                                                   05980002
+SHTSSERR   EQU   X'D'                                                   05990002
+SHTSDERR   EQU   X'E'                                                   06000002
+RESERVED   DS    XL2                                                    06010002
+HANDLE     DS    F                 Unique conversation id               06020002
+USERDATA   DS    XL256             User state information               06030002
+COMLEN     EQU   *-COMM_START      Length of COMMAREA                   06040002
+*---------------------------------------------------------------------- 06050002
+*        Anchor Control Block Structure                                 06060002
+*---------------------------------------------------------------------- 06070002
+ANCHOR_BLOCK        DSECT ,        Anchor Control Block                 06080002
+ANCHOR_EYECATCHER   DS  CL4                                             06090002
+ANCHOR_COUNTER      DS  F          Counter to generate unique handles   06100002
+ANCHOR_FORWARD_PTR  DS  F          Storage block chain forward ptr      06110002
+ANCHOR_BACKWARD_PTR DS  F          Storage block chain backward ptr     06120002
+ANCHOR_TIMESTAMP    DS  PL8        Time this anchor was created         06130002
+ANCHOR_LEN          EQU *-ANCHOR_BLOCK Length of anchor                 06140002
+*---------------------------------------------------------------------- 06150002
+*        State Control Block Structure                                  06160002
+*---------------------------------------------------------------------- 06170002
+STATE_BLOCK        DSECT ,         State Control Block                  06180002
+STATE_EYECATCHER   DS  CL4                                              06190002
+STATE_FORWARD_PTR  DS  F                                                06200002
+STATE_BACKWARD_PTR DS  F                                                06210002
+STATE_HANDLE       DS  F                                                06220002
+STATE_TIMESTAMP    DS  PL8                                              06230002
+STATE_USER_DATA    DS  XL256                                            06240002
+STATE_LEN          EQU *-STATE_BLOCK                                    06250002
+*---------------------------------------------------------------------- 06260002
+*        Working Storage Structure                                      06270002
+*---------------------------------------------------------------------- 06280002
+               DFHEISTG                                                 06290002
+EISEYE         DS  CL16            EYE CATCHER                          06300002
+DBLWORK        DS  D               DOUBLE WORD WORK                     06310002
+FULWORK        DS  F               FULL WORD WORK                       06320002
+RESP           DS  F               EXEC COMMAND RESPONSE                06330002
+RESP2          DS  F               EXEC COMMAND RESPONSE                06340002
+FAILRSP        DS  CL8             EYE CATCHER                          06350002
+SAVRESP        DS  F               SAVED EXEC COMMAND RESP              06360002
+FAILRSP2       DS  CL8             EYE CATCHER                          06370002
+SAVRESP2       DS  F               SAVED EXEC COMMAND RESP              06380002
+FAILFN         DS  CL8             EYE CATCHER                          06390002
+SAVFN          DS  H               SAVED EXEC EIBFN                     06400002
+FAILRC         DS  CL8             EYE CATCHER                          06410002
+SAVRC          DS  XL6             SAVED EXEC EIBRCODE                  06420002
+HLFWORK        DS  H               HALF WORD WORK                       06430002
+TEMP_TIME      DS  PL8                                                  06440002
+CURRENT_TIME   DS  PL8                                                  06450002
+TIME           DS  PL8                                                  06460002
+TEMP_STATE_PTR DS  F                                                    06470002
+MESSAGES       DS  CL80            TEMP STORE FOR MESSAGES              06480002
+TRANID         DS  CL4             TRANSACTION IDENTIFIER               06490002
+TSLEN          DS  H                                                    06500002
+ITEMNUM        DS  H                                                    06510002
+FREE_SAVE_R7   DS  F                                                    06520002
+GETMAIN_LENGTH DS  F                                                    06530002
+ANCHOR_STG     DS  CL(ANCHOR_LEN)                                       06540002
+               DFHEIEND                                                 06550002
+*                                                                       06560002
+         END                                                            06570002
+

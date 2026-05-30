@@ -1,0 +1,757 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010000
+IET121   TITLE '**  CICS/ESA TCP SOCKETS GENERAL CLIENT PROGRAM  **'    00020000
+*---------------------------------------------------------------------- 00030000
+*        REGISTER AND OTHER EQUATES                                     00040000
+*---------------------------------------------------------------------- 00050000
+RF       EQU   15                                                       00060000
+RE       EQU   14                                                       00070000
+RD       EQU   13                                                       00080000
+RC       EQU   12                                                       00090000
+RB       EQU   11                                                       00100000
+RA       EQU   10                                                       00110000
+R9       EQU   9                                                        00120000
+R8       EQU   8                                                        00130000
+R7       EQU   7                                                        00140000
+R6       EQU   6                                                        00150000
+R5       EQU   5                                                        00160000
+R4       EQU   4                                                        00170000
+R3       EQU   3                                                        00180000
+R2       EQU   2                                                        00190000
+R1       EQU   1                                                        00200000
+R0       EQU   0                                                        00210000
+*---------------------------------------------------------------------- 00220000
+*  IET121   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230000
+*---------------------------------------------------------------------- 00240000
+IET121   RSECT                                                          00250000
+IET121   AMODE 31                       MAY EXECUTE ABOVE 16M           00260000
+IET121   RMODE ANY                      MAY RESIDE ABOVE 16M            00270000
+IET121   DFHEIENT CODEREG=(12),                                        *00280000
+               DATAREG=(13),                                           *00290000
+               EIBREG=(11)                                              00300000
+         MVC   EISEYE,=CL16'IET121 EI STORAGE'                          00310000
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00320000
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00330000
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00340000
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00350000
+         MVC   EZA25EYE,=CL8'EZA25EYE'    SET EYE CATCHER               00360000
+         MVC   CALERREY,=CL8'  ERRNO='  SET EYE CATCHER                 00370000
+         MVC   CALRTNEY,=CL8'  RTNCD='  SET EYE CATCHER                 00380000
+*---------------------------------------------------------------------- 00390000
+*        VERIFY TCP/IP CICS EXIT ACTIVE                                 00400000
+*---------------------------------------------------------------------- 00410000
+         EXEC  CICS,                                                   *00420000
+               INQUIRE,                                                *00430000
+               EXITPROGRAM('EZACIC01'),                                *00440000
+               STARTSTATUS(FULWORK),                                   *00450000
+               RESP(RESP),                                             *00460000
+               RESP2(RESP2)                                             00470000
+         LA    RA,COMRSPTC              LOAD TCP/IP INACT RETURN CODE   00480000
+         CLC   RESP,DFHRESP(NORMAL)     EXIT PROGRAM FOUND              00490000
+         JLNE  XIT00                    ..NO, BRANCH                    00500000
+         CLC   FULWORK,DFHVALUE(STARTED) EXIT ACTIVE                    00510000
+         JLNE  XIT00                    ..NO, BRANCH                    00520000
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE         00530000
+*---------------------------------------------------------------------- 00540000
+*        VERIFY CALLER'S PARMS                                          00550000
+*---------------------------------------------------------------------- 00560000
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00570000
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00580000
+         JLL   ABN01                    ..NO CHOICE BUT ABEND           00590000
+         EXEC  CICS,                                                   *00600000
+               ADDRESS,                                                *00610000
+               COMMAREA(R9),                                           *00620000
+               RESP(RESP),                                             *00630000
+               RESP2(RESP2)                                             00640000
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00650000
+         JLNE  ABN02                    ..NO CHOICE BUT ABEND           00660000
+         USING COMPARM,R9                                               00670000
+*                                                                       00680000
+         LA    RA,COMRSILN              SET INBOUND LENGTH ZERO         00690000
+         OC    COMINLN,COMINLN          INBOUND LENGTH ZERO             00700000
+         JLZ   XIT00                    ..YES, BRANCH                   00710000
+         LA    RA,COMRSOLN              SET OUTBOUND LENGTH ZERO        00720000
+         OC    COMOUTLN,COMOUTLN        MAX OUTBOUND LENGTH ZERO        00730000
+         JLZ   XIT00                    ..YES, BRANCH                   00740000
+         LA    R2,COMMIN                LOAD MIN COMMAREA LEN           00750000
+         AH    R2,COMINLN               ADD INBOUND LEN                 00760000
+         AH    R2,COMOUTLN              ADD MAX OUTBOUND LEN            00770000
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00780000
+         LA    RA,COMRSPCL              LOAD INVALID COMMAREA LEN       00790000
+         CR    R1,R2                    COMMAREA LARGE ENOUGH           00800000
+         JLL   XIT00                    ..NO, BRANCH                    00810000
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE         00820000
+*                                                                       00830000
+         LA    R3,COMTIM00              LOAD ENTRY TIMER @              00840000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              00850000
+*                                                                       00860000
+         XC    COMTIM01(L'COMTIM00*11),COMTIM01 CLEAR TIMERS            00870000
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS           00880000
+         LA    R4,SRVRTBL               LOAD SERVER TABLE @             00890000
+         LA    RF,SRVRTBL#              LOAD SERVER TABLE ENTRIES       00900000
+INT10    DS    0H                                                       00910000
+         CLC   COMSRV,0(R4)             VALID SERVER REQUEST            00920000
+         JLE   INT20                    ..YES, BRANCH                   00930000
+         LA    R4,L'SRVRTBL(,R4)        INDEX TO NEXT ENTRY             00940000
+         JCT   RF,INT10                 ..LOOP                          00950000
+         LA    RA,COMRSPSI              SET INVALID SERVER ID           00960000
+         J     XIT00                    RETURN RESP CODE                00970000
+*---------------------------------------------------------------------- 00980000
+*        LINK FOR TCP GETHOSTNAME CALL                                  00990000
+*---------------------------------------------------------------------- 01000000
+INT20    DS    0H                                                       01010000
+         LA    RE,EZA25RC                                               01020000
+         LR    R0,RE                                                    01030000
+         LA    RF,EZA25ELN                                              01040000
+         SR    R1,R1                                                    01050000
+         MVCL  RE,R0                    CLR EZACIC25 COMMONAREA         01060000
+*                                                                       01070000
+         LA    RE,4(,R4)                                                01080000
+         OC    4(4,R4),4(R4)            IP @ ALREADY KNOWN              01090000
+         JLNZ  INT32                    ..YES, USE IT                   01100000
+         MVC   EZA25REQ,=C'GHBN'        PASS DNS NAME TO EZACIC25       01110000
+         MVI   EZA25TYP,C'0'             FOR GETHOSTBYNAME              01120000
+         L     R1,8(,R4)                LOAD HOST NAME LENGTH           01130000
+         L     RE,12(,R4)               LOAD HOST NAME @                01140000
+         ST    R1,EZA25NLN              STORE HOST NAME LEN             01150000
+         BCTR  R1,0                     DECR FOR EXECUTE MOVE           01160000
+         EX    R1,EZA25MV                                               01170000
+*EZA25MV MVC   EZA25HNM(0),0(RE)        EXECUTED INSTRUCTION            01180000
+*                                                                       01190000
+         EXEC  CICS,                                                   *01200000
+               LINK,                                                   *01210000
+               PROGRAM('EZACIC25'),                                    *01220000
+               COMMAREA(EZA25RC),                                      *01230000
+               LENGTH(=AL2(EZA25ELN))                                   01240000
+         L     R5,EZA25HNT              LOAD  HOSTENT @                 01250000
+         LTR   R5,R5                    FOUND HOSTENT                   01260000
+         JLNZ  INT30                    ..YES, BRANCH                   01270000
+         LA    RA,COMRSPGH              SET SOCKET CALL ERROR           01280000
+         MVC   COMTIM11(4),EZA25RC      SET RETURN CODE                 01290000
+         MVC   COMTIM11+4(4),EZA25ERR   SET ERROR CODE                  01300000
+         J     XIT00                    RETURN RESP CODE                01310000
+*                                                                       01320000
+EZA25MV  MVC   EZA25HNM(0),0(RE)                                        01330000
+*                                                                       01340000
+INT30    DS    0H                                                       01350000
+         ST    R5,COMTIM09+4            SAVE HOSTENT @                  01360000
+         L     R6,16(,R5)               LOAD HOSTADDR LIST @            01370000
+         L     RE,0(R6)                 LOAD 1ST IP @                   01380000
+INT32    DS    0H                                                       01390000
+         MVC   CALIPADR,0(RE)           SET SERVER IP @                 01400000
+*---------------------------------------------------------------------- 01410000
+*        ISSUE TCP SOCKET CALL                                          01420000
+*---------------------------------------------------------------------- 01430000
+TCP00    DS    0H                                                       01440000
+         MVC   CALPORT,2(R4)            SET SERVER PORT                 01450000
+         LA    R1,CALAFINT              LOAD AF_INET                    01460000
+         STH   R1,CALAF                 STORE AF_INET H-WORD            01470000
+         ST    R1,CALAFF                STORE AF_INET F-WORD            01480000
+         XC    CALRSVD8,CALRSVD8        CLEAR RESERVED                  01490000
+         LA    R1,CALSTREM              LOAD STREAM SOCKET TYPE         01500000
+         ST    R1,CALSCTYP              STORE SOCKET TYPE               01510000
+         XC    CALPROTO,CALPROTO        DEFAULT PROTOCOL                01520000
+         MVC   COMTIM10,CALAF           SAVE TCP/IP CALL PARMS          01530000
+         MVC   CALSCFUN,=CL16'SOCKET'                                   01540000
+*                                                                       01550000
+         LA    R3,COMTIM01              LOAD ENTRY TIMER @              01560000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              01570000
+*                                                                       01580000
+         L     RF,=V(EZASOKET)                                          01590000
+         CALL  (15),                                                   *01600000
+               (CALSCFUN,CALAFF,CALSCTYP,CALPROTO,                     *01610000
+               CALERRNO,CALRTNCD),                                     *01620000
+               VL,                                                     *01630000
+               MF=(E,TCPCALL)                                           01640000
+*                                                                       01650000
+         LA    R3,COMTIM02              LOAD ENTRY TIMER @              01660000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              01670000
+*                                                                       01680000
+         L     RF,CALRTNCD              LOAD RETURN CODE                01690000
+         LTR   RF,RF                    CALL SUCCESSFUL                 01700000
+         JLNM  TCP10                    ..YES, BRANCH                   01710000
+         LA    RA,COMRSPSC              SET SOCKET CALL ERROR           01720000
+         J     XIT00                    RETURN RESP CODE                01730000
+*---------------------------------------------------------------------- 01740000
+*        ISSUE TCP CONNECT CALL                                         01750000
+*---------------------------------------------------------------------- 01760000
+TCP10    DS    0H                                                       01770000
+         STH   RF,CALSCDES              SAVE SOCKET DESCRIPTOR          01780000
+         MVC   CALSCFUN,=CL16'CONNECT'                                  01790000
+*                                                                       01800000
+         LA    R3,COMTIM03              LOAD ENTRY TIMER @              01810000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              01820000
+*                                                                       01830000
+         L     RF,=V(EZASOKET)                                          01840000
+         CALL  (15),                                                   *01850000
+               (CALSCFUN,CALSCDES,CALAF,                               *01860000
+               CALERRNO,CALRTNCD),                                     *01870000
+               VL,                                                     *01880000
+               MF=(E,TCPCALL)                                           01890000
+*                                                                       01900000
+         LA    R3,COMTIM04              LOAD ENTRY TIMER @              01910000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              01920000
+*                                                                       01930000
+         L     RF,CALRTNCD              LOAD RETURN CODE                01940000
+         LTR   RF,RF                    CALL SUCCESSFUL                 01950000
+         JLZ   TCP20                    ..YES, BRANCH                   01960000
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR          01970000
+         J     XIT00                    RETURN RESP CODE                01980000
+*                                                                       01990000
+*---------------------------------------------------------------------- 02000000
+*        TRANSLATE EBCDIC TO ASCII AND ISSUE TCP WRITE CALL             02010000
+*---------------------------------------------------------------------- 02020000
+TCP20    DS    0H                                                       02030000
+         MVC   CALSCFUN,=CL16'WRITE'                                    02040000
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02050000
+         ST    R1,CALNBYTE              SET TCP WRITE LEN               02060000
+         LA    R2,COMMIN(,R9)           LOAD CALLER'S INPUT MSG @       02070000
+*                                                                       02080000
+         LA    R3,COMTIM05              LOAD ENTRY TIMER @              02090000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              02100000
+*                                                                       02110000
+         CALL  EZACIC04,                                               *02120000
+               ((R2),CALNBYTE),                                        *02130000
+               VL,                                                     *02140000
+               MF=(E,TCPCALL)                                           02150000
+*                                                                       02160000
+         L     RF,=V(EZASOKET)                                          02170000
+         CALL  (15),                                                   *02180000
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *02190000
+               (R2),CALERRNO,CALRTNCD),                                *02200000
+               VL,                                                     *02210000
+               MF=(E,TCPCALL)                                           02220000
+*                                                                       02230000
+         CALL  EZACIC05,                                               *02240000
+               ((R2),CALNBYTE),                                        *02250000
+               VL,                                                     *02260000
+               MF=(E,TCPCALL)                                           02270000
+*                                                                       02280000
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02290000
+         STH   R1,ITEMLEN               SET WRITEQ LEN                  02300000
+         JASL  R8,LGO00                 LOG OUTBOUND DATA               02310000
+*                                                                       02320000
+         LA    R3,COMTIM06              LOAD ENTRY TIMER @              02330000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              02340000
+*                                                                       02350000
+         L     RF,CALRTNCD              LOAD RETURN CODE                02360000
+         LTR   RF,RF                    CALL SUCCESSFUL                 02370000
+         JLNM  TCP30                    ..YES, BRANCH                   02380000
+         LA    RA,COMRSPWC              SET WRITE CALL ERROR            02390000
+         J     XIT00                    RETURN RESP CODE                02400000
+*                                                                       02410000
+*---------------------------------------------------------------------- 02420000
+*        ISSUE TCP SELECT CALL AND CHECK TIMEOUT OR RECV                02430000
+*---------------------------------------------------------------------- 02440000
+TCP30    DS    0H                                                       02450000
+*                                                                       02460000
+         LA    R3,COMTIM07              LOAD ENTRY TIMER @              02470000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              02480000
+*                                                                       02490000
+         MVC   CALSCFUN,=CL16'SELECT'                                   02500000
+         XC    CALMASKS,CALMASKS                                        02510000
+         LH    R1,CALSCDES                                              02520000
+         LA    RF,1                                                     02530000
+         CHI   R1,31                                                    02540000
+         JLH   TCP31C                                                   02550000
+         LTR   R1,R1                                                    02560000
+         JLZ   TCP31B                                                   02570000
+TCP31A   DS    0H                                                       02580000
+         SLL   RF,1                                                     02590000
+         JCT   R1,TCP31A                                                02600000
+TCP31B   DS    0H                                                       02610000
+         ST    RF,CALRSMSK                                              02620000
+         XC    CALTOMIC,CALTOMIC                                        02630000
+         MVC   CALTOSEC,=F'31'          31 SECONDS TIMEOUT              02640000
+         MVC   CALMAXSO,=F'31'          MAX SOCKETS                     02650000
+*                                                                       02660000
+         L     RF,=V(EZASOKET)                                          02670000
+         CALL  (15),                                                   *02680000
+               (CALSCFUN,CALMAXSO,CALTOSEC,                            *02690000
+               CALRSMSK,CALWSMSK,CALESMSK,                             *02700000
+               CALRRMSK,CALWRMSK,CALERMSK,                             *02710000
+               CALERRNO,CALRTNCD),                                     *02720000
+               VL,                                                     *02730000
+               MF=(E,TCPCALL)                                           02740000
+*                                                                       02750000
+         L     RF,CALRTNCD              LOAD RETURN CODE                02760000
+         LTR   RF,RF                    CALL SUCCESSFUL                 02770000
+         JLP   TCP32                    ..YES, BRANCH                   02780000
+         LA    RA,COMRSPTO              SET SELECT TIMEOUT ERROR        02790000
+         JLZ   XIT00                    RETURN RESP CODE                02800000
+TCP31C   DS    0H                                                       02810000
+         LA    RA,COMRSPSE              SET SELECT ERROR                02820000
+         J     XIT00                    RETURN RESP CODE                02830000
+*                                                                       02840000
+*---------------------------------------------------------------------- 02850000
+*        ISSUE TCP RECV CALL AND TRANSLATE ASCII TO EBCDIC              02860000
+*---------------------------------------------------------------------- 02870000
+TCP32    DS    0H                                                       02880000
+*                                                                       02890000
+         MVC   CALSCFUN,=CL16'RECV'                                     02900000
+         XC    CALFLG,CALFLG            CLR FLAGS                       02910000
+         LH    R1,COMOUTLN              LOAD CALLER'S OUTPUT MSG LEN    02920000
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN            02930000
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN     02940000
+         LA    R2,COMMIN(R1,R9)         LOAD CALLER'S OUTPUT MSG @      02950000
+*                                                                       02960000
+         L     RF,=V(EZASOKET)                                          02970000
+         CALL  (15),                                                   *02980000
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *02990000
+               (R2),CALERRNO,CALRTNCD),                                *03000000
+               VL,                                                     *03010000
+               MF=(E,TCPCALL)                                           03020000
+*                                                                       03030000
+         L     RF,CALRTNCD              LOAD RETURN CODE                03040000
+         LTR   RF,RF                    CALL SUCCESSFUL                 03050000
+         JLNP  TCP35                    ..NO, BRANCH                    03060000
+*                                                                       03070000
+TCP33    DS    0H                                                       03080000
+         STH   RF,COMOUTLN              SAVE ACTUAL MSG LEN             03090000
+         ST    RF,FULWORK               SAVE ACTUAL MSG LEN             03100000
+*                                                                       03110000
+         CALL  EZACIC05,                                               *03120000
+               ((R2),FULWORK),                                         *03130000
+               VL,                                                     *03140000
+               MF=(E,TCPCALL)                                           03150000
+*                                                                       03160000
+         LH    R1,COMOUTLN              LOAD ACTUAL MSG LEN             03170000
+         STH   R1,ITEMLEN               SET WRITEQ LEN                  03180000
+         JASL  R8,LGI00                 LOG INBOUND DATA                03190000
+*                                                                       03200000
+TCP35    DS    0H                                                       03210000
+         LA    R3,COMTIM08              LOAD ENTRY TIMER @              03220000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              03230000
+*                                                                       03240000
+         L     RF,CALRTNCD              LOAD RETURN CODE                03250000
+         LTR   RF,RF                    CALL SUCCESSFUL                 03260000
+         JLP   TCP40                    ..YES, BRANCH                   03270000
+         LA    RA,COMRSPRC              SET RECV CALL ERROR             03280000
+         MVC   COMTIM11(4),CALRTNCD     SET RETURN CODE                 03290000
+         MVC   COMTIM11+4(4),CALERRNO   SET ERROR CODE                  03300000
+         J     XIT00                    RETURN RESP CODE                03310000
+*                                                                       03320000
+TCP40    DS    0H                                                       03330000
+         CLC   COMSRV,SRVRMMPH          MEMPHIS CONVEYOR SERVER         03340000
+         JLNE  XIT00                    ..YES, BRANCH                   03350000
+         OC    0(2,R2),=X'4040'         FORCE UPPER CASE                03360000
+         CLC   OK,0(R2)                 RECEIVED 'OK'                   03370000
+         JLE   TCP50                                                    03380000
+         LA    RA,COMRSPOE              SET RECV OK ERROR               03390000
+         J     XIT00                    RETURN RESP CODE                03400000
+*                                                                       03410000
+*---------------------------------------------------------------------- 03420000
+*        ISSUE TCP WRITE CALL OF #END# TO MEMPHIS CONVEYOR SERVER       03430000
+*---------------------------------------------------------------------- 03440000
+TCP50    DS    0H                                                       03450000
+         MVC   CALSCFUN,=CL16'WRITE'                                    03460000
+         LA    R1,#END#LN               LOAD #END# MSG LEN              03470000
+         ST    R1,CALNBYTE              SET TCP WRITE LEN               03480000
+         LA    R2,#END#                 LOAD #END# MSG @                03490000
+*                                                                       03500000
+         L     RF,=V(EZASOKET)                                          03510000
+         CALL  (15),                                                   *03520000
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *03530000
+               (R2),CALERRNO,CALRTNCD),                                *03540000
+               VL,                                                     *03550000
+               MF=(E,TCPCALL)                                           03560000
+*                                                                       03570000
+         LA    R1,#END#LN               LOAD #end# MSG LEN              03580000
+         STH   R1,ITEMLEN               SET WRITEQ LEN                  03590000
+         JASL  R8,LGO00                 LOG OUTBOUND DATA               03600000
+*                                                                       03610000
+         L     RF,CALRTNCD              LOAD RETURN CODE                03620000
+         LTR   RF,RF                    CALL SUCCESSFUL                 03630000
+         JLNM  TCP60                    ..YES, BRANCH                   03640000
+         LA    RA,COMRSPW#              SET WRITE #END# CALL ERROR      03650000
+         J     XIT00                    RETURN RESP CODE                03660000
+*                                                                       03670000
+*---------------------------------------------------------------------- 03680000
+*        ISSUE TCP RECV OK TO #END#                                     03690000
+*---------------------------------------------------------------------- 03700000
+TCP60    DS    0H                                                       03710000
+         MVC   CALSCFUN,=CL16'RECV'                                     03720000
+         XC    CALFLG,CALFLG            CLR FLAGS                       03730000
+         LA    R1,L'DBLWORK             LOAD INPUT MSG LEN              03740000
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN            03750000
+         LA    R2,DBLWORK               LOAD INPUT MSG @                03760000
+*                                                                       03770000
+         L     RF,=V(EZASOKET)                                          03780000
+         CALL  (15),                                                   *03790000
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *03800000
+               (R2),CALERRNO,CALRTNCD),                                *03810000
+               VL,                                                     *03820000
+               MF=(E,TCPCALL)                                           03830000
+*                                                                       03840000
+         L     RF,CALRTNCD              LOAD RETURN CODE                03850000
+         LTR   RF,RF                    CALL SUCCESSFUL                 03860000
+         JLNP  TCP65                    ..NO, BRANCH                    03870000
+*                                                                       03880000
+         ST    RF,FULWORK               SAVE ACTUAL INPUT MSG LEN       03890000
+*                                                                       03900000
+         CALL  EZACIC05,                                               *03910000
+               ((R2),FULWORK),                                         *03920000
+               VL,                                                     *03930000
+               MF=(E,TCPCALL)                                           03940000
+*                                                                       03950000
+         L     R1,CALRTNCD              LOAD ACTUAL MSG LEN             03960000
+         STH   R1,ITEMLEN               SET WRITEQ LEN                  03970000
+         JASL  R8,LGI00                 LOG INBOUND DATA                03980000
+*                                                                       03990000
+TCP65    DS    0H                                                       04000000
+         L     RF,CALRTNCD              LOAD RETURN CODE                04010000
+         LTR   RF,RF                    CALL SUCCESSFUL                 04020000
+         JLP   TCP70                    ..YES, BRANCH                   04030000
+         LA    RA,COMRSPRC              SET RECV CALL ERROR             04040000
+         MVC   COMTIM11(4),CALRTNCD     SET RETURN CODE                 04050000
+         MVC   COMTIM11+4(4),CALERRNO   SET ERROR CODE                  04060000
+         J     XIT00                    RETURN RESP CODE                04070000
+*                                                                       04080000
+TCP70    DS    0H                                                       04090000
+         OC    0(2,R2),=X'4040'         FORCE UPPER CASE                04100000
+         CLC   OK,0(R2)                 RECEIVED 'OK'                   04110000
+         JLE   XIT00                                                    04120000
+         LA    RA,COMRSPOE              SET RECV OK ERROR               04130000
+         J     XIT00                    RETURN RESP CODE                04140000
+*                                                                       04150000
+*---------------------------------------------------------------------- 04160000
+*        OBTAIN ABSOLUTE TIME ROUTINE                                   04170000
+*---------------------------------------------------------------------- 04180000
+ABS00    DS    0H                                                       04190000
+         EXEC  CICS,                                                   *04200000
+               ASKTIME,                                                *04210000
+               ABSTIME(0(R3)),                                         *04220000
+               RESP(RESP),                                             *04230000
+               RESP2(RESP2)                                             04240000
+         BR    R8                                                       04250000
+*---------------------------------------------------------------------- 04260000
+*        LOG TCP/IP INBOUND/OUTBOUND TRAFFIC                            04270000
+*---------------------------------------------------------------------- 04280000
+*                                                                       04290000
+LGI00    DS    0H                                                       04300000
+*                                                                       04310000
+         MVC   LOGQID(3),=CL3'TCI'                                      04320000
+         J     LOG00                                                    04330000
+*                                                                       04340000
+LGO00    DS    0H                                                       04350000
+*                                                                       04360000
+         MVC   LOGQID(3),=CL3'TCO'                                      04370000
+*                                                                       04380000
+LOG00    DS    0H                                                       04390000
+         MVC   LOGQID+3(L'EIBTRNID),EIBTRNID                            04400000
+         MVI   LOGQID+L'LOGQID-1,C' '                                   04410000
+         EXEC  CICS,                                                   *04420000
+               WRITEQ,                                                 *04430000
+               TS,                                                     *04440000
+               AUXILIARY,                                              *04450000
+               QUEUE(LOGQID),                                          *04460000
+               FROM(0(,R2)),                                           *04470000
+               LENGTH(ITEMLEN),                                        *04480000
+               RESP(RESP),                                             *04490000
+               RESP2(RESP2)                                             04500000
+         CLC   RESP,DFHRESP(NORMAL)                                     04510000
+         BER   R8                                                       04520000
+*                                                                       04530000
+         EXEC  CICS,                                                   *04540000
+               DELETEQ,                                                *04550000
+               TS,                                                     *04560000
+               QUEUE(LOGQID),                                          *04570000
+               RESP(RESP),                                             *04580000
+               RESP2(RESP2)                                             04590000
+         CLC   RESP,DFHRESP(NORMAL)                                     04600000
+         JLE   LOG00                                                    04610000
+*                                                                       04620000
+LOG99    DS    0H                                                       04630000
+         BR    R8                                                       04640000
+*---------------------------------------------------------------------- 04650000
+*        VARIOUS ERROR MSGS AND ABENDS                                  04660000
+*---------------------------------------------------------------------- 04670000
+ABN01    DS    0H                                                       04680000
+         LA    R2,MSG01                                                 04690000
+         LA    R3,L'MSG01                                               04700000
+         ICM   R4,B'1111',ABC01                                         04710000
+         J     ABN99                                                    04720000
+ABN02    DS    0H                                                       04730000
+         LA    R2,MSG02                                                 04740000
+         LA    R3,L'MSG02                                               04750000
+         ICM   R4,B'1111',ABC02                                         04760000
+         J     ABN99                                                    04770000
+ABN99    DS    0H                                                       04780000
+         MVC   SAVRESP,RESP                                             04790000
+         MVC   SAVRESP2,RESP2                                           04800000
+         MVC   SAVFN,EIBFN                                              04810000
+         MVC   SAVRC,EIBRCODE                                           04820000
+         STH   R3,HLFWRK                                                04830000
+         EXEC  CICS,                                                   *04840000
+               WRITEQ,                                                 *04850000
+               TD,                                                     *04860000
+               QUEUE(=C'CSMT'),                                        *04870000
+               FROM(0(,R2)),                                           *04880000
+               LENGTH(HLFWRK),                                         *04890000
+               RESP(RESP),                                             *04900000
+               RESP2(RESP2)                                             04910000
+         ST    R4,FULWORK                                               04920000
+         EXEC  CICS,                                                   *04930000
+               ABEND,                                                  *04940000
+               ABCODE(FULWORK),                                        *04950000
+               RESP(RESP),                                             *04960000
+               RESP2(RESP2)                                             04970000
+*---------------------------------------------------------------------- 04980000
+*        RETURN TO CICS                                                 04990000
+*---------------------------------------------------------------------- 05000000
+XIT00    DS    0H                                                       05010000
+         STC   RA,COMRSP                SET RETURN CODE                 05020000
+*                                                                       05030000
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR               05040000
+         JLZ   XIT10                    ..NO, BRANCH                    05050000
+*                                                                       05060000
+         LA    R3,COMTIM09              LOAD ENTRY TIMER @              05070000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              05080000
+*                                                                       05090000
+         MVC   CALSCFUN,=CL16'CLOSE'                                    05100000
+         L     RF,=V(EZASOKET)                                          05110000
+         CALL  (15),                                                   *05120000
+               (CALSCFUN,CALSCDES,                                     *05130000
+               CALERRNO,CALRTNCD),                                     *05140000
+               VL,                                                     *05150000
+               MF=(E,TCPCALL)                                           05160000
+*                                                                       05170000
+         LA    R3,COMTIM10              LOAD ENTRY TIMER @              05180000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              05190000
+*                                                                       05200000
+XIT10    DS    0H                                                       05210000
+         LA    R3,COMTIM11              LOAD ENTRY TIMER @              05220000
+         JASL  R8,ABS00                 SET ENTRY ABS TIME              05230000
+         EXEC  CICS,                                                   *05240000
+               RETURN                                                   05250000
+         DFHEIRET                                                       05260000
+*---------------------------------------------------------------------- 05270000
+*        CONSTANTS                                                      05280000
+*---------------------------------------------------------------------- 05290000
+*                                                                       05300000
+         CNOP  0,4                                                      05310000
+SRVRTBL  DS    0XL16                                                    05320000
+*                                                                       05330000
+*        P      10.129.11.49    sorter01.clkms.nexus                    05340000
+*        B      10.129.19.49    sorter01.svg.nexus                      05350000
+*        C      10.129.09.50    sorter02.chcg.nexus                     05360000
+*        I      10.129.01.63    minint-4o31oea.iei.nexus (Prod New)     05370000
+*        L      10.129.01.62    iei-fedexCPQ.mdf.lvrgn.nexus (Prod Old) 05380000
+*        M      10.129.18.51    conveyor01.mmphs.nexus                  05390000
+*        N      10.129.18.53    sorter03.mmphs.nexus                    05400000
+*        X      10.129.96.61    iei-fedex_6227.iei.nexus (Test)         05410000
+*                                                                       05420000
+SRVRMMPH DC    C'M'                     SERVER CODE                     05430000
+         DC    X'00'                    RESERVED                        05440000
+         DC    AL2(2000)                SERVER PORT NUMBER              05450000
+         DC    AL4(0)                   SERVER IP ADDR                  05460000
+         DC    AL4(L'MMPHSP)            NAME LENGTH                     05470000
+         DC    A(MMPHSP)                NAME @                          05480000
+SRTRMMPH DC    C'N'                     SERVER CODE                     05490000
+         DC    X'00'                    RESERVED                        05500000
+         DC    AL2(2000)                SERVER PORT NUMBER              05510000
+         DC    AL4(0)                   SERVER IP ADDR                  05520000
+         DC    AL4(L'MMPHSR)            NAME LENGTH                     05530000
+         DC    A(MMPHSR)                NAME @                          05540000
+SRVNLVRG DC    C'I'                     SERVER CODE                     05550000
+         DC    X'00'                    RESERVED                        05560000
+         DC    AL2(2000)                SERVER PORT NUMBER              05570000
+         DC    AL4(0)                   SERVER IP ADDR                  05580000
+         DC    AL4(L'LVRGNN)            NAME LENGTH                     05590000
+         DC    A(LVRGNN)                NAME @                          05600000
+SRVPLVRG DC    C'L'                     SERVER CODE                     05610000
+         DC    X'00'                    RESERVED                        05620000
+         DC    AL2(2000)                SERVER PORT NUMBER              05630000
+         DC    AL4(0)                   SERVER IP ADDR                  05640000
+         DC    AL4(L'LVRGNP)            NAME LENGTH                     05650000
+         DC    A(LVRGNP)                NAME @                          05660000
+SRVRSAVG DC    C'B'                     SERVER CODE                     05670000
+         DC    X'00'                    RESERVED                        05680000
+         DC    AL2(2000)                SERVER PORT NUMBER              05690000
+         DC    AL4(0)                   SERVER IP ADDR                  05700000
+         DC    AL4(L'SAVAGP)            NAME LENGTH                     05710000
+         DC    A(SAVAGP)                NAME @                          05720000
+SRVRCHCG DC    C'C'                     SERVER CODE                     05730000
+         DC    X'00'                    RESERVED                        05740000
+         DC    AL2(2000)                SERVER PORT NUMBER              05750000
+         DC    AL4(0)                   SERVER IP ADDR                  05760000
+         DC    AL4(L'CHCGSR)            NAME LENGTH                     05770000
+         DC    A(CHCGSR)                NAME @                          05780000
+SRVRPORT DC    C'P'                     SERVER CODE                     05790000
+         DC    X'00'                    RESERVED                        05800000
+         DC    AL2(2000)                SERVER PORT NUMBER              05810000
+         DC    AL4(0)                   SERVER IP ADDR                  05820000
+         DC    AL4(L'PORTSR)            NAME LENGTH                     05830000
+         DC    A(PORTSR)                NAME @                          05840000
+SRVTLVRG DC    C'X'                     SERVER CODE                     05850000
+         DC    X'00'                    RESERVED                        05860000
+         DC    AL2(2000)                SERVER PORT NUMBER              05870000
+         DC    AL4(0)                   SERVER IP ADDR                  05880000
+         DC    AL4(L'LVRGNT)            NAME LENGTH                     05890000
+         DC    A(LVRGNT)                NAME @                          05900000
+         ORG                                                            05910000
+SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL                                    05920000
+*                                                                       05930000
+LVRGNT   DC    C'fedex_6227.iei.nexus'                                  05940000
+MMPHSP   DC    C'conveyor01.mmphs.nexus'                                05950000
+PORTSR   DC    C'sorter01.clkms.nexus'                                  05960000
+MMPHSR   DC    C'sorter03.mmphs.nexus'                                  05970000
+CHCGSR   DC    C'sorter02.chcg.nexus'                                   05980000
+SAVAGP   DC    C'sorter01.svg.nexus'                                    05990000
+LVRGNP   DC    C'fedex.iei.nexus'                                       06000000
+LVRGNN   DC    C'minint-4o31oea.iei.nexus'                              06010000
+*                                                                       06020000
+CALL     CALL  ,                                                       *06030000
+               (0,0,0,0,0,0,0,0,0,0,0,0),                              *06040000
+               VL,                                                     *06050000
+               MF=L                                                     06060000
+CALLLN   EQU   *-CALL                                                   06070000
+*                                                                       06080000
+OK       DC    X'D6D2'                  EBCDIC 'OK'                     06090000
+OKLN     EQU   *-OK                                                     06100000
+*                                                                       06110000
+#END#    DC    X'23656E64230D'          ASCII '#end#'                   06120000
+#END#LN  EQU   *-#END#                                                  06130000
+*                                                                       06140000
+MSG01    DC    C'IET121001  COMMAREA length passed from caller is too s*06150000
+               mall, T101 ABEND initiated.'                             06160000
+ABC01    EQU   *-21                                                     06170000
+*                                                                       06180000
+MSG02    DC    C'IET121002  COMMAREA address can not be located, T102 A*06190000
+               BEND initiated.'                                         06200000
+ABC02    EQU   *-21                                                     06210000
+*                                                                       06220000
+*---------------------------------------------------------------------- 06230000
+*        CICS WORKING STORAGE DSECT                                     06240000
+*---------------------------------------------------------------------- 06250000
+         DFHEISTG                                                       06260000
+EISEYE   DS    CL16                     EYE CATCHER                     06270000
+*                                                                       06280000
+DBLWORK  DS    D                        DOUBLE WORD WORK                06290000
+FULWORK  DS    F                        FULL WORD WORK                  06300000
+*                                                                       06310000
+RESP     DS    F                        EXEC COMMAND RESPONSE           06320000
+RESP2    DS    F                        EXEC COMMAND RESPONSE           06330000
+*                                                                       06340000
+FAILRSP  DS    CL8                      EYE CATCHER                     06350000
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     06360000
+FAILRSP2 DS    CL8                      EYE CATCHER                     06370000
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     06380000
+FAILFN   DS    CL8                      EYE CATCHER                     06390000
+SAVFN    DS    H                        SAVED EXEC EIBFN                06400000
+FAILRC   DS    CL8                      EYE CATCHER                     06410000
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             06420000
+*                                                                       06430000
+HLFWRK   DS    H                        HALF WORD WORK                  06440000
+ITEMLEN  DS    H                        TS QUEUE ITEM LENGTH            06450000
+LOGQID   DS    CL8                      TCP I/O LOG QUEUE ID            06460000
+*                                                                       06470000
+         DS    0F                                                       06480000
+TCPCALL  DS    XL(CALLLN)               TCP CALL PARMS                  06490000
+*                                                                       06500000
+CALSCFUN DS    CL16                     SOCKET FUNCTION                 06510000
+*                                                                       06520000
+CALAFF   DS    F                        AF_INET (F-WORD)                06530000
+*                                                                       06540000
+CALAF    DS    H                        ADDRESSING FAMILY               06550000
+CALAFINT EQU   2                        ..AF_INET (H-WORD)              06560000
+CALPORT  DS    H                        SERVER PORT                     06570000
+CALIPADR DS    F                        SERVER IP ADDRESS               06580000
+CALRSVD8 DS    2F                       RESERVED                        06590000
+*                                                                       06600000
+CALSCDES DS    H                        SOCKET DESCRIPTOR               06610000
+*                                                                       06620000
+CALSCTYP DS    F                        SOCKET TYPE                     06630000
+CALSTREM EQU   1                        ..STREAM                        06640000
+CALDGRAM EQU   2                        ..DATA GRAM                     06650000
+CALNBYTE DS    F                        WRITE/READ BYTE COUNT           06660000
+CALPROTO DS    F                        SOCKET PROTOCOL                 06670000
+*                                       ..IF ZERO, AND                  06680000
+*                                           SOCKET TYPE=STREAM THEN TCP 06690000
+*                                           SOCKET TYPE=DGRAM THEN UDP  06700000
+CALERREY DS    CL8                      EYE CATCHER                     06710000
+CALERRNO DS    F                        DEPENDS ON RETURN CODE          06720000
+*                                       ..USED AS HOSTENT GETHOSTBYNAME 06730000
+CALRTNEY DS    CL8                      EYE CATCHER                     06740000
+CALRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION      06750000
+*                                                                       06760000
+CALFLG   DS    F                        IOCTL FLAGS ARGUMENT            06770000
+CALMAXSO DS    F                        SELECT MAX SOCKETS              06780000
+CALTOSEC DS    F                        SELECT TIMEOUT SECONDS          06790000
+CALTOMIC DS    F                        SELECT TIMEOUT MICRO-SECONDS    06800000
+*                                                                       06810000
+CALHOW   DS    F                        SHUTDOWN HOW ARGUMENT           06820000
+END_FROM EQU   0                        ..SHUTDOWN RECEIVE              06830000
+END_TO   EQU   1                        ..SHUTDOWN SEND                 06840000
+END_BOTH EQU   2                        ..SHUTDOWN SEND AND RECEIVE     06850000
+*                                                                       06860000
+CALMASKS DS    6F                       SELECT MASKS                    06870000
+         ORG   CALMASKS                                                 06880000
+CALRSMSK DS    F                        SELECT READ-SEND-MASK           06890000
+CALWSMSK DS    F                        SELECT WRITE-SEND-MASK          06900000
+CALESMSK DS    F                        SELECT EXCEPTION-SEND-MASK      06910000
+CALRRMSK DS    F                        SELECT READ-RETN-MASK           06920000
+CALWRMSK DS    F                        SELECT WRITE-RETN-MASK          06930000
+CALERMSK DS    F                        SELECT EXCPTION-RETN-MASK       06940000
+*                                                                       06950000
+EZA25EYE DS    CL8                      EZACIC25 PARMS AREA EYECATCHER  06960000
+EZA25RC  DS    F                        EZACIC25 RETURN CODE            06970000
+EZA25ERR DS    F                        EZACIC25 ERROR NUMBER           06980000
+EZA25HNT DS    A                        EZACIC25 HOSTENT @              06990000
+EZA25REQ DS    CL4                      EZACIC25 REQUEST "GHBN" ONLY    07000000
+EZA25NLN DS    F                        EZACIC25 HOST NAME LENGTH       07010000
+EZA25TYP DS    CL1                      EZACIC25 REQUEST TYPE           07020000
+EZA25TP0 EQU   C'0'                     ..CACHE or GETHOSTBYNAME        07030000
+EZA25TP1 EQU   C'1'                     ..GETHOSTBYNAME                 07040000
+EZA25TP2 EQU   C'2'                     ..CACHE                         07050000
+EZA25HNM DS    CL256                    EZACIC25 HOST NAME ARGUEMENT    07060000
+EZA25ELN EQU   *-EZA25RC                EZACIC25 COMMONAREA LENGTH      07070000
+*                                                                       07080000
+         DFHEIEND                                                       07090000
+*---------------------------------------------------------------------- 07100000
+*        CLIENT'S COMMAREA PARM LIST DSECT                              07110000
+*---------------------------------------------------------------------- 07120000
+*                                                                       07130000
+COMPARM  DSECT                                                          07140000
+*                                                                       07150000
+COMSRV   DS    CL1                      TCP SERVER ID                   07160000
+*                                                                       07170000
+COMRSP   DS    CL1                      RESPONSE CODE                   07180000
+COMRSPOK EQU   C' '                     ..NORMAL                        07190000
+COMRSPTC EQU   C'0'                     ..CICS TCP EXIT INACTIVE        07200000
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LENGTH       07210000
+COMRSPSI EQU   C'2'                     ..INVALID SERVER ID             07220000
+COMRSPSC EQU   C'3'                     ..TCP SOCKET CALL ERROR         07230000
+COMRSPCC EQU   C'4'                     ..TCP CONNECT CALL ERROR        07240000
+COMRSPWC EQU   C'5'                     ..TCP WRITE CALL ERROR          07250000
+COMRSPRC EQU   C'6'                     ..TCP RECV CALL ERROR           07260000
+COMRSPLC EQU   C'7'                     ..TCP CLOSE CALL ERROR          07270000
+COMRSILN EQU   C'8'                     ..INBOUND MSG TO SRVR LEN=0     07280000
+COMRSOLN EQU   C'9'                     ..OUTBOUND MSG FRM SRVR LEN=0   07290000
+COMRSPGH EQU   C'G'                     ..TCP GETHOSTBYNAME CALL ERROR  07300000
+COMRSPOE EQU   C'O'                     ..RECV OK ERROR                 07310000
+COMRSPSE EQU   C'S'                     ..SELECT ERROR                  07320000
+COMRSPTO EQU   C'T'                     ..SELECT 30SEC TIMEOUT ERROR    07330000
+COMRSPW# EQU   C'W'                     ..WRITE #END# ERROR             07340000
+*                                                                       07350000
+COMINLN  DS    H                        CALLERS INBOUND MSG LEN         07360000
+COMOUTLN DS    H                        SERVERS OUTBOUND MSG LEN        07370000
+*                                                                       07380000
+COMRSV   DS    CL2                      RESERVED                        07390000
+*                                                                       07400000
+COMTIM00 DS    XL8                      ABS TIME IET121 ENTRY           07410000
+COMTIM01 DS    XL8                      ABS TIME SOCKET CALL            07420000
+COMTIM02 DS    XL8                      ABS TIME SOCKET RETURN          07430000
+COMTIM03 DS    XL8                      ABS TIME CONNECT CALL           07440000
+COMTIM04 DS    XL8                      ABS TIME CONNECT RETURN         07450000
+COMTIM05 DS    XL8                      ABS TIME WRITE CALL             07460000
+COMTIM06 DS    XL8                      ABS TIME WRITE RETURN           07470000
+COMTIM07 DS    XL8                      ABS TIME RECV CALL              07480000
+COMTIM08 DS    XL8                      ABS TIME RECV RETURN            07490000
+COMTIM09 DS    XL8                      ABS TIME CLOSE CALL             07500000
+COMTIM10 DS    XL8                      ABS TIME CLOSE RETURN           07510000
+COMTIM11 DS    XL8                      ABS TIME IET121 EXIT            07520000
+*                                                                       07530000
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         07540000
+*---------------------------------------------------------------------- 07550000
+         END                                                            07560000
+

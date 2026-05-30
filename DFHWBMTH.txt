@@ -1,0 +1,25 @@
+*********************************************************************** 00010000
+*                                                                     * 00020000
+*        The generated load module 'must' be named DFHWBMTH.  It      * 00030000
+*        must be placed into a library available on CICS DFHRPL.      * 00040000
+*                                                                     * 00050000
+*        The documented intent of this exit is to disallow the HTTP   * 00060000
+*        TRACE METHOD request.  This data only module causes any      * 00070000
+*        HTTP TRACE request to be rejected with a 501 Method Not      * 00080000
+*        Implemented response.  Without this module the response      * 00090000
+*        to a HTTP TRACE request is 200 OK.                           * 00100000
+*                                                                     * 00110000
+*********************************************************************** 00120000
+*                                                                     * 00130000
+DFHWBMTH RSECT                                                          00140000
+*                                                                       00150000
+DFHWBMTH AMODE 31                                                       00160000
+DFHWBMTH RMODE ANY                                                      00170000
+*                                                                       00180000
+PARMB    DS    0X                                                       00190000
+PARMLN   DC    AL2(PARME-PARMB)                                         00200000
+PARM     DC    CL7'NOTRACE'                                             00210000
+PARME    DS    0X                                                       00220000
+*                                                                       00230000
+         END   DFHWBMTH                                                 00240000
+

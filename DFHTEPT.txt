@@ -1,0 +1,9 @@
+         DFHTEPT TYPE=INITIAL,                                         *
+               MAXTIDS=3,                                              *
+               MAXERRS=25,                                             *
+               OPTIONS=NOTIME
+         DFHTEPT TYPE=PERMTID,TRMIDNT=SAMA
+         DFHTEPT TYPE=PERMCODE,CODE=8D,COUNT=5
+         DFHTEPT TYPE=FINAL
+         END
+

@@ -1,0 +1,150 @@
+*
+***********************************************************************
+*                                                                     *
+*        This module is supplied as an example only.                  *
+*                                                                     *
+*        This example program is not supported by Compuware.  For     *
+*        technical support, customers should contact IBM.             *
+*                                                                     *
+*        Customers need to make their own determination of if and     *
+*        how this program should be used.                             *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+*        User replaceable Web Error Program.                          *
+*                                                                     *
+*        This module will examine the abend code in field             *
+*          WBEP_ABEND_CODE and then take a transaction dump.          *
+*            - if low-values, then use 'WBEP' as the dump code        *
+*                for the transaction dump.                            *
+*            - if not low-values, then use that value as the dump     *
+*                code for the transaction dump.                       *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+*        The generated load module 'must' be named DFHWBEP.  It       *
+*          must be placed into a library available on CICS DFHRPL,    *
+*          and must be defined in the CICS PPT.                       *
+*                                                                     *
+*        It is driven automatically by CICS (as DFHWBEP) when         *
+*          there is a failure in the processing of a Web request      *
+*          received by a CICS Web TCPIPSERVICE.                       *
+*                                                                     *
+*        The documented intent of this exit is to allow the HTTP      *
+*        response to be modified.  However, this exit also allows     *
+*        us to take a CICS transaction dump for errors which          *
+*        would not otherwise have a transaction dump taken.           *
+*                                                                     *
+*        Please refer to the IBM documentation for CICS               *
+*          Transaction Server for OS/390 Release 3 for more           *
+*          information.                                               *
+*                                                                     *
+***********************************************************************
+*                                                                     *
+DFHEISTG DSECT
+*
+SAVE_R1  DS    F                       DFHWBEP PARMS ADDRESS
+*
+ABCODE   DS    CL4                     ABEND CODE FOR DUMP
+*
+DFHWBEP  RSECT
+DFHWBEP  AMODE 31
+DFHWBEP  RMODE ANY
+*
+MAIN@010 DS    0H
+         ST    R1,SAVE_R1              SAVE DFHWBEP PARM ADDRESS
+*
+*        -----------------------------
+*        SET DEFAULT ABEND CODE TO USE
+*        -----------------------------
+*
+         MVC   ABCODE,=CL4'WBEP'       SET THE DEFAULT ABCODE
+*
+*        --------------------
+*        CATER FOR ANY ERRORS
+*        --------------------
+*
+         EXEC  CICS,HANDLE,CONDITION,                                  X
+               ERROR(MAIN@050)
+*
+*        ------------------------------
+*        ADDRESS THE PROGRAM PARAMETERS
+*        ------------------------------
+*
+         L     R1,SAVE_R1              GRAB INPOUT PARMS
+         L     R4,4(R1)                POINT TO WBEP PARMS
+         USING DFHWBEPC,R4               AND ADDRESS THEM
+*
+*        ---------------------------------
+*        DETERMINE WHICH ABEND CODE TO USE
+*        ---------------------------------
+*
+         CLC   WBEP_ABEND_CODE,=F'0'   DO WE KNOW ABEND CODE ?
+*        BE    MAIN@050                  - NO, USE DEFAULT
+         BE    MAIN@900                  - NO, BYPASS DUMP
+         MVC   ABCODE,WBEP_ABEND_CODE    - YES, USE IT
+*
+MAIN@050 DS    0H
+         EXEC  CICS,HANDLE,CONDITION,                                  X
+               ERROR
+*
+*        ------------------------------------
+*        IGNORE THE 'SUPPRESSED' CONDITION TO
+*        PREVENT 'AEXW' ABENDS FROM OCCURRING
+*        IF CICS ABEND-AID/FX SUPPRESSES THE
+*        IBM TRANSACTION DUMP.
+*        ------------------------------------
+*
+         EXEC  CICS,IGNORE,                                            X
+               CONDITION,SUPPRESSED
+*
+*        ----------------------------------
+*        NOW WE ISSUE THE TRANSACTION DUMP.
+*        ----------------------------------
+*
+         EXEC  CICS,DUMP,TRANSACTION,                                  X
+               DUMPCODE(ABCODE)
+*
+MAIN@900 DS   0H
+*        ---------------------
+*        NOW WE RETURN TO CICS
+*        ---------------------
+*
+         EXEC CICS,RETURN
+*
+         EJECT
+*
+*        -----------------
+*        PROGRAM CONSTANTS
+*        -----------------
+*
+         LTORG
+*
+*        ----------------
+*        REGISTER EQUATES
+*        ----------------
+*
+R0       EQU   0
+R1       EQU   1
+R2       EQU   2
+R3       EQU   3
+R4       EQU   4
+R5       EQU   5
+R6       EQU   6
+R7       EQU   7
+R8       EQU   8
+R9       EQU   9
+R10      EQU   10
+R11      EQU   11
+R12      EQU   12
+R13      EQU   13
+R14      EQU   14
+R15      EQU   15
+*
+*        ***   -----------------------------   ***
+*        ***   DEFINE DFHWBEP PARAMETER AREA   ***
+*        ***   -----------------------------   ***
+         COPY  DFHWBEPD
+*
+         END   DFHWBEP
+

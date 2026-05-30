@@ -1,0 +1,130 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IEP101   TITLE '**  CICS/ESA ICE WEBO462 OFF/ON  **'
+*---------------------------------------------------------------------*
+*        REGISTER AND OTHER EQUATES                                   *
+*---------------------------------------------------------------------*
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*---------------------------------------------------------------------*
+*  IEP101   RSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*---------------------------------------------------------------------*
+IEP101   RSECT                          RE-ENTRANT
+IEP101   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEP101   RMODE ANY                      MAY RESIDE ABOVE 16M
+IEP101   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IEP101 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+*---------------------------------------------------------------------*
+*        CHECK REQUEST TYPE                                           *
+*---------------------------------------------------------------------*
+         CLC   =C'ICOF',EIBTRNID        Cancel ICE
+         JE    COF00                    ..Yes, jump
+         CLC   =C'ICON',EIBTRNID        Schedule ICE
+         JE    CON00                    ..Yes, jump
+         LA    R5,L'MSG03
+         STH   R5,HLFWORK
+         LA    R5,MSG03
+         J     XIT00
+*---------------------------------------------------------------------*
+*        CANCEL NEXT INTERVAL                                         *
+*---------------------------------------------------------------------*
+COF00    DS    0H
+         EXEC  CICS,                                                   *
+               CANCEL,                                                 *
+               REQID('WEBO462'),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    COF00
+         LA    R5,L'MSG01
+         STH   R5,HLFWORK
+         LA    R5,MSG01
+         J     XIT00
+*---------------------------------------------------------------------*
+*        SCHEDULE NEXT INTERVAL                                       *
+*---------------------------------------------------------------------*
+CON00    DS    0H
+         EXEC  CICS,                                                   *
+               CANCEL,                                                 *
+               REQID('WEBO462'),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON00
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(0),                                            *
+               TRANSID(=C'O462'),                                      *
+               REQID('WEBO462')
+         LA    R5,L'MSG02
+         STH   R5,HLFWORK
+         LA    R5,MSG02
+*---------------------------------------------------------------------*
+*        SEND TERMINAL OUTPUT                                         *
+*---------------------------------------------------------------------*
+XIT00    DS    0H
+         EXEC  CICS,                                                   *
+               SEND,                                                   *
+               FROM(0(R5)),                                            *
+               LENGTH(HLFWORK),                                        *
+               CTLCHAR(=AL1(194)),                                     *
+               ERASE,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*---------------------------------------------------------------------*
+*        RETURN TO CICS                                               *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*---------------------------------------------------------------------*
+*        CONSTANTS                                                    *
+*---------------------------------------------------------------------*
+*
+MSG01    DC    C'IEP10101I  O462 ICE cancelled...'
+*
+MSG02    DC    C'IEP10102I  O462 ICE scheduled...'
+*
+MSG03    DC    C'IEP10103I  O462 ICE invalid request...'
+*
+*---------------------------------------------------------------------*
+*        DSECTS                                                       *
+*---------------------------------------------------------------------*
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+HLFWORK  DS    H                        HALF WORD WORK
+*---------------------------------------------------------------------*
+         DFHEIEND
+         END
+

@@ -1,0 +1,188 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010000
+IEP110   TITLE '**  CICS/TS ENVIRONMENT INQUIRY SERVICE PROGRAM  **'    00020000
+*---------------------------------------------------------------------- 00030000
+*        REGISTER AND OTHER EQUATES                                     00040000
+*---------------------------------------------------------------------- 00050000
+RF       EQU   15                                                       00060000
+RE       EQU   14                                                       00070000
+RD       EQU   13                                                       00080000
+RC       EQU   12                                                       00090000
+RB       EQU   11                                                       00100000
+RA       EQU   10                                                       00110000
+R9       EQU   9                                                        00120000
+R8       EQU   8                                                        00130000
+R7       EQU   7                                                        00140000
+R6       EQU   6                                                        00150000
+R5       EQU   5                                                        00160000
+R4       EQU   4                                                        00170000
+R3       EQU   3                                                        00180000
+R2       EQU   2                                                        00190000
+R1       EQU   1                                                        00200000
+R0       EQU   0                                                        00210000
+*---------------------------------------------------------------------- 00220000
+*  IEP110   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230000
+*---------------------------------------------------------------------- 00240000
+IEP110   RSECT                                                          00250000
+IEP110   AMODE 31                       MAY EXECUTE ABOVE 16M           00260000
+IEP110   RMODE ANY                      MAY RESIDE ABOVE 16M            00270000
+IEP110   DFHEIENT CODEREG=(12),                                        *00280000
+               DATAREG=(13),                                           *00290000
+               EIBREG=(11)                                              00300000
+         MVC   EISEYE,=CL16'IEP110 EI STORAGE'                          00310000
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00320000
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00330000
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00340000
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00350000
+         B     INT00                    BRANCH AROUND DUMP ID           00360000
+         DS    0H                                                       00370000
+         DC    CL8'IEP110'              DUMP PROGRAM ID                 00380000
+         DC    CL1' '                                                   00390000
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00400000
+         DC    CL1' '                                                   00410000
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00420000
+         DC    CL1' '                                                   00430000
+INT00    DS    0H                                                       00440000
+*---------------------------------------------------------------------- 00450000
+*        VERIFY CALLER'S PARMS                                          00460000
+*---------------------------------------------------------------------- 00470000
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00480000
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00490000
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00500000
+         EXEC  CICS,                                                   *00510000
+               ADDRESS,                                                *00520000
+               COMMAREA(R9),                                           *00530000
+               RESP(RESP),                                             *00540000
+               RESP2(RESP2)                                             00550000
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00560000
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00570000
+         USING COMPARM,R9                                               00580000
+*---------------------------------------------------------------------- 00590000
+*        INITIALIZE PARMS                                               00600000
+*---------------------------------------------------------------------- 00610000
+         MVI   COMENV,C' '                                              00620000
+*---------------------------------------------------------------------- 00630000
+*        DETERMINE EXECUTION ENVIRONMENT                                00640000
+*---------------------------------------------------------------------- 00650000
+         EXEC  CICS,                                                   *00660000
+               ASSIGN,                                                 *00670000
+               SYSID(FULWORK)                                           00680000
+         CLC   =C'PRD',FULWORK          PRODUCTION ENVIRONMENT          00690000
+         BNE   INT10                    ..NO, BRANCH                    00700000
+         MVI   COMENV,COMENVP           SET PRODUCTION ENVIRONMENT      00710000
+         B     XIT00                    RETURN TO CALLER                00720000
+INT10    DS    0H                                                       00730000
+         CLC   =C'INV',FULWORK          PRODUCTION ENVIRONMENT          00740000
+         BNE   INT20                    ..NO, BRANCH                    00750000
+         MVI   COMENV,COMENVP           SET PRODUCTION ENVIRONMENT      00760000
+         B     XIT00                    RETURN TO CALLER                00770000
+INT20    DS    0H                                                       00780000
+         CLC   =C'TST',FULWORK          TEST ENVIRONMENT                00790000
+         BNE   INT30                    ..NO, BRANCH                    00800000
+         MVI   COMENV,COMENVT           SET TEST ENVIRONMENT            00810000
+         B     XIT00                    RETURN TO CALLER                00820000
+INT30    DS    0H                                                       00830000
+         CLC   =C'IES',FULWORK          SYSTEM TEST ENVIRONMENT         00840000
+         BNE   INT40                    ..NO, BRANCH                    00850000
+         MVI   COMENV,COMENVS           SET SYSTEM TEST ENVIRONMENT     00860000
+         B     XIT00                    RETURN TO CALLER                00870000
+INT40    DS    0H                                                       00880000
+         CLC   =C'TRA',FULWORK          SYSTEM TEST ENVIRONMENT         00890000
+         BNE   INT50                    ..NO, BRANCH                    00900000
+         MVI   COMENV,COMENVR           SET TRAINING ENVIRONMENT        00910000
+         B     XIT00                    RETURN TO CALLER                00920000
+INT50    DS    0H                                                       00930000
+         B     XIT00                                                    00940000
+*---------------------------------------------------------------------- 00950000
+*        VARIOUS ERROR MSGS AND ABENDS                                  00960000
+*---------------------------------------------------------------------- 00970000
+ABN01    DS    0H                                                       00980000
+         LA    R2,MSG01                                                 00990000
+         LA    R3,L'MSG01                                               01000000
+         ICM   R4,B'1111',ABC01                                         01010000
+         B     ABN99                                                    01020000
+ABN02    DS    0H                                                       01030000
+         LA    R2,MSG02                                                 01040000
+         LA    R3,L'MSG02                                               01050000
+         ICM   R4,B'1111',ABC02                                         01060000
+         B     ABN99                                                    01070000
+ABN99    DS    0H                                                       01080000
+         MVC   SAVRESP,RESP                                             01090000
+         MVC   SAVRESP2,RESP2                                           01100000
+         MVC   SAVFN,EIBFN                                              01110000
+         MVC   SAVRC,EIBRCODE                                           01120000
+         STH   R3,HLFWRK                                                01130000
+         EXEC  CICS,                                                   *01140000
+               WRITEQ,                                                 *01150000
+               TD,                                                     *01160000
+               QUEUE(=C'CSMT'),                                        *01170000
+               FROM(0(,R2)),                                           *01180000
+               LENGTH(HLFWRK),                                         *01190000
+               RESP(RESP),                                             *01200000
+               RESP2(RESP2)                                             01210000
+         ST    R4,FULWORK                                               01220000
+         EXEC  CICS,                                                   *01230000
+               ABEND,                                                  *01240000
+               ABCODE(FULWORK),                                        *01250000
+               RESP(RESP),                                             *01260000
+               RESP2(RESP2)                                             01270000
+*---------------------------------------------------------------------- 01280000
+*        RETURN TO CICS                                                 01290000
+*---------------------------------------------------------------------- 01300000
+XIT00    DS    0H                                                       01310000
+         EXEC  CICS,                                                   *01320000
+               RETURN                                                   01330000
+         DFHEIRET                                                       01340000
+*---------------------------------------------------------------------- 01350000
+*        CONSTANTS                                                      01360000
+*---------------------------------------------------------------------- 01370000
+*                                                                       01380000
+MSG01    DC    C'IEP110001  COMMAREA length passed from caller is too s*01390000
+               mall, P111 Abend initiated.'                             01400000
+ABC01    EQU   *-21                                                     01410000
+*                                                                       01420000
+MSG02    DC    C'IEP110002  COMMAREA address can not be located, P112 A*01430000
+               bend initiated.'                                         01440000
+ABC02    EQU   *-21                                                     01450000
+*                                                                       01460000
+*---------------------------------------------------------------------- 01470000
+*        CICS WORKING STORAGE DSECT                                     01480000
+*---------------------------------------------------------------------- 01490000
+         DFHEISTG                                                       01500000
+EISEYE   DS    CL16                     EYE CATCHER                     01510000
+*                                                                       01520000
+DBLWORK  DS    D                        DOUBLE WORD WORK                01530000
+FULWORK  DS    F                        FULL WORD WORK                  01540000
+*                                                                       01550000
+RESP     DS    F                        EXEC COMMAND RESPONSE           01560000
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01570000
+*                                                                       01580000
+FAILRSP  DS    CL8                      EYE CATCHER                     01590000
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01600000
+FAILRSP2 DS    CL8                      EYE CATCHER                     01610000
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01620000
+FAILFN   DS    CL8                      EYE CATCHER                     01630000
+SAVFN    DS    H                        SAVED EXEC EIBFN                01640000
+FAILRC   DS    CL8                      EYE CATCHER                     01650000
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01660000
+*                                                                       01670000
+HLFWRK   DS    H                        HALF WORD WORK                  01680000
+*                                                                       01690000
+         DFHEIEND                                                       01700000
+*---------------------------------------------------------------------- 01710000
+*        CLIENT'S COMMAREA PARM LIST DSECT                              01720000
+*---------------------------------------------------------------------- 01730000
+*                                                                       01740000
+COMPARM  DSECT                                                          01750000
+*                                                                       01760000
+COMENV   DS    CL1                      RETURN ENVIRONMENT SETTING      01770000
+COMENVP  EQU   C'P'                     ..PRODUCTION ENVIRONMENT        01780000
+COMENVR  EQU   C'R'                     ..TRAINING ENVIRONMENT          01790000
+COMENVS  EQU   C'S'                     ..SYSTEM TEST ENVIRONMENT       01800000
+COMENVT  EQU   C'T'                     ..TEST ENVIRONMENT              01810000
+*                                                                       01820000
+COMRSV   DS    XL255                    RESERVED FOR FUTURE USE         01830000
+*                                                                       01840000
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         01850000
+*---------------------------------------------------------------------- 01860000
+         END                                                            01870000
+

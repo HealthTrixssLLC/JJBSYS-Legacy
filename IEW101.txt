@@ -1,0 +1,490 @@
+*ASM XOPTS(NOPROLOG NOEPILOG SP)                                        00010002
+IEW101   TITLE '** IEI CICS WEB Security Converter **'                  00020002
+*********************************************************************** 00030002
+*                                                                     * 00040002
+* MODULE NAME = IEW101                                                * 00050002
+*                                                                     * 00060002
+* DESCRIPTIVE NAME = IEI CICS Web Security Converter                  * 00070002
+*                                                                     * 00080002
+* STATUS = 5.3.0                                                      * 00090002
+*                                                                     * 00100002
+* FUNCTION = Program provides conversion of the ASCII HTTP request    * 00110002
+*            to an EBCDIC commarea with signon security.              * 00120002
+*                                                                     * 00130002
+*---------------------------------------------------------------------* 00140002
+*                                                                     * 00150002
+* ENTRY POINT = IEW101                                                * 00160002
+*                                                                     * 00170002
+*     PURPOSE = Commarea conversion with signon capability            * 00180002
+*                                                                     * 00190002
+*     EXIT-NORMAL = Exit is via the DFHEIRET macro.                   * 00200002
+*                                                                     * 00210002
+*********************************************************************** 00220002
+         DFHREGS ,                                                      00230002
+*---------------------------------------------------------------------* 00240002
+*    Start of program code                                            * 00250002
+*---------------------------------------------------------------------* 00260002
+IEW101   RSECT                                                          00270002
+IEW101   AMODE 31                                                       00280002
+IEW101   RMODE ANY                                                      00290002
+         DFHEIENT DATAREG=R13,                                         *00300002
+               CODEREG=R12,                                            *00310002
+               EIBREG=R11                                               00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+         DS    0H                                                       00340002
+         DC    CL8'IEW101'              DUMP PROGRAM ID                 00350002
+         DC    CL1' '                                                   00360002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00370002
+         DC    CL1' '                                                   00380002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00390002
+         DC    CL1' '                                                   00400002
+*---------------------------------------------------------------------* 00410002
+*    CONVERTER INITIALIZATION                                         * 00420002
+*---------------------------------------------------------------------* 00430002
+INT00    DS    0H                                                       00440002
+         OC    EIBCALEN,EIBCALEN  Is there a COMMAREA                   00450002
+         BZ    RETURN             Return if zero                        00460002
+         L     R10,DFHEICAP       Address the commarea                  00470002
+         USING COMM_PARMLIST,R10  Establish commarea addressing         00480002
+         LH    R0,CONVERTER_FUNCTION  Load the function                 00490002
+         CHI   R0,URP_ENCODE      Is it ENCODE?                         00500002
+         BE    ENCODE             Yes                                   00510002
+         CHI   R0,URP_DECODE      Is it DECODE?                         00520002
+         BE    DECODE             Yes                                   00530002
+         B     RET_INV            Return URP_INVALID                    00540002
+*********************************************************************** 00550002
+*                                                                       00560002
+*  DECODE routine                                                       00570002
+*                                                                       00580002
+*********************************************************************** 00590002
+DECODE   DS    0H                                                       00600002
+         CLC   DECODE_EYECATCHER,=CL8'>decode'                          00610002
+         BNE   RET_INV            Return response=invalid               00620002
+*---------------------------------------------------------------------* 00630002
+*  Obtain 256 bytes of parameter space by shifting the input            00640002
+*  data down by 256 bytes                                               00650002
+*                                                                       00660002
+*  This parameter area is used to communicate with the signon           00670002
+*  application IEW900                                                   00680002
+*---------------------------------------------------------------------* 00690002
+         L     R9,DECODE_DATA_PTR Address input data                    00700002
+         LA    R0,255             Get rounding value                    00710002
+         A     R0,DECODE_INPUT_DATA_LEN  Get rounded length of data     00720002
+         SRL   R0,8               Divide length by 256                  00730002
+         LR    R1,R0              Copy number of 256-byte segments      00740002
+         SLL   R1,8               Restore rounded length                00750002
+         AR    R1,R9              Address end of data                   00760002
+         LA    R3,PARMSIZE        Get length by which to shift          00770002
+COPYDATA DS    0H                 Copy data 256 bytes at a time         00780002
+         SR    R1,R3              Decrement address of data to be moved 00790002
+         MVC   PARMSIZE(PARMSIZE,R1),0(R1)  Shift 256 bytes to right    00800002
+         BCT   R0,COPYDATA        Copy more data                        00810002
+         XC    0(PARMSIZE,R9),0(R9) Clear the first 256 bytes           00820002
+         LM    R14,R2,DECODE_METHOD_PTR  Load all DECODE pointers       00830002
+         ALR   R14,R3             Relocate DECODE_METHOD_PTR            00840002
+         ALR   R15,R3             Relocate DECODE_HTTP_VERSION_PTR      00850002
+         ALR   R0,R3              Relocate DECODE_RESOURCE_PTR          00860002
+         ALR   R1,R3              Relocate DECODE_REQUEST_HEADER_PTR    00870002
+         ALR   R2,R3              Relocate DECODE_USER_DATA_PTR         00880002
+         STM   R14,R2,DECODE_METHOD_PTR  Save relocated pointers        00890002
+*                                                                       00900002
+*  Check whether the client supplied a token in the URI.                00910002
+*                                                                       00920002
+         OC    DECODE_USER_TOKEN,DECODE_USER_TOKEN Is token present?    00930002
+         BNZ   GETSTATE           Yes, obtain state                     00940002
+*                                                                       00950002
+*  No token was present in the incoming URI.                            00960002
+*  Obtain a new token from the state manager routine.                   00970002
+*  State manager returns a 32-bit binary number as its "handle".        00980002
+*  We convert this here to an 8-byte alphabetic character-string.       00990002
+*                                                                       01000002
+GETTOKEN MVI   FUNCTION,CREATE    Request state creation                01010002
+         MVC   EYECATCH,=C'W200'  Set plist eyecatcher                  01020002
+         EXEC  CICS,                                                   *01030002
+               LINK,                                                   *01040002
+               PROGRAM('IEW200'),                                      *01050002
+               COMMAREA(STATPARM),                                     *01060002
+               LENGTH(STATSIZE)                                         01070002
+         CLI   RETCODE,GOODRC     Successful?                           01080002
+*  Convert the binary handle to a base-26 alphabetic integer            01090002
+         BNE   STATMERR           No, State Manager error               01100002
+         L     R15,HANDLE         Get returned binary handle            01110002
+         LA    R1,L'SNTOKEN       Length of user token                  01120002
+MAKETOKN SR    R14,R14            Clear high order word of quotient     01130002
+         D     R14,=A(L'ALPHABET) Divide R15 by 26. Remainder in R14    01140002
+         LA    R14,ALPHABET(R14)  Point to character in alphabet        01150002
+         LA    R2,SNTOKEN-1(R1)   Address slot in token                 01160002
+         MVC   0(1,R2),0(R14)     Copy character into token             01170002
+         BCT   R1,MAKETOKN        Loop through token                    01180002
+*                                                                       01190002
+*  Save the original URL, with the new user token attached to it,       01200002
+*  as part of the state data.                                           01210002
+*  If the original URL had an associated query string, it cannot be     01220002
+*  a valid token if we reached this point, so it has to be removed.     01230002
+*  The URL which is built and used in the Location header of            01240002
+*  redirection is a relative URL. The HTTP 1.0 standard                 01250002
+*  requires that only absolute URLs should be used in                   01260002
+*  redirection headers. A relative URL is used here as this is          01270002
+*  a method by which redirections can work with a firewall. If          01280002
+*  it is desirable to adhere to the HTTP 1.0 standard then              01290002
+*  please change the code below to build an absolute URL.               01300002
+*                                                                       01310002
+         MVI   ABS_URL,C' '       Initialize with blanks                01320002
+         MVC   ABS_URL+1(L'ABS_URL-1),ABS_URL  Propagate blanks         01330002
+         LA    R6,ABS_URL         Address start server name             01340002
+         LA    R8,L'ABS_URL       Set length left in URL                01350002
+         L     R0,DECODE_RESOURCE_PTR  Point to current URI             01360002
+         LH    R1,DECODE_RESOURCE_LENGTH  Length of current URI         01370002
+         LR    R7,R1              Copy length to copy                   01380002
+         SR    R8,R7              Calculate length left                 01390002
+         BNP   RET_INV            No space left - invalid               01400002
+         MVCL  R6,R0              Save the current URI                  01410002
+         LR    R1,R6              Point to end of URL                   01420002
+         LA    R0,1               Set increment register for scan       01430002
+         SR    R1,R0              Point to last character of URL        01440002
+         LA    R14,ABS_URL        Start at beginning of URL             01450002
+SRCHQRY  CLI   0(R14),C'?'        Found start of query string?          01460002
+         BE    ADDQUERY           Yes, overwrite it                     01470002
+         BXLE  R14,R0,SRCHQRY     No, search further                    01480002
+ADDQUERY DS    0H                 Add new query string to URI           01490002
+         LA    R8,ABS_URL+L'ABS_URL Address end of URL                  01500002
+         SR    R8,R14             Length left for query string          01510002
+         SH    R8,=Y(L'SNTOKEN+1) Subtract length of query string       01520002
+         BNP   RET_INV            No space left - invalid               01530002
+         MVI   0(R14),C'?'                Append a query                01540002
+         MVC   1(L'SNTOKEN,R14),SNTOKEN   Append the token              01550002
+         LA    R0,L'SNTOKEN+1(,R14)       Address end of token          01560002
+         LA    R14,ABS_URL        Address start of absolute URL         01570002
+         SR    R0,R14             Calculate length of new URL           01580002
+         STH   R0,LEN_URL         Save length in state manager          01590002
+         MVI   FUNCTION,STORE     Request storage of state              01600002
+         MVC   EYECATCH,=C'W200'  Set plist eyecatcher                  01610002
+         EXEC  CICS,                                                   *01620002
+               LINK,                                                   *01630002
+               PROGRAM('IEW200'),                                      *01640002
+               COMMAREA(STATPARM),                                     *01650002
+               LENGTH(STATSIZE)                                         01660002
+         CLI   RETCODE,NOMATRC    Is token unknown?                     01670002
+         BE    GETTOKEN           Yes, get a new one                    01680002
+         CLI   RETCODE,GOODRC     Successful?                           01690002
+         BNE   STATMERR           No, State Manager error               01700002
+         XC    DECODE_SERVER_PROGRAM,DECODE_SERVER_PROGRAM              01710002
+         MVC   DECODE_USER_TOKEN,SNTOKEN Return new token value         01720002
+         MVC   0(PARMSIZE,R9),USERDATA Pass state data to signon        01730002
+         MVC   0(8,R9),=8C'?'     Return userid as questions            01740002
+         B     RET_OK             Return normal response                01750002
+*                                                                       01760002
+*  Install name of server program as 'IEIWBSN' which must be            01770002
+*  an alias of IEW900.                                                  01780002
+*                                                                       01790002
+GOSIGNON DS    0H                                                       01800002
+         MVC   DECODE_SERVER_PROGRAM,=CL8'IEW900' Set signon            01810002
+         MVC   DECODE_USER_TOKEN,SNTOKEN Return new token value         01820002
+         MVC   0(PARMSIZE,R9),USERDATA Pass state data to signon        01830002
+         B     RET_OK             Return normal response                01840002
+*                                                                       01850002
+STATMERR DS    0H                 State mgr error - return disaster     01860002
+         MVC   CONVERTER_REASON(1),FUNCTION                             01870002
+         MVC   CONVERTER_REASON+1(1),RETCODE                            01880002
+         B     RET_DIS            State mgr error - return disaster     01890002
+*---------------------------------------------------------------------* 01900002
+*  There is already a token in the input URI.                           01910002
+*  See if it is valid and represents a non-null userid.                 01920002
+*---------------------------------------------------------------------* 01930002
+GETSTATE DS    0H                                                       01940002
+         XC    STATPARM(STATLEN-L'USERDATA),STATPARM  Clear state plist 01950002
+         XC    USERDATA,USERDATA  Clear state manager userdata          01960002
+         MVC   SNTOKEN,DECODE_USER_TOKEN Copy the token                 01970002
+         BAL   R4,CNVTOKEN        Convert the token to binary           01980002
+         ST    R15,HANDLE         Save the accumulated handle           01990002
+         MVI   FUNCTION,RETRIEVE  Request state retrieval               02000002
+         MVC   EYECATCH,=C'W200'  Set plist eyecatcher                  02010002
+         EXEC  CICS,                                                   *02020002
+               LINK,                                                   *02030002
+               PROGRAM('IEW200'),                                      *02040002
+               COMMAREA(STATPARM),                                     *02050002
+               LENGTH(STATSIZE)                                         02060002
+         CLI   RETCODE,NOMATRC    Is token unknown?                     02070002
+         BE    GETTOKEN           Yes, get a new one                    02080002
+         CLI   RETCODE,GOODRC     Successful?                           02090002
+         BNE   STATMERR           No, State Manager error               02100002
+         MVC   0(PARMSIZE,R9),USERDATA Copy user data from state mgr    02110002
+         MVC   WORKAREA,SNUSERID  Copy the userid                       02120002
+         NC    WORKAREA,=8AL1(X'FF'-C' ')  Check for blanks or nulls    02130002
+         BZ    GOSIGNON           If no userid, force signon            02140002
+         B     RET_OK             Otherwise, continue normally          02150002
+*********************************************************************** 02160002
+*  ENCODE routine                                                       02170002
+*********************************************************************** 02180002
+ENCODE   DS    0H                                                       02190002
+         CLC   ENCODE_EYECATCHER,=CL8'>encode'                          02200002
+         BNE   RET_INV            Return response=invalid               02210002
+         L     R9,ENCODE_DATA_PTR Address data from signon program      02220002
+         MVC   USERDATA,0(R9)     Copy data updated by signom           02230002
+         OC    SNUSERID,SNUSERID  Is userid available?                  02240002
+         BZ    SENDPAGE           No, just send signon page             02250002
+         CLC   SNUSERID,=8C'?'    Is userid question marks?             02260002
+         BNE   REDIRECT           No, go reset in state manager         02270002
+         XC    SNUSERID,SNUSERID  Yes, clear out temporary userid       02280002
+         B     REDIRECT           Yes, redirect to new URL              02290002
+SENDPAGE DS    0H                 Send page prepared by SIGNON          02300002
+         L     R1,PARMSIZE(,R9)   Get length to send                    02310002
+         LA    R0,PARMSIZE(,R9)   Get address to send                   02320002
+         LR    R14,R9             Copy target address                   02330002
+         LR    R15,R1             Target length = source length         02340002
+         MVCL  R14,R0             Copy user data                        02350002
+*        LH    R2,LEN_URL         Get length of absolute URL            02360002
+*        BCTR  R2,0               Decrement for EXECUTE                 02370002
+*        LR    R14,R9             Get address for output                02380002
+*====================================================================== 02390002
+*        LA    R14,124(,R14)      Get address of href=                = 02400002
+*        MVC   0(34,R14),=C'http://mainframe.lvrgn.nexus:4089/'       = 02410002
+*        LA    R14,34(,R14)       Get address of href=                = 02420002
+*====================================================================== 02430002
+*        EX    R2,COPYURL         Copy absolute URL                     02440002
+*====================================================================== 02450002
+*        LA    R14,158(,R2)       Get address past absolute URL       = 02460002
+*        AR    R14,R9                                                 = 02470002
+*        MVC   0(26,R14),=C'iew100/wget/iew100/x.jpg">'                 02480002
+*====================================================================== 02490002
+         B     RET_OK             All done                              02500002
+*---------------------------------------------------------------------* 02510002
+*   If userid is OK, restore original URI and issue redirection.        02520002
+*   (The "original" URI now has the token appended, so we will          02530002
+*    not revisit the signon processing again unless the token           02540002
+*    becomes invalidated.)                                              02550002
+*---------------------------------------------------------------------* 02560002
+REDIRECT DS    0H                                                       02570002
+         LH    R2,LEN_URL         Get length of absolute URL            02580002
+         BCTR  R2,0               Decrement for EXECUTE                 02590002
+         LR    R14,R9             Get address for output                02600002
+         MVC   4(REDIR1_L,R14),REDIR1  Copy first segment               02610002
+         LA    R14,REDIR1_L+4(,R14) Point beyond it                     02620002
+         EX    R2,COPYURL         Copy absolute URL                     02630002
+         LA    R14,1(R2,R14)      Point beyond it                       02640002
+         LM    R15,R1,=A(REDIR2_L,REDIR2,REDIR2_L) Locate second segmnt 02650002
+         MVCL  R14,R0             Copy second segment                   02660002
+         EX    R2,COPYURL         Copy absolute URL                     02670002
+         LA    R14,1(R2,R14)      Point beyond it                       02680002
+         MVC   0(REDIR3_L,R14),REDIR3  Copy third segment               02690002
+         LA    R14,REDIR3_L(,R14) Point beyond it                       02700002
+         SR    R14,R9             Get length of entire HTTP response    02710002
+         ST    R14,0(,R9)         Save as first word of data            02720002
+*  Convert the modulo-26 character token back to a binary handle        02730002
+         MVC   SNTOKEN,ENCODE_USER_TOKEN Copy the token                 02740002
+         BAL   R4,CNVTOKEN        Convert the token to binary           02750002
+         ST    R15,HANDLE         Save the accumulated handle           02760002
+         MVI   FUNCTION,STORE     Request storage of state              02770002
+         MVC   EYECATCH,=C'W200'  Set plist eyecatcher                  02780002
+         EXEC  CICS,                                                   *02790002
+               LINK,PROGRAM('IEW200'),                                 *02800002
+               COMMAREA(STATPARM),                                     *02810002
+               LENGTH(STATSIZE)                                         02820002
+         CLI   RETCODE,GOODRC     Successful?                           02830002
+         BNE   STATMERR           No, State Manager error               02840002
+         B     RET_OK             All done                              02850002
+*                                                                       02860002
+COPYURL  MVC   0(0,R14),ABS_URL   Copy absolute URL                     02870002
+*---------------------------------------------------------------------* 02880002
+*  Get the value associated with a specified environment variable.      02890002
+*                                                                       02900002
+*  Input:  R1 points to the name of the variable, delimited by '='      02910002
+*          R0 contains the length of the variable name, including '='   02920002
+*                                                                       02930002
+*  Output  R0 points to the value for the named variable                02940002
+*          R1 contains the length of the value                          02950002
+*             (These registers are suitable for MVCL)                   02960002
+*---------------------------------------------------------------------* 02970002
+GETENVAR DS    0H                 Get a specified env-variable          02980002
+         LA    R14,ENVVARS+4      Get start of evar string              02990002
+         L     R3,ENVVARS         Get length of evar string             03000002
+         LA    R3,0(R14,R3)       Address end of evar string            03010002
+         LA    R2,1               Increment for searches                03020002
+         LR    R15,R0             Copy length of variable sought        03030002
+         BCTR  R15,0              Decrement for EXECUTE                 03040002
+GEVAR05  DS    0H                                                       03050002
+         EX    R15,GEVARCMP       Compare variable name                 03060002
+         BE    GEVAR15            If found, obtain value                03070002
+GEVAR10  DS    0H                                                       03080002
+         BXH   R14,R2,GEVAR90                                           03090002
+         CLI   0(R14),C'&&'       Next environment variable             03100002
+         BNE   GEVAR10                                                  03110002
+         ALR   R14,R2                                                   03120002
+         B     GEVAR05                                                  03130002
+GEVAR15  DS    0H                                                       03140002
+         LA    R14,1(R15,R14)     Step over keyword found               03150002
+         LR    R0,R14             Save addrees found                    03160002
+GEVAR20  DS    0H                                                       03170002
+         BXH   R14,R2,GEVAR25                                           03180002
+         CLI   0(R14),C'&&'       Found next variable?                  03190002
+         BNE   GEVAR20                                                  03200002
+GEVAR25  DS    0H                                                       03210002
+         LR    R1,R14             Copy address reached                  03220002
+         SLR   R1,R0              Subtract start address                03230002
+         BR    R4                                                       03240002
+GEVAR90  DS    0H                                                       03250002
+         SR    R0,R0              Not found - set zero address          03260002
+         SR    R1,R1              Set zero length                       03270002
+         BR    R4                 Return                                03280002
+*                                                                       03290002
+GEVARCMP CLC   0(0,R14),0(R1)                                           03300002
+*---------------------------------------------------------------------* 03310002
+*  This subroutine converts an eight-character token into a binary      03320002
+*  handle by interpreting it as a modulo-26 digit.                      03330002
+*---------------------------------------------------------------------* 03340002
+CNVTOKEN DS    0H                 Convert character token to handle     03350002
+         SR    R15,R15            Zero accumulator                      03360002
+         LA    R14,SNTOKEN-1      Address byte before token             03370002
+         LA    R3,L'SNTOKEN       Set length to convert                 03380002
+TRANTOK2 LA    R14,1(,R14)        Step to next modulo-26 digit          03390002
+         SR    R2,R2              Clear TRT output register             03400002
+         TRT   0(1,R14),TTOKEN    Convert character back to binary      03410002
+         MH    R15,=Y(L'ALPHABET) Multiply accumulator                  03420002
+         AR    R15,R2             Add newly converted digit             03430002
+         BCT   R3,TRANTOK2        Loop through token                    03440002
+         BR    R4                 Return to caller                      03450002
+*---------------------------------------------------------------------* 03460002
+*    Return Invalid                                                   * 03470002
+*---------------------------------------------------------------------* 03480002
+RET_INV  DS    0H                                                       03490002
+         MVC   CONVERTER_RESPONSE,=A(URP_INVALID)                       03500002
+         B     RETURN                                                   03510002
+*---------------------------------------------------------------------* 03520002
+*    Return Disaster                                                  * 03530002
+*---------------------------------------------------------------------* 03540002
+RET_DIS  DS    0H                                                       03550002
+         MVC   CONVERTER_RESPONSE,=A(URP_DISASTER)                      03560002
+         B     RETURN                                                   03570002
+*---------------------------------------------------------------------* 03580002
+*    Return OK                                                        * 03590002
+*---------------------------------------------------------------------* 03600002
+RET_OK   DS    0H                                                       03610002
+         MVC   CONVERTER_RESPONSE,=A(URP_OK)                            03620002
+RETURN   DS    0H                                                       03630002
+         EXEC  CICS,                                                   *03640002
+               RETURN                                                   03650002
+         DFHEIRET ,                                                     03660002
+*---------------------------------------------------------------------* 03670002
+*  These tables are used for converting between an eight-character      03680002
+*  token that forms part of the URI and a binary handle that is         03690002
+*  used as a parameter to the state management routine.                 03700002
+*                                                                       03710002
+*  The eight-character token is treated as a base-26 integer            03720002
+*  whose digits are lowercase letters of the English alphabet           03730002
+*  with a=0, b=1, .... y=24, z=25.                                      03740002
+*---------------------------------------------------------------------* 03750002
+ALPHABET DC    C'abcdefghijklmnopqrstuvwxyz'                            03760002
+*---------------------------------------------------------------------* 03770002
+*  Token backtranslate and ignore the case                              03780002
+*---------------------------------------------------------------------* 03790002
+TTOKEN   DC    256AL1(0)                                                03800002
+         ORG   TTOKEN+C'a'        Lower-case a-i                        03810002
+         DC    AL1(0,1,2,3,4,5,6,7,8)                                   03820002
+         ORG   TTOKEN+C'j'        Lower-case j-r                        03830002
+         DC    AL1(9,10,11,12,13,14,15,16,17)                           03840002
+         ORG   TTOKEN+C's'        Lower-case s-z                        03850002
+         DC    AL1(18,19,20,21,22,23,24,25)                             03860002
+         ORG   TTOKEN+C'A'        Upper-case A-I                        03870002
+         DC    AL1(0,1,2,3,4,5,6,7,8)                                   03880002
+         ORG   TTOKEN+C'J'        Upper-case J-R                        03890002
+         DC    AL1(9,10,11,12,13,14,15,16,17)                           03900002
+         ORG   TTOKEN+C'S'        Upper-case S-Z                        03910002
+         DC    AL1(18,19,20,21,22,23,24,25)                             03920002
+         ORG   ,                                                        03930002
+*---------------------------------------------------------------------* 03940002
+*  Static storage areas                                                 03950002
+*---------------------------------------------------------------------* 03960002
+         COPY DFHWBUCD            CWI URP constants                     03970002
+         LTORG ,                  Literal pool                          03980002
+STATSIZE DC    Y(STATLEN)         State Mgr parameter list len          03990002
+ENVVSIZE DC    Y(L'ENVVARS)       Environment variables len             04000002
+*---------------------------------------------------------------------* 04010002
+*  Response to generate a redirection to the original URL.              04020002
+*  It is declared here in three sections.                               04030002
+*  The variable-length target URI is inserted between the sections.     04040002
+*                                                                       04050002
+*  The 302 response will cause an automatic redirection in most         04060002
+*  browsers, but HTML text is included in the page to allow the         04070002
+*  end-user to do the redirection manually if the browser does          04080002
+*  not support redirection.                                             04090002
+*---------------------------------------------------------------------* 04100002
+REDIR1   DC    CL9'HTTP/1.0'      Protocol level 1.0                    04110002
+         DC    C'302 Redirection' Response code                         04120002
+         DC    AL2(CRLF)                                                04130002
+         DC    C'Content-Type: text/html'                               04140002
+         DC    AL2(CRLF)                                                04150002
+         DC    C'Location: '      Automatic redirection address         04160002
+REDIR1_L EQU   *-REDIR1                                                 04170002
+REDIR2   DC    AL2(CRLF,CRLF)     End of header section                 04180002
+         DC    C'<html><head><title>'                                   04190002
+         DC    C'IEI CICS Web Redirection Required'                     04200002
+         DC    C'</title></head>'                                       04210002
+         DC    AL2(CRLF)                                                04220002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  04230002
+         DC    C'<p><div align="center">'                               04240002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       04250002
+         DC    C'<h1>'                                                  04260002
+         DC    C'CICS Web Interface Redirection Required'               04270002
+         DC    C'</h1></div><p>',AL2(CRLF),C'<p>'                       04280002
+         DC    C'Your use of the IEI CICS Web Interface requires'       04290002
+         DC    C' a different location to be specified.'                04300002
+         DC    AL2(CRLF),C'<p>Please redirect your request'             04310002
+         DC    C' <a href="'                                            04320002
+REDIR2_L EQU   *-REDIR2                                                 04330002
+REDIR3   DC    C'">here</a> to continue.'                               04340002
+         DC    AL2(CRLF)                                                04350002
+         DC    C'<p>(You only see this message because your browser'    04360002
+         DC    C' does not support automatic redirection.)'             04370002
+         DC    AL2(CRLF)                                                04380002
+         DC    C'</body></html>'                                        04390002
+REDIR3_L EQU   *-REDIR3                                                 04400002
+*---------------------------------------------------------------------* 04410002
+*    DSECTS                                                             04420002
+*---------------------------------------------------------------------* 04430002
+         COPY DFHWBCDD                Converter parameter list          04440002
+PARMSIZE EQU  256                     Length within commarea for parms  04450002
+CRLF     EQU  X'0D25'                 Carriage-return/linefeed          04460002
+*                                                                       04470002
+*---------------------------------------------------------------------* 04480002
+*    Working storage definitions                                      * 04490002
+*---------------------------------------------------------------------* 04500002
+         DFHEISTG ,                                                     04510002
+WORKAREA DS    D                  Workarea                              04520002
+*---------------------------------------------------------------------- 04530002
+*        Parameter list for the State Manager IEW200                  * 04540002
+*---------------------------------------------------------------------- 04550002
+STATPARM DS    0F                                                       04560002
+EYECATCH DS    CL4                                                      04570002
+FUNCTION DS    XL1                                                      04580002
+CREATE   EQU   C'C'               * Create a new handle and state stg   04590002
+RETRIEVE EQU   C'R'               * Retrieve state info for a handle    04600002
+STORE    EQU   C'S'               * Store state info for a handle       04610002
+DESTROY  EQU   C'D'               * Destroy handle and state stg        04620002
+RETCODE  DS    XL1                                                      04630002
+GOODRC   EQU   X'0'                                                     04640002
+BADCOMRC EQU   X'1'                                                     04650002
+INVFUNRC EQU   X'2'                                                     04660002
+NOSTGRC  EQU   X'3'                                                     04670002
+NOMATRC  EQU   X'4'                                                     04680002
+TSWERRC  EQU   X'5'                                                     04690002
+LENGERR  EQU   X'6'                                                     04700002
+NOSTMPRC EQU   X'7'                                                     04710002
+BADQNMRC EQU   X'8'                                                     04720002
+TIMEFRC  EQU   X'9'                                                     04730002
+TSWER2RC EQU   X'A'                                                     04740002
+         DS    XL2                * Reserved                            04750002
+HANDLE   DS    F                  * Unique conversation id              04760002
+USERDATA DS    XL256              * User state information              04770002
+         ORG   USERDATA                                                 04780002
+SNUSERID DS    CL8                * Userid                              04790002
+SNTOKEN  DS    CL8                * Token passed to IEW900              04800002
+LEN_URL  DS    H                  * Length of absolute URL              04810002
+ABS_URL  DS    CL94               * Value of absolute URL               04820002
+         ORG   USERDATA+L'USERDATA                                      04830002
+STATLEN  EQU   *-STATPARM         * Length of state mgr parameter       04840002
+*---------------------------------------------------------------------- 04850002
+         DS    0D                 Align to double word                  04860002
+ENVVARS  DS    CL1024             Space for environment variables       04870002
+         DFHEIEND ,                                                     04880002
+         END   IEW101                                                   04890002
+

@@ -1,0 +1,612 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IET101   TITLE '**  CICS/ESA TCP SOCKETS GENERAL CLIENT PROGRAM  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IET101   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IET101   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IET101 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         MVC   EZA25EYE,=CL8'EZA25EYE'    SET EYE CATCHER
+         B     INT00                    BRANCH AROUND DUMP ID
+IET101   AMODE 31                       MAY EXECUTE ABOVE 16M
+IET101   RMODE ANY                      MAY RESIDE ABOVE 16M
+         DS    0H
+         DC    CL8'IET101'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*----------------------------------------------------------------------
+*        VERIFY TCP/IP CICS EXIT ACTIVE
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               EXITPROGRAM('EZACIC01'),                                *
+               STARTSTATUS(FULWORK),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LA    RA,COMRSPTC              LOAD TCP/IP INACT RETURN CODE
+         CLC   RESP,DFHRESP(NORMAL)     EXIT PROGRAM FOUND
+         BNE   XIT00                    ..NO, BRANCH
+         CLC   FULWORK,DFHVALUE(STARTED) EXIT ACTIVE
+         BNE   XIT00                    ..NO, BRANCH
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE
+*----------------------------------------------------------------------
+*        VERIFY CALLER'S PARMS
+*----------------------------------------------------------------------
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH
+         BL    ABN01                    ..NO CHOICE BUT ABEND
+         EXEC  CICS,                                                   *
+               ADDRESS,                                                *
+               COMMAREA(R9),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND
+         BNE   ABN02                    ..NO CHOICE BUT ABEND
+         USING COMPARM,R9
+*
+         LA    RA,COMRSILN              SET INBOUND LENGTH ZERO
+         OC    COMINLN,COMINLN          INBOUND LENGTH ZERO
+         BZ    XIT00                    ..YES, BRANCH
+         LA    RA,COMRSOLN              SET OUTBOUND LENGTH ZERO
+         OC    COMOUTLN,COMOUTLN        MAX OUTBOUND LENGTH ZERO
+         BZ    XIT00                    ..YES, BRANCH
+         LA    R2,COMMIN                LOAD MIN COMMAREA LEN
+         AH    R2,COMINLN               ADD INBOUND LEN
+         AH    R2,COMOUTLN              ADD MAX OUTBOUND LEN
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         LA    RA,COMRSPCL              LOAD INVALID COMMAREA LEN
+         CR    R1,R2                    COMMAREA LARGE ENOUGH
+         BL    XIT00                    ..NO, BRANCH
+         LA    RA,COMRSPOK              LOAD NORMAL RETURN CODE
+*
+         LA    R3,COMTIM00              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         XC    COMTIM01(L'COMTIM00*11),COMTIM01 CLEAR TIMERS
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         LA    R4,SRVRTBL               LOAD SERVER TABLE @
+         LA    RF,SRVRTBL#              LOAD SERVER TABLE ENTRIES
+INT10    DS    0H
+         CLC   COMSRV,0(R4)             VALID SERVER REQUEST
+         BE    INT20                    ..YES, BRANCH
+         LA    R4,L'SRVRTBL(,R4)        INDEX TO NEXT ENTRY
+         BCT   RF,INT10                 ..LOOP
+         LA    RA,COMRSPSI              SET INVALID SERVER ID
+         B     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        LINK FOR TCP GETHOSTNAME CALL
+*----------------------------------------------------------------------
+INT20    DS    0H
+         LA    RE,EZA25RC
+         LR    R0,RE
+         LA    RF,EZA25ELN
+         SR    R1,R1
+         MVCL  RE,R0                    CLR EZACIC25 COMMONAREA
+*
+         LA    RE,4(,R4)
+         OC    4(4,R4),4(R4)            IP @ ALREADY KNOWN
+         BNZ   INT32                    ..YES, USE IT
+         MVC   EZA25REQ,=C'GHBN'        PASS DNS NAME TO EZACIC25
+         MVI   EZA25TYP,C'0'             FOR GETHOSTBYNAME
+         L     R1,8(,R4)                LOAD HOST NAME LENGTH
+         L     RE,12(,R4)               LOAD HOST NAME @
+         ST    R1,EZA25NLN              STORE HOST NAME LEN
+         BCTR  R1,0                     DECR FOR EXECUTE MOVE
+         EX    R1,EZA25MV
+*EZA25MV MVC   EZA25HNM(0),0(RE)        EXECUTED INSTRUCTION
+*
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('EZACIC25'),                                    *
+               COMMAREA(EZA25RC),                                      *
+               LENGTH(=AL2(EZA25ELN))
+         L     R5,EZA25HNT              LOAD  HOSTENT @
+         LTR   R5,R5                    FOUND HOSTENT
+         BNZ   INT30                    ..YES, BRANCH
+         LA    RA,COMRSPGH              SET SOCKET CALL ERROR
+         MVC   COMTIM11(4),EZA25RC      SET RETURN CODE
+         MVC   COMTIM11+4(4),EZA25ERR   SET ERROR CODE
+         B     XIT00                    RETURN RESP CODE
+*
+EZA25MV  MVC   EZA25HNM(0),0(RE)
+*
+INT30    DS    0H
+         ST    R5,COMTIM09+4            SAVE HOSTENT @
+         L     R6,16(,R5)               LOAD HOSTADDR LIST @
+         L     RE,0(R6)                 LOAD 1ST IP @
+INT32    DS    0H
+         MVC   CALIPADR,0(RE)           SET SERVER IP @
+*----------------------------------------------------------------------
+*        ISSUE TCP SOCKET CALL
+*----------------------------------------------------------------------
+TCP00    DS    0H
+         MVC   CALPORT,2(R4)            SET SERVER PORT
+         LA    R1,CALAFINT              LOAD AF_INET
+         STH   R1,CALAF                 STORE AF_INET H-WORD
+         ST    R1,CALAFF                STORE AF_INET F-WORD
+         XC    CALRSVD8,CALRSVD8        CLEAR RESERVED
+         LA    R1,CALSTREM              LOAD STREAM SOCKET TYPE
+         ST    R1,CALSCTYP              STORE SOCKET TYPE
+         XC    CALPROTO,CALPROTO        DEFAULT PROTOCOL
+         MVC   COMTIM10,CALAF           SAVE TCP/IP CALL PARMS
+         MVC   CALSCFUN,=CL16'SOCKET'
+*
+         LA    R3,COMTIM01              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALAFF,CALSCTYP,CALPROTO,                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         LA    R3,COMTIM02              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNM   TCP10                    ..YES, BRANCH
+         LA    RA,COMRSPSC              SET SOCKET CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        ISSUE TCP CONNECT CALL
+*----------------------------------------------------------------------
+TCP10    DS    0H
+         STH   RF,CALSCDES              SAVE SOCKET DESCRIPTOR
+         MVC   CALSCFUN,=CL16'CONNECT'
+*
+         LA    R3,COMTIM03              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALAF,                               *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         LA    R3,COMTIM04              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BZ    TCP20                    ..YES, BRANCH
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+*----------------------------------------------------------------------
+*        TRANSLATE EBCDIC TO ASCII AND ISSUE TCP WRITE CALL
+*----------------------------------------------------------------------
+TCP20    DS    0H
+         MVC   CALSCFUN,=CL16'WRITE'
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN
+         ST    R1,CALNBYTE              SET TCP WRITE LEN
+         LA    R2,COMMIN(,R9)           LOAD CALLER'S INPUT MSG @
+*
+         LA    R3,COMTIM05              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         CALL  EZACIC04,                                               *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         CALL  EZACIC05,                                               *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         LA    R3,COMTIM06              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNM   TCP30                    ..YES, BRANCH
+         LA    RA,COMRSPWC              SET WRITE CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP IOCTL/RECV CALL AND TRANSLATE ASCII TO EBCDIC
+*----------------------------------------------------------------------
+TCP30    DS    0H
+*
+         LA    R7,5                     SET INTERVAL LOOP COUNT
+         LA    R3,COMTIM07              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         MVC   CALSCFUN,=CL16'IOCTL'
+         MVC   CALCOMND,FIONBIO         SOCKET BLOCKING MODE REQUEST
+         LA    R1,1                     SET NONBLOCKING REQUEST
+         ST    R1,CALREQ                STORE IT
+         XC    CALRSP,CALRSP            CLR RESPONSE
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALCOMND,                            *
+               CALREQ,CALRSP,CALERRNO,CALRTNCD),                       *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BNM   TCP32                    ..YES, BRANCH
+         LA    RA,COMRSPIO              SET IOCTL CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+TCP32    DS    0H
+         MVC   CALSCFUN,=CL16'RECV'
+         XC    CALFLG,CALFLG            CLR FLAGS
+         LH    R1,COMOUTLN              LOAD CALLER'S INPUT MSG LEN
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN
+         LH    R1,COMINLN               LOAD CALLER'S INPUT MSG LEN
+         LA    R2,COMMIN(R1,R9)         LOAD CALLER'S OUTPUT MSG @
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BP    TCP33                    ..YES, BRANCH
+*
+         CLC   CALERRNO,E_WOULD_BLOCK   BLOCKING ERROR
+         BNE   TCP35                    ..NO, BRANCH
+*
+         EXEC  CICS,                                                   *
+               DELAY,                                                  *
+               INTERVAL(000002),                                       *
+               REQID('$IET101$')
+         BCT   R7,TCP32                 INTERVAL WAIT LOOP
+         B     TCP35                    SET ERROR
+*
+TCP33    DS    0H
+         STH   RF,COMOUTLN              SAVE ACTUAL INPUT MSG LEN
+         ST    RF,FULWORK               SAVE ACTUAL INPUT MSG LEN
+*
+         CALL  EZACIC05,                                               *
+               ((R2),FULWORK),                                         *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+TCP35    DS    0H
+         LA    R3,COMTIM08              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BP    TCP40                    ..YES, BRANCH
+         LA    RA,COMRSPRC              SET RECV CALL ERROR
+         MVC   COMTIM11(4),CALRTNCD     SET RETURN CODE
+         MVC   COMTIM11+4(4),CALERRNO   SET ERROR CODE
+**       B     XIT00                    RETURN RESP CODE
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP CLOSE CALL
+*----------------------------------------------------------------------
+TCP40    DS    0H
+         MVC   CALSCFUN,=CL16'CLOSE'
+*
+         LA    R3,COMTIM09              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         LA    R3,COMTIM10              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BZ    XIT00                    ..YES, BRANCH
+         LA    RA,COMRSPCC              SET CONNECT CALL ERROR
+         B     XIT00                    RETURN RESP CODE
+*
+*----------------------------------------------------------------------
+*        OBTAIN ABSOLUTE TIME ROUTINE
+*----------------------------------------------------------------------
+ABS00    DS    0H
+         EXEC  CICS,                                                   *
+               ASKTIME,                                                *
+               ABSTIME(0(R3)),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8
+*----------------------------------------------------------------------
+*        VARIOUS ERROR MSGS AND ABENDS
+*----------------------------------------------------------------------
+ABN01    DS    0H
+         LA    R2,MSG01
+         LA    R3,L'MSG01
+         ICM   R4,B'1111',ABC01
+         B     ABN99
+ABN02    DS    0H
+         LA    R2,MSG02
+         LA    R3,L'MSG02
+         ICM   R4,B'1111',ABC02
+         B     ABN99
+ABN99    DS    0H
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWRK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSMT'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWRK),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         ST    R4,FULWORK
+         EXEC  CICS,                                                   *
+               ABEND,                                                  *
+               ABCODE(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*----------------------------------------------------------------------
+*        RETURN TO CICS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         STC   RA,COMRSP                SET RETURN CODE
+         CLI   COMRSP,COMRSPOK          NORMAL RESPONSE
+         BNE   XIT05                    ..YES, BRANCH
+         LA    R3,COMTIM11              LOAD ENTRY TIMER @
+         BAS   R8,ABS00                 SET ENTRY ABS TIME
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR
+         BNZ   XIT08                    ..NO, BRANCH
+         B     XIT10
+*
+XIT05    DS    0H
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR
+         BZ    XIT10                    ..NO, BRANCH
+XIT08    DS    0H
+         MVC   CALSCFUN,=CL16'SHUTDOWN'
+         LA    R1,END_BOTH
+         ST    R1,CALHOW
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALHOW,                              *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         MVC   CALSCFUN,=CL16'CLOSE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+XIT10    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS
+*----------------------------------------------------------------------
+*
+         CNOP  0,4
+SRVRTBL  DS    0XL16
+*
+*        I      10.129.01.63    minint-4o31oea.iei.nexus     (Prod-New)
+*        L      10.129.01.62    iei-fedexCPQ.mdf.lvrgn.nexus (Prod-Old)
+*        X      10.129.96.61    iei-fedex_6227.iei.nexus (Test)
+*
+*        $      208.136.50.21   Access Ingram
+*
+SRVNLVRG DC    C'I'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(2000)                SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'LVRGNN)            NAME LENGTH
+         DC    A(LVRGNN)                NAME @
+SRVPLVRG DC    C'L'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(2000)                SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'LVRGNP)            NAME LENGTH
+         DC    A(LVRGNP)                NAME @
+SRVTLVRG DC    C'X'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(2000)                SERVER PORT NUMBER
+         DC    AL4(0)                   SERVER IP ADDR
+         DC    AL4(L'LVRGNT)            NAME LENGTH
+         DC    A(LVRGNT)                NAME @
+         ORG
+SRVRAIEI DC    C'$'                     SERVER CODE
+         DC    X'00'                    RESERVED
+         DC    AL2(0080)                SERVER PORT NUMBER
+         DC    AL1(208),AL1(136),AL1(050),AL1(021) SERVER IP ADDR
+         DC    A(0)                     NAME LENGTH
+         DC    A(0)                     NAME @
+*
+SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL
+*
+LVRGNN   DC    C'minint-4o31oea.iei.nexus'
+LVRGNP   DC    C'fedex.iei.nexus'
+LVRGNT   DC    C'fedex_6227.iei.nexus'
+*
+E_WOULD_BLOCK DC AL4(35)                BLOCKING ERROR CODE
+*
+FIONBIO  DC    X'8004A77E'              IOCNTL SET/CLEAR BLOCKING
+FIONREAD DC    X'4004A77F'              IOCNTL QUERY READABLE BYTES
+*
+CALL     CALL  ,                                                       *
+               (0,0,0,0,0,0,0,0),                                      *
+               VL,                                                     *
+               MF=L
+CALLLN   EQU   *-CALL
+*
+MSG01    DC    C'IET101001  COMMAREA LENGTH PASSED FROM CALLER IS TOO S*
+               MALL, T101 ABEND INITIATED.'
+ABC01    EQU   *-21
+*
+MSG02    DC    C'IET101002  COMMAREA ADDRESS CAN NOT BE LOCATED, T102 A*
+               bend initiated.'
+ABC02    EQU   *-21
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+HLFWRK   DS    H                        HALF WORD WORK
+*
+         DS    0F
+TCPCALL  DS    XL(CALLLN)               TCP CALL PARMS
+*
+CALSCFUN DS    CL16                     SOCKET FUNCTION
+*
+CALAFF   DS    F                        AF_INET (F-WORD)
+*
+CALAF    DS    H                        ADDRESSING FAMILY
+CALAFINT EQU   2                        ..AF_INET (H-WORD)
+CALPORT  DS    H                        SERVER PORT
+CALIPADR DS    F                        SERVER IP ADDRESS
+CALRSVD8 DS    2F                       RESERVED
+*
+CALSCDES DS    H                        SOCKET DESCRIPTOR
+*
+CALSCTYP DS    F                        SOCKET TYPE
+CALSTREM EQU   1                        ..STREAM
+CALDGRAM EQU   2                        ..DATA GRAM
+CALNBYTE DS    F                        WRITE/READ BYTE COUNT
+CALPROTO DS    F                        SOCKET PROTOCOL
+*                                       ..IF ZERO, AND
+*                                           SOCKET TYPE=STREAM THEN TCP
+*                                           SOCKET TYPE=DGRAM THEN UDP
+CALERRNO DS    F                        DEPENDS ON RETURN CODE
+*                                       ..USED AS HOSTENT GETHOSTBYNAME
+CALRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION
+*
+CALCOMND DS    F                        IOCTL COMMAND CODE
+CALFLG   DS    F                        IOCTL FLAGS ARGUMENT
+CALREQ   DS    F                        IOCTL REQUEST ARGUMENT
+CALRSP   DS    F                        IOCTL RESPONSE ARGUMENT
+*
+CALHOW   DS    F                        SHUTDOWN HOW ARGUMENT
+END_FROM EQU   0                        ..SHUTDOWN RECEIVE
+END_TO   EQU   1                        ..SHUTDOWN SEND
+END_BOTH EQU   2                        ..SHUTDOWN SEND AND RECEIVE
+*
+EZA25EYE DS    CL8                      EZACIC25 PARMS AREA EYECATCHER
+EZA25RC  DS    F                        EZACIC25 RETURN CODE
+EZA25ERR DS    F                        EZACIC25 ERROR NUMBER
+EZA25HNT DS    A                        EZACIC25 HOSTENT @
+EZA25REQ DS    CL4                      EZACIC25 REQUEST "GHBN" ONLY
+EZA25NLN DS    F                        EZACIC25 HOST NAME LENGTH
+EZA25TYP DS    CL1                      EZACIC25 REQUEST TYPE
+EZA25TP0 EQU   C'0'                     ..CACHE or GETHOSTBYNAME
+EZA25TP1 EQU   C'1'                     ..GETHOSTBYNAME
+EZA25TP2 EQU   C'2'                     ..CACHE
+EZA25HNM DS    CL256                    EZACIC25 HOST NAME ARGUEMENT
+EZA25ELN EQU   *-EZA25RC                EZACIC25 COMMONAREA LENGTH
+*
+         DFHEIEND
+*----------------------------------------------------------------------
+*        CLIENT'S COMMAREA PARM LIST DSECT
+*----------------------------------------------------------------------
+*
+COMPARM  DSECT
+*
+COMSRV   DS    CL1                      TCP SERVER ID
+COMSRCX  EQU   C'X'                     ..X = FEDERAL EXPRESS
+*
+COMRSP   DS    CL1                      RESPONSE CODE
+COMRSPOK EQU   C' '                     ..NORMAL
+COMRSPTC EQU   C'0'                     ..CICS TCP EXIT INACTIVE
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LENGTH
+COMRSPSI EQU   C'2'                     ..INVALID SERVER ID
+COMRSPSC EQU   C'3'                     ..TCP SOCKET CALL ERROR
+COMRSPCC EQU   C'4'                     ..TCP CONNECT CALL ERROR
+COMRSPWC EQU   C'5'                     ..TCP WRITE CALL ERROR
+COMRSPRC EQU   C'6'                     ..TCP RECV CALL ERROR
+COMRSPLC EQU   C'7'                     ..TCP CLOSE CALL ERROR
+COMRSILN EQU   C'8'                     ..INBOUND MSG TO SRVR LEN=0
+COMRSOLN EQU   C'9'                     ..OUTBOUND MSG FRM SRVR LEN=0
+COMRSPGH EQU   C'G'                     ..TCP GETHOSTBYNAME CALL ERROR
+COMRSPIO EQU   C'I'                     ..TCP IOCTL CALL ERROR
+*
+COMINLN  DS    H                        CALLERS INBOUND MSG LEN
+COMOUTLN DS    H                        SERVERS OUTBOUND MSG LEN
+*
+COMRSV   DS    CL2                      RESERVED
+*
+COMTIM00 DS    XL8                      ABS TIME IET101 ENTRY
+COMTIM01 DS    XL8                      ABS TIME SOCKET CALL
+COMTIM02 DS    XL8                      ABS TIME SOCKET RETURN
+COMTIM03 DS    XL8                      ABS TIME CONNECT CALL
+COMTIM04 DS    XL8                      ABS TIME CONNECT RETURN
+COMTIM05 DS    XL8                      ABS TIME WRITE CALL
+COMTIM06 DS    XL8                      ABS TIME WRITE RETURN
+COMTIM07 DS    XL8                      ABS TIME IOCTL CALL
+COMTIM08 DS    XL8                      ABS TIME RECV RETURN
+COMTIM09 DS    XL8                      ABS TIME CLOSE CALL
+COMTIM10 DS    XL8                      ABS TIME CLOSE RETURN
+COMTIM11 DS    XL8                      ABS TIME IET101 EXIT
+*
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH
+*----------------------------------------------------------------------
+         END
+

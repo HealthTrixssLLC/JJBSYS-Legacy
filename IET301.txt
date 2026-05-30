@@ -1,0 +1,806 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IET301   TITLE '** CICS/ESA TCP SOCKETS GENERAL LISTNER CHILD PROG **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IET301   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IET301   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IET301 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         MVC   CALEYE,=CL20'$TCP  ERRNO/RTNCODE$' SET EYE CATCHER
+         MVC   SAVEYE,=CL20'$SAVE ERRNO/RTNCODE$' SET EYE CATCHER
+         B     INT00                    BRANCH AROUND DUMP ID
+IET301   AMODE 31                       MAY EXECUTE ABOVE 16M
+IET301   RMODE ANY                      MAY RESIDE ABOVE 16M
+         DS    0H
+         DC    CL8'IET301'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*----------------------------------------------------------------------
+*        VERIFY TCP/IP CICS EXIT ACTIVE
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               EXITPROGRAM('EZACIC01'),                                *
+               STARTSTATUS(FULWORK),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXIT PROGRAM FOUND
+         BNE   ABN01                    ..NO, ABEND
+         CLC   FULWORK,DFHVALUE(STARTED) EXIT ACTIVE
+         BNE   ABN01                    ..NO, ABEND
+*----------------------------------------------------------------------
+*        VERIFY CALLER'S PARMS
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               RETRIEVE,                                               *
+               SET(R9),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     RETRIEVE DATA FOUND
+         BNE   ABN02                    ..NO, ABEND
+         USING STRTPARM,R9
+*
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+*---------------------------------------------------------------------*
+*        HANDLE ALL ABENDS                                            *
+*---------------------------------------------------------------------*
+         EXEC  CICS,                                                   *
+               HANDLE,                                                 *
+               ABEND,                                                  *
+               LABEL(TCP50),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*----------------------------------------------------------------------
+*        ISSUE TCP TAKESOCKET CALL
+*----------------------------------------------------------------------
+TCP00    DS    0H
+         MVC   CALSCFUN,=CL16'TAKESOCKET'
+         MVC   CALSCDES,STRTSOCK+2      SET SOCKET DESCRIPTOR
+         XC    CALAFF,CALAFF            CLEAR F-WORD AF_INET
+         MVC   CALAFF+2,STRTFAM         SET AF_INET
+         MVC   CALJNAME,STRTJNAM        SET JOBNAME
+         MVC   CALSNAME,STRTSNAM        SET SUBNAME
+         XC    CALRSV20,CALRSV20        CLEAR RESERVED
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALAFF,                              *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BM    ABN03                    ..NO, BRANCH
+         STH   RF,CALSCDES              SET NEW SOCKET DESCRIPTOR
+*----------------------------------------------------------------------
+*        ISSUE TCP WRITE "READY" CALL
+*----------------------------------------------------------------------
+TCP10    DS    0H
+         MVC   CALSCFUN,=CL16'WRITE'
+         MVC   CALIOA(L'READY),READY    MOVE READY MSG TO IO AREA
+         LA    R1,L'READY               LOAD READY MSG LEN
+         ST    R1,CALNBYTE              SET TCP WRITE LEN
+         LA    R2,CALIOA                LOAD IO AREA @
+*
+         CALL  EZACIC04,                                               *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL UNSUCCESSFUL
+         BM    ABN04                    ..YES, BRANCH
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP IOCTL/RECV CALL AND TRANSLATE ASCII TO EBCDIC
+*----------------------------------------------------------------------
+TCP30    DS    0H
+*
+         MVC   CALSCFUN,=CL16'IOCTL'
+         MVC   CALCOMND,FIONBIO         SOCKET BLOCKING MODE REQUEST
+         LA    R1,1                     SET NONBLOCKING REQUEST
+         ST    R1,CALREQ                STORE IT
+         XC    CALRSP,CALRSP            CLR RESPONSE
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALCOMND,                            *
+               CALREQ,CALRSP,CALERRNO,CALRTNCD),                       *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL UNSUCCESSFUL
+         BM    ABN05                    ..YES, BRANCH
+*
+TCP32    DS    0H
+         LA    R7,8                     SET INTERVAL LOOP COUNT
+         XC    RECVLEN,RECVLEN          CLR RECV TOTAL LENGTH
+         LA    R1,L'CALIOA              LOAD INPUT MSG LEN
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN
+         LA    R2,CALIOA                LOAD INPUT BUF @
+         XC    CALFLG,CALFLG            CLR FLAGS
+*
+TCP32A   DS    0H
+         MVC   CALSCFUN,=CL16'RECV'
+         XC    CALERRNO,CALERRNO        CLR ERROR CODE
+         XC    CALRTNCD,CALRTNCD        CLR RETURN CODE
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BP    TCP33                    ..YES, BRANCH
+         BZ    ABN10                    ..NO, BRANCH THE SOCKET CLOSED
+*
+         CLC   CALERRNO,E_WOULD_BLOCK   BLOCKING ERROR
+         BNE   ABN06                    ..NO, BRANCH
+*
+         EXEC  CICS,                                                   *
+               DELAY,                                                  *
+               INTERVAL(000001),                                       *
+               REQID('$IET301$')
+         BCT   R7,TCP32A                INTERVAL WAIT LOOP
+         B     ABN06                    ..BRANCH
+*
+TCP33    DS    0H
+         ST    RF,RECVLEN               SAVE RECV TOTAL LENGTH
+*
+         LA    R2,CALIOA                LOAD INPUT BUF @
+         CALL  EZACIC05,                                               *
+               ((R2),RECVLEN),                                         *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+*----------------------------------------------------------------------
+*        LINK TO APPLICATION PROCESSING
+*----------------------------------------------------------------------
+TCP37    DS    0H
+         LH    RA,=AL2(COMMLEN)         LOAD COMMAREA LEN
+         ST    RA,DBLWORK               STORE LENGTH
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               SET(RA),                                                *
+               FLENGTH(DBLWORK),                                       *
+               INITIMG(=X'00'),                                        *
+               USERDATAKEY
+         USING COMMPARM,RA              USE BASE REG
+         MVC   DBLWORK(3),=C'TCC'       SET PROGRAM PREFIX
+         MVC   DBLWORK+3(4),EIBTRNID    SET PROGRAM ROOT NAME
+         MVI   DBLWORK+7,C' '           SET PROGRAM SUFFIX
+         MVC   COMMLKID,DBLWORK         SET PROGRAM EYE CATCHER
+         EXEC  CICS,                                                   *
+               ASKTIME,                                                *
+               ABSTIME(DBLWORK)
+         UNPK  COMMQID(L'COMMQID),DBLWORK+4(4)
+         OI    COMMQID+L'COMMQID-1,X'F0'
+         MVI   COMMQID,C'$'             SET TCP/IP I/O QUEUE ID
+         EXEC  CICS,                                                   *
+               ENQ,                                                    *
+               RESOURCE(COMMQID),                                      *
+               LENGTH(=H'8'),                                          *
+               TASK
+         LA    R2,CALIOA
+         MVI   COMMRSP,C' '             SET NULL RESPONSE
+TCP37A   DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(COMMQID),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP37A
+         MVC   ITEMNUM,=H'1'
+         MVC   ITEMLEN,RECVLEN+2
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               MAIN,                                                   *
+               QUEUE(COMMQID),                                         *
+               FROM(0(,R2)),                                           *
+               LENGTH(ITEMLEN),                                        *
+               ITEM(ITEMNUM)
+*
+         LA    R2,CALIOA
+         BAS   R8,LGI00
+*
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM(COMMLKID),                                      *
+               COMMAREA(COMMPARM),                                     *
+               LENGTH(=AL2(COMMLEN))
+         CLI   COMMRSP,C' '             NULL RESPONSE
+         BE    TCP51                    ..YES, BRANCH
+         CLI   COMMRSP,RSPNONE          NO SPECIFIC RESPONSE
+         BE    TCP51                    ..YES, BRANCH
+         CLI   COMMRSP,RSPOK            SEND 'OK' RESPONSE
+         BE    TCP38                    ..YES, BRANCH
+         CLI   COMMRSP,RSPLINK          SEND LINKED PGM RESPONSE
+         BE    TCP39                    ..YES, BRANCH
+         B     ABN07                    ..NO, BRANCH
+*
+*----------------------------------------------------------------------
+*        ISSUE TCP WRITE RESPONSE
+*----------------------------------------------------------------------
+TCP38    DS    0H
+         MVC   CALIOA(L'OK),OK          MOVE OK MSG TO IO AREA
+         LA    R1,L'OK                  LOAD OK MSG LEN
+         LA    R2,CALIOA                LOAD IO AREA @
+         B     TCP40                    ..BRANCH
+*
+TCP39    DS    0H
+         MVC   ITEMNUM,=H'2'
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMMQID),                                         *
+               SET(R2),                                                *
+               LENGTH(ITEMLEN),                                        *
+               ITEM(ITEMNUM),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BNE   ABN11
+*
+TCP39A   DS    0H
+         BAS   R8,LGO00
+*
+         LH    R1,ITEMLEN               LOAD RESP MSG LEN
+         LA    R3,0(R1,R2)              CALC EOM
+         BCTR  R3,0                     CALC LAST BYTE @
+         CLI   0(R3),LF                 LF ALREADY PRESENT
+         BE    TCP40                    ..YES, BRANCH
+         CLI   0(R3),0                  NULL BYTE PRESENT
+         BNE   TCP40                    ..NO, BRANCH
+         MVI   0(R3),LF                 ADD LF TO MSG
+*
+TCP40    DS    0H
+         ST    R1,CALNBYTE              SET TCP WRITE LEN
+*
+         CALL  EZACIC04,                                               *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         MVC   CALSCFUN,=CL16'WRITE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL UNSUCCESSFUL
+         BM    ABN09                    ..YES, BRANCH
+*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TSQUEUE(COMMQID),                                       *
+               NUMITEMS(HLFWORK)
+         LH    R1,HLFWORK
+         CHI   R1,2
+         BE    TCP51
+*----------------------------------------------------------------------
+*        ISSUE TCP IOCTL/RECV/TRANSLATE ASCII TO EBCDIC OK RESPONSE
+*----------------------------------------------------------------------
+TCP41    DS    0H
+*
+         CLC   0(5,R2),ASCIFINI         END OF TS QUEUE
+         BE    TCP51
+*
+         MVC   CALSCFUN,=CL16'IOCTL'
+         MVC   CALCOMND,FIONBIO         SOCKET BLOCKING MODE REQUEST
+         LHI   R1,1                     SET NONBLOCKING REQUEST
+         ST    R1,CALREQ                STORE IT
+         XC    CALRSP,CALRSP            CLR RESPONSE
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALCOMND,                            *
+               CALREQ,CALRSP,CALERRNO,CALRTNCD),                       *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL UNSUCCESSFUL
+         BM    ABN05                    ..YES, BRANCH
+*
+TCP42    DS    0H
+         LHI   R7,16                    SET INTERVAL LOOP COUNT
+         XC    RECVLEN,RECVLEN          CLR RECV TOTAL LENGTH
+         LA    R1,L'CALIOA              LOAD INPUT MSG LEN
+         ST    R1,CALNBYTE              SET TCP MAX RECV LEN
+         LA    R2,CALIOA                LOAD INPUT BUF @
+         XC    CALFLG,CALFLG            CLR FLAGS
+*
+TCP42A   DS    0H
+         MVC   CALSCFUN,=CL16'RECV'
+         XC    CALERRNO,CALERRNO        CLR ERROR CODE
+         XC    CALRTNCD,CALRTNCD        CLR RETURN CODE
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         BP    TCP43                    ..YES, BRANCH
+         BZ    ABN10                    ..NO, BRANCH THE SOCKET CLOSED
+*
+         CLC   CALERRNO,E_WOULD_BLOCK   BLOCKING ERROR
+         BNE   ABN06                    ..NO, BRANCH
+*
+         EXEC  CICS,                                                   *
+               DELAY,                                                  *
+               INTERVAL(000001),                                       *
+               REQID('$IET301$')
+         BCT   R7,TCP42A                INTERVAL WAIT LOOP
+         B     ABN06                    ..BRANCH
+*
+TCP43    DS    0H
+         ST    RF,RECVLEN               SAVE RECV TOTAL LENGTH
+*
+         LA    R2,CALIOA                LOAD INPUT BUF @
+         CALL  EZACIC05,                                               *
+               ((R2),RECVLEN),                                         *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         CLC   CALIOA(2),OK             RECV'd OK ACK
+         BNE   ABN12                    ..NO, BRANCH
+*
+TCP44    DS    0H
+         LH    R1,ITEMNUM               INDEX TS RECORD #
+         AHI   R1,1
+         STH   R1,ITEMNUM
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMMQID),                                         *
+               SET(R2),                                                *
+               LENGTH(ITEMLEN),                                        *
+               ITEM(ITEMNUM),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    TCP39A
+         CLC   RESP,DFHRESP(ITEMERR)
+         BNE   ABN11
+*
+         MVI   COMMRSP,RSPFINI          SET END MSG RESPONSE
+         MVC   CALIOA(L'FINI),FINI      MOVE END MSG TO IO AREA
+         LA    R1,L'FINI                LOAD END MSG LEN
+         LA    R2,CALIOA                LOAD IO AREA @
+         B     TCP40                    ..BRANCH
+*
+*----------------------------------------------------------------------
+*        DELETE TS QUEUE AND ISSUE TCP CLOSE CALL
+*----------------------------------------------------------------------
+TCP50    DS    0H
+*
+         EXEC  CICS,                                                   *
+               SYNCPOINT,                                              *
+               ROLLBACK
+*
+TCP51    DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(COMMQID),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         BAS   R8,CLO00
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL UNSUCCESSFUL
+         BNZ   ABN08                    ..YES, BRANCH
+         B     XIT00                    RETURN
+*
+*----------------------------------------------------------------------
+*        LOG TCP/IP INBOUND/OUTBOUND TRAFFIC
+*----------------------------------------------------------------------
+LGI00    DS    0H
+*
+         MVC   LOGQID(3),=CL3'TCI'
+         B     LOG00
+*
+LGO00    DS    0H
+*
+         MVC   LOGQID(3),=CL3'TCO'
+*        B     LOG00
+*
+LOG00    DS    0H
+         MVC   LOGQID+3(L'EIBTRNID),EIBTRNID
+         MVI   LOGQID+L'LOGQID-1,C' '
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               AUXILIARY,                                              *
+               QUEUE(LOGQID),                                          *
+               FROM(0(,R2)),                                           *
+               LENGTH(ITEMLEN),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    LOG99
+*
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(LOGQID),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    LOG00
+*
+LOG99    DS    0H
+         BR    R8
+*----------------------------------------------------------------------
+*        CLOSE TCP/IP SOCKET
+*----------------------------------------------------------------------
+CLO00    DS    0H
+*
+         MVC   CALSCFUN,=CL16'CLOSE'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         BR    R8
+*----------------------------------------------------------------------
+*        VARIOUS ERROR MSGS AND ABENDS
+*----------------------------------------------------------------------
+ABN01    DS    0H
+         LA    R2,MSG01
+         LA    R3,L'MSG01
+         ICM   R4,B'1111',ABC01
+         B     ABN99
+ABN02    DS    0H
+         LA    R2,MSG02
+         LA    R3,L'MSG02
+         ICM   R4,B'1111',ABC02
+         B     ABN99
+ABN03    DS    0H
+         LA    R2,MSG03
+         LA    R3,L'MSG03
+         ICM   R4,B'1111',ABC03
+         B     ABN99
+ABN04    DS    0H
+         LA    R2,MSG04
+         LA    R3,L'MSG04
+         ICM   R4,B'1111',ABC04
+         B     ABN99
+ABN05    DS    0H
+         LA    R2,MSG05
+         LA    R3,L'MSG05
+         ICM   R4,B'1111',ABC05
+         B     ABN99
+ABN06    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG06
+         LA    R3,L'MSG06
+         ICM   R4,B'1111',ABC06
+**       SR    R4,R4                    SIGNAL NO DUMP
+         B     ABN99
+ABN07    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG07
+         LA    R3,L'MSG07
+         ICM   R4,B'1111',ABC07
+         B     ABN99
+ABN08    DS    0H
+         LA    R2,MSG08
+         LA    R3,L'MSG08
+         ICM   R4,B'1111',ABC08
+         B     ABN99
+ABN09    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG09
+         LA    R3,L'MSG09
+         ICM   R4,B'1111',ABC09
+         B     ABN99
+ABN10    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG10
+         LA    R3,L'MSG10
+**       ICM   R4,B'1111',ABC10
+         SR    R4,R4                    SIGNAL NO DUMP
+         B     ABN99
+ABN11    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG11
+         LA    R3,L'MSG11
+         ICM   R4,B'1111',ABC11
+         B     ABN99
+ABN12    DS    0H
+         MVC   SAVERRNO,CALERRNO
+         MVC   SAVRTNCD,CALRTNCD
+         BAS   R8,CLO00
+         LA    R2,MSG12
+         LA    R3,L'MSG12
+         ICM   R4,B'1111',ABC12
+         B     ABN99
+ABN99    DS    0H
+         CLC   EIBTRNID,=C'EFTP'
+         BE    XIT00
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSMT'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         LTR   R4,R4
+         BZ    XIT00
+         ST    R4,FULWORK
+         EXEC  CICS,                                                   *
+               ABEND,                                                  *
+               ABCODE(FULWORK),                                        *
+               CANCEL,                                                 *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*----------------------------------------------------------------------
+*        RETURN TO CICS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS
+*----------------------------------------------------------------------
+*
+E_WOULD_BLOCK DC AL4(35)                BLOCKING ERROR CODE
+*
+FIONBIO  DC    X'8004A77E'              IOCNTL SET/CLEAR BLOCKING
+FIONREAD DC    X'4004A77F'              IOCNTL QUERY READABLE BYTES
+*
+CALL     CALL  ,                                                       *
+               (0,0,0,0,0,0,0,0),                                      *
+               VL,                                                     *
+               MF=L
+CALLLN   EQU   *-CALL
+*
+MSG01    DC    C'IET301001  TCP/IP CICS interface inactive, T301 Abend *
+               initiated.'
+ABC01    EQU   *-21
+*
+MSG02    DC    C'IET301002  CICS Listner Retrieved data too small, T302*
+                abend initiated.'
+ABC02    EQU   *-21
+*
+MSG03    DC    C'IET301003  TCP/IP TAKESOCKET from Listner failed, T303*
+                abend initiated.'
+ABC03    EQU   *-21
+*
+MSG04    DC    C'IET301004  TCP/IP WRITE to solicit failed, T304 abend *
+               initiated.'
+ABC04    EQU   *-21
+*
+MSG05    DC    C'IET301005  TCP/IP IOCTL to set non-block failed, T305 *
+               abend initiated.'
+ABC05    EQU   *-21
+*
+MSG06    DC    C'IET301006  TCP/IP RECV from initiator failed, T306 abo*
+               rt initiated.'
+ABC06    EQU   *-21
+*
+MSG07    DC    C'IET301007  LINKed program response invalid, T307 abend*
+                initiated.'
+ABC07    EQU   *-21
+*
+MSG08    DC    C'IET301008  TCP/IP CLOSE SOCKET failed, T308 abend init*
+               iated.'
+ABC08    EQU   *-21
+*
+MSG09    DC    C'IET301009  TCP/IP WRITE response failed, T309 abend in*
+               itiated.'
+ABC09    EQU   *-21
+*
+MSG10    DC    C'IET301010  TCP/IP call response SOCKET CLOSED, T310 ab*
+               ort initiated.'
+ABC10    EQU   *-21
+*
+MSG11    DC    C'IET301011  Temporary Storage READQ ITEM=# failed, T311*
+                abend initiated.'
+ABC11    EQU   *-21
+*
+MSG12    DC    C'IET301012  RECV "ok" for multiple WRITE failed, T312 a*
+               bend initiated.'
+ABC12    EQU   *-21
+*
+OK       DC    C'ok '
+         ORG   *-1
+         DC    X'25'
+         ORG
+READY    DC    C'ready '
+         ORG   *-1
+         DC    X'25'
+         ORG
+ASCIFINI DC    X'23656E6423'
+FINI     DC    C'#end# '
+         ORG   *-1
+         DC    X'25'
+         ORG
+LF       EQU   X'25'
+         LTORG
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+*
+RECVLEN  DS    F                        TCP RECV LENGTH
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+HLFWORK  DS    H                        HALF WORD WORK
+ITEMNUM  DS    H                        TS QUEUE ITEM NUMBER
+ITEMLEN  DS    H                        TS QUEUE ITEM LENGTH
+LOGQID   DS    CL8                      TCP I/O LOG QUEUE ID
+*
+         DS    0F
+TCPCALL  DS    XL(CALLLN)               TCP CALL PARMS
+*
+CALSCFUN DS    CL16                     SOCKET FUNCTION
+*
+CALAFF   DS    F                        AF_INET (F-WORD)
+CALJNAME DS    XL8                      SERVER JOBNAME
+CALSNAME DS    XL8                      SERVER SUBNAME
+CALRSV20 DS    XL20                     RESERVED
+*
+CALAF    DS    H                        AF_INET (H-WORD)
+CALAFINT EQU   2                        ..AF_INET
+CALPORT  DS    H                        SERVER PORT
+CALIPADR DS    F                        SERVER IP ADDRESS
+CALRSVD8 DS    XL8                      RESERVED
+*
+CALSCDES DS    H                        SOCKET DESCRIPTOR (H-WORD)
+*
+CALSCTYP DS    F                        SOCKET TYPE
+CALSTREM EQU   1                        ..STREAM
+CALDGRAM EQU   2                        ..DATA GRAM
+CALNBYTE DS    F                        WRITE/READ BYTE COUNT
+CALPROTO DS    F                        SOCKET PROTOCOL
+*                                       ..IF ZERO, AND
+*                                           SOCKET TYPE=STREAM THEN TCP
+*                                           SOCKET TYPE=DGRAM THEN UDP
+CALEYE   DS    CL20'$TCP  ERRNO/RTNCODE$'
+CALERRNO DS    F                        DEPENDS ON RETURN CODE
+CALRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION
+*
+CALCOMND DS    F                        IOCTL COMMAND CODE
+CALFLG   DS    F                        IOCTL FLAGS ARGUMENT
+CALREQ   DS    F                        IOCTL REQUEST ARGUMENT
+CALRSP   DS    F                        IOCTL RESPONSE ARGUMENT
+*
+CALHOW   DS    F                        SHUTDOWN HOW ARGUMENT
+END_FROM EQU   0                        ..SHUTDOWN RECEIVE
+END_TO   EQU   1                        ..SHUTDOWN SEND
+END_BOTH EQU   2                        ..SHUTDOWN SEND AND RECEIVE
+*                                           SOCKET TYPE=DGRAM THEN UDP
+SAVEYE   DS    CL20'$SAVE ERRNO/RTNCODE$'
+SAVERRNO DS    F                        DEPENDS ON RETURN CODE
+SAVRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION
+*
+CALIOA   DS    XL4095                   TCP/IP I/O AREA
+*
+         DFHEIEND
+*
+*----------------------------------------------------------------------
+*        CHILD SERVER'S RETRIEVED PARMS DSECT
+*----------------------------------------------------------------------
+*
+STRTPARM DSECT
+*
+STRTSOCK DS    F                        SOCKET DESCRIPTOR
+STRTJNAM DS    CL8                      LISTNER JOBNAME
+STRTSNAM DS    CL8                      LISTNER SUBNAME
+STRTDATA DS    CL35                     LISTNER OPTIONAL DATA
+         DS    CL1                      ..FILLER
+*
+STRTFAM  DS    H                        SOCKET FAMILY
+STRTPORT DS    H                        SOCKET PORT
+STRTIPAD DS    F                        SOCKET IP ADDRESS
+STRTZERO DS    XL8                      ..ZERO FILLER
+*
+STRTMIN  EQU   *-STRTPARM               MINIMUM COMMAREA LENGTH
+*
+*----------------------------------------------------------------------
+*        LINKED TO APPLICATION PROGRAM COMMAREA DSECT
+*----------------------------------------------------------------------
+*
+COMMPARM DSECT
+*
+COMMLKID DS    CL8                      COMMAREA LINKED TO PGM ID
+COMMQID  DS    CL8                      TCP/IP I/O QUEUE ID
+COMMRSP  DS    X                        LINKED TO PGM RESP CODE
+RSPNONE  EQU   C'0'                     ..SEND NO TCP/IP RESP
+RSPOK    EQU   C'1'                     ..SEND 'OK' TCP/IP RESP
+RSPLINK  EQU   C'2'                     ..SEND COMMTOT TCP/IP RESP
+RSPFINI  EQU   C'#'                     ..SEND 'END' TCP/IP RESP
+COMMRSV  DS    CL7                      RESERVED
+*
+COMMLEN  EQU   *-COMMPARM               COMMAREA LENGTH
+*----------------------------------------------------------------------
+         END
+

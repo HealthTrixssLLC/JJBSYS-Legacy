@@ -1,0 +1,765 @@
+         TITLE '**  UPS Electronic Manifest Transfer Program  **'
+*----------------------------------------------------------------------
+*  IET000 RSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+R0       EQU   0
+R1       EQU   1
+R2       EQU   2
+R3       EQU   3
+R4       EQU   4
+R5       EQU   5
+R6       EQU   6
+R7       EQU   7
+R8       EQU   8
+R9       EQU   9
+RA       EQU   10
+RB       EQU   11                       IET000 BASE
+RC       EQU   12                       CEECAA BASE
+RD       EQU   13                       CEEDSA BASE
+RE       EQU   14
+RF       EQU   15
+R15      EQU   15
+*----------------------------------------------------------------------
+*  Program entry
+*----------------------------------------------------------------------
+IET000   RSECT
+         SAVE  (14,12)
+         J     INT00                    BRANCH AROUND DUMP ID
+IET000   AMODE 31                       MAY EXECUTE ABOVE 16M
+IET000   RMODE 31                       MAY RESIDE ABOVE 16M
+*
+* MUST BE RMODE31 FOR DCB EODAD 32 BIT ADDRESS
+*
+         DS    0H
+         DC    CL8'IET000'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*----------------------------------------------------------------------
+*  GETMAIN SAVE AREA AND WORKING STORAGE AREAS
+*----------------------------------------------------------------------
+         BALR  RB,0
+         USING *,RB
+         L     R2,=A(USER24LN)          LOAD STORAGE LENGTH
+         STORAGE OBTAIN,                WORKING STORAGE AREA           *
+               ADDR=(R1),                                              *
+               BNDRY=DBLWD,                                            *
+               COND=YES,                                               *
+               LENGTH=(R2),                                            *
+               LOC=24,                                                 *
+               SP=0
+         DROP  RB
+         LR    RB,R1                    LOAD WORKING STORAGE AREA @
+         USING USER24,RB                USE IT
+         ST    RD,SAVEAREA+4            STORE SA BWD CHAIN @
+         LA    R1,SAVEAREA
+         ST    R1,8(0,RD)               STORE SA FWD CHAIN @
+         LR    RD,R1
+*
+         LARL  RC,LITPOOL
+         USING LITPOOL,RC
+         MVC   SAVEABGN,=CL8'SAVEABGN'  SET EYE CATCHER
+         MVC   SAVEAEND,=CL8'SAVEAEND'  SET EYE CATCHER
+         MVC   CALERREY,=CL8'  ERRNO='  SET EYE CATCHER
+         MVC   CALRTNEY,=CL8'  RTNCD='  SET EYE CATCHER
+*----------------------------------------------------------------------
+*  IET000 TCP GETHOSTBYNAME
+*----------------------------------------------------------------------
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         XC    SRVRADDR,SRVRADDR        Clr Host IP @
+         MVC   CALSCFUN,=CL16'GETHOSTBYNAME'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,SRVRNAML,SRVRNAMP,                            *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JZ    GHN00                    ..YES, BRANCH
+         LA    R1,IET00016
+         L     R5,IEA00000
+         LA    R5,16(,R5)
+         J     ABN00
+GHN00    DS    0H
+         L     R1,CALERRNO              Load HOSTENT @
+         L     R1,16(,R1)               Load IP @ List
+         L     R1,0(,R1)                Load IP @ Entry @
+         MVC   SRVRADDR,0(R1)           Save Host IP @
+*----------------------------------------------------------------------
+*  IET000 OPEN PLDIN DCB
+*----------------------------------------------------------------------
+         MVC   PLDIN,PLDINB             INITIALIZE DCB/DCBE
+         MVC   OPEN,OPENLIST            INITIALIZE OPEN LIST
+         LA    R2,PLDIN
+         USING IHADCB,R2
+         LA    R1,PLDIN+(PLDINE-PLDINB)
+         ST    R1,DCBDCBE
+*
+         DROP  R2
+         LR    R2,R1
+         USING DCBE,R2
+         LARL  R1,END00
+         ST    R1,DCBEEODA
+         DROP  R2
+*
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         OPEN  ((R4),(INPUT)),                                         *
+               MODE=31,                                                *
+               MF=(E,(1))
+         TM    PLDIN+48,DCBOFOPN        OPEN SUCCESSFUL
+         JO    CNT00                    ..YES, BRANCH
+         LA    R1,IET00012
+         L     R5,IEA00000
+         LA    R5,12(,R5)
+         J     ABN00
+*----------------------------------------------------------------------
+*  IET000 READ PLDIN AND COUNT TOTAL BYTES AND RECORDS
+*----------------------------------------------------------------------
+CNT00    DS    0H
+         LA    R2,PLDIN
+         USING IHADCB,R2
+         LH    RE,DCBLRECL
+         ST    RE,PLDINRCL              SET RECORD LENGTH
+         DROP  R2
+         XC    PLDINTOT,PLDINTOT        CLR BYTE CNT
+         XC    PLDINCNT,PLDINCNT        CLR REC CNT
+         XC    PLDINLRL,PLDINLRL        CLR LAST REC CNT
+         LA    R2,PLDIN
+         USING IHADCB,R2
+CNT10    DS    0H
+         GET   (R2)
+         LR    R3,R1
+         L     RE,PLDINCNT
+         LA    RE,1(,RE)
+         ST    RE,PLDINCNT
+         L     RE,PLDINTOT
+         AH    RE,DCBLRECL
+         ST    RE,PLDINTOT
+         LH    RE,DCBLRECL
+         LA    RE,0(R3,RE)
+CNT20    DS    0H
+         BCTR  RE,0
+         CLI   0(RE),C' '
+         JE    CNT20
+         SR    RE,R3
+         LA    RE,1(,RE)
+         ST    RE,PLDINLRL
+         J     CNT10
+END00    DS    0H
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         CLOSE ((R4)),                                                 *
+               MODE=31,                                                *
+               MF=(E,(1))
+         DROP  R2
+*----------------------------------------------------------------------
+*  IET000 INITIALIZE TCP SOCKET API
+*----------------------------------------------------------------------
+TCP00    DS    0H
+         MVC   CALIPADR,SRVRADDR        SET SERVER IP @
+         MVC   CALPORT,SRVRPORT         SET SERVER PORT
+         LA    R1,CALAFINT              LOAD AF_INET
+         STH   R1,CALAF                 STORE AF_INET H-WORD
+         ST    R1,CALAFF                STORE AF_INET F-WORD
+         XC    CALRSVD8(8),CALRSVD8     CLEAR RESERVED
+         LA    R1,CALSTREM              LOAD STREAM SOCKET TYPE
+         ST    R1,CALSCTYP              STORE SOCKET TYPE
+         XC    CALPROTO,CALPROTO        DEFAULT PROTOCOL
+*----------------------------------------------------------------------
+*  IET000 CALL TCP SOCKET CALL
+*----------------------------------------------------------------------
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'SOCKET'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALAFF,CALSCTYP,CALPROTO,                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JNM   TCP08                    ..YES, BRANCH
+         LA    R1,IET00002
+         L     R5,IEA00000
+         LA    R5,2(,R5)
+         J     ABN00
+TCP08    DS    0H
+*----------------------------------------------------------------------
+*  IET000 CALL TCP CONNECT CALL
+*----------------------------------------------------------------------
+         STH   RF,CALSCDES              SAVE SOCKET DESCRIPTOR
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'CONNECT'
+*
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALAF,                               *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JZ    TCP09                    ..YES, BRANCH
+         LA    R1,IET00005
+         L     R5,IEA00000
+         LA    R5,5(,R5)
+         J     ABN00
+TCP09    DS    0H
+*----------------------------------------------------------------------
+*  OPEN PLDIN DCB
+*----------------------------------------------------------------------
+         MVC   PLDIN,PLDINB             INITIALIZE DCB/DCBE
+         MVC   OPEN,OPENLIST            INITIALIZE OPEN LIST
+         LA    R2,PLDIN
+         USING IHADCB,R2
+         LA    R1,PLDIN+(PLDINE-PLDINB)
+         ST    R1,DCBDCBE
+*
+         DROP  R2
+         LR    R2,R1
+         USING DCBE,R2
+         LARL  R1,END50
+         ST    R1,DCBEEODA
+         DROP  R2
+*
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         OPEN  ((R4),(INPUT)),                                         *
+               MODE=31,                                                *
+               MF=(E,(1))
+         TM    PLDIN+48,DCBOFOPN        OPEN SUCCESSFUL
+         JO    SND00                    ..NO, BRANCH
+         LA    R1,IET00012
+         L     R5,IEA00000
+         LA    R5,12(,R5)
+         J     ABN00
+*----------------------------------------------------------------------
+*  IET000 SEND HTTP REQUEST TO SERVER
+*----------------------------------------------------------------------
+SND00    DS    0H
+         LA    R0,POSTB
+         LA    RE,PLDBUF
+         LA    R1,POSTL
+         LR    RF,R1
+         MVCL  RE,R0
+         L     R1,PLDINTOT
+         S     R1,PLDINRCL
+         A     R1,PLDINLRL
+         LA    R1,POSTT+TRLRL(,R1)
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         ED    PLDBUF+(POSTLN-POSTB)(L'POSTLN),DBLWORK+3
+         LA    R1,APPLL
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         ED    PLDBUF+(APPLLN-POSTB)(L'APPLLN),DBLWORK+3
+         L     R1,PLDINTOT
+         S     R1,PLDINRCL
+         A     R1,PLDINLRL
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         ED    PLDBUF+(DATALN-POSTB)(L'DATALN),DBLWORK+3
+*----------------------------------------------------------------------
+*  IET000 CALL TCP TRANSLATE EBCDIC TO ASCII CALL
+*----------------------------------------------------------------------
+         LA    R2,PLDBUF
+         LA    R4,POSTL
+         ST    R4,CALNBYTE
+         L     RF,=V(EZACIC04)
+         CALL  (15),                                                   *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*----------------------------------------------------------------------
+*  IET000 CALL TCP WRITE CALL
+*----------------------------------------------------------------------
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'WRITE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JNM   SND10                    ..YES, BRANCH
+         LA    R1,IET00013
+         L     R5,IEA00000
+         LA    R5,13(,R5)
+         J     ABN00
+SND10    DS    0H
+         L     R7,PLDINCNT              Loop Control
+SND20    DS    0H
+         LA    R2,PLDIN
+         GET   (R2)
+         LR    R3,R1
+         L     R4,PLDINRCL
+         CHI   R7,1
+         JNE   SND30
+         L     R4,PLDINLRL
+SND30    DS    0H
+*----------------------------------------------------------------------
+*  IET000 CALL TCP TRANSLATE EBCDIC TO ASCII CALL
+*----------------------------------------------------------------------
+         ST    R4,CALNBYTE
+         L     RF,=V(EZACIC04)
+         CALL  (15),                                                   *
+               ((R3),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*----------------------------------------------------------------------
+*  IET000 CALL TCP WRITE CALL
+*----------------------------------------------------------------------
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'WRITE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R3),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JNM   SND40                    ..YES, BRANCH
+         LA    R1,IET00013
+         L     R5,IEA00000
+         LA    R5,13(,R5)
+         J     ABN00
+*
+SND40    DS    0H
+         CHI   R7,1
+         JE    SND50
+         JCT   R7,SND20
+SND50    DS    0H
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   PLDBUF(TRLRL),TRLRB
+         LA    R2,PLDBUF
+         LA    R4,TRLRL
+         ST    R4,CALNBYTE
+         L     RF,=V(EZACIC04)
+         CALL  (15),                                                   *
+               ((R2),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'WRITE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALNBYTE,                            *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JNM   SND60                    ..YES, BRANCH
+         LA    R1,IET00013
+         L     R5,IEA00000
+         LA    R5,13(,R5)
+         J     ABN00
+SND60    DS    0H
+END50    DS    0H
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         CLOSE ((R4)),                                                 *
+               MODE=31,                                                *
+               MF=(E,(1))
+*----------------------------------------------------------------------
+*  IET000 CALL TCP RECV CALL
+*----------------------------------------------------------------------
+         XC    DBLWORK+4(4),DBLWORK+4
+         MVC   PLDIN,PLDOTB             INITIALIZE DCB/DCBE
+         MVC   OPEN,OPENLIST            INITIALIZE OPEN LIST
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         OPEN  ((R4),(OUTPUT)),                                        *
+               MODE=31,                                                *
+               MF=(E,(1))
+         TM    PLDIN+48,DCBOFOPN        OPEN SUCCESSFUL
+         JO    RCV00                    ..NO, BRANCH
+         LA    R1,IET00015
+         L     R5,IEA00000
+         LA    R5,15(,R5)
+         J     ABN00
+RCV00    DS    0H
+         LA    R1,PLDBUF
+         ST    R1,PLDBUF@
+         XC    PLDBUFLN,PLDBUFLN
+RCV05    DS    0H
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         MVC   CALSCFUN,=CL16'RECV'
+         XC    CALFLG,CALFLG
+         L     R2,=A(L'PLDBUF)
+         S     R2,PLDBUFLN
+         ST    R2,CALNBYTE
+         L     R2,PLDBUF@
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,CALFLG,CALNBYTE,                     *
+               (R2),CALERRNO,CALRTNCD),                                *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     RF,CALRTNCD              LOAD RETURN CODE
+         LTR   RF,RF                    CALL SUCCESSFUL
+         JNM   RCV10                    ..YES, BRANCH
+         LA    R1,IET00014
+         L     R5,IEA00000
+         LA    R5,14(,R5)
+         J     ABN00
+*
+RCV10    DS    0H
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         ST    RF,CALNBYTE
+         L     R3,PLDBUF@               LOAD INPUT BUF @
+         L     RF,=V(EZACIC05)
+         CALL  (15),                                                   *
+               ((R3),CALNBYTE),                                        *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+         L     R4,CALNBYTE
+         L     R2,PLDBUF@
+RCV15    DS    0H
+         CLC   =C'--BOUNDARY--',0(R2)
+         JE    RCV18
+         LA    R2,1(,R2)
+         JCT   R4,RCV15
+         LA    R1,IET00017
+         L     R5,IEA00000
+         LA    R5,17(,R5)
+         J     ABN00
+*
+         L     R2,PLDBUF@
+         A     R2,CALNBYTE
+         ST    R2,PLDBUF@
+         L     R2,PLDBUFLN
+         A     R2,CALNBYTE
+         ST    R2,PLDBUFLN
+         J     RCV05
+*
+RCV18    DS    0H
+         L     R2,PLDBUF@
+         A     R2,CALNBYTE
+         ST    R2,PLDBUF@
+         L     R2,PLDBUFLN
+         A     R2,CALNBYTE
+         ST    R2,PLDBUFLN
+         XC    PLDBB,PLDBB
+         L     R4,PLDBUFLN
+         LA    R4,4(,R4)
+         STH   R4,PLDLL
+         PUT   PLDIN,PLDLL
+*
+         L     R4,PLDBUFLN
+         LA    R2,PLDBUF
+         CLC   =C'HTTP/1.',0(R2)
+         JNE   RCV20
+         CLC   =C' 200 ',8(R2)
+         JE    RCV20
+         LA    R1,16
+         ST    R1,DBLWORK+4
+         J     RCV55
+RCV20    DS    0H
+         CLC   =C'UPSOnLine',0(R2)
+         JE    RCV40
+         LA    R2,1(,R2)
+         JCT   R4,RCV20
+         LA    R1,16
+         ST    R1,DBLWORK+4
+         J     RCV55
+RCV40    DS    0H
+         CLC   =C'0000',14(R2)
+         JNE   RCV50
+         CLC   =C'0000',19(R2)
+         JNE   RCV50
+         SR    R1,R1
+         ST    R1,DBLWORK+4
+         J     RCV55
+RCV50    DS    0H
+         LA    R1,12
+         ST    R1,DBLWORK+4
+*
+RCV55    DS    0H
+         LA    R1,OPEN
+         LA    R4,PLDIN
+         CLOSE ((R4)),                                                 *
+               MODE=31,                                                *
+               MF=(E,(1))
+         L     R3,CALNBYTE
+         LA    R2,PLDBUF
+*----------------------------------------------------------------------
+*  IET000 CALL TCP CLOSE CALL
+*----------------------------------------------------------------------
+         MVC   TCPCALL,CALL             INITIALIZE CALL PARMS
+         OC    CALSCDES,CALSCDES        SOCKET DESCRIPTOR
+         JZ    TCP16                    ..NO, BRANCH
+*
+         MVC   CALSCFUN,=CL16'CLOSE'
+         L     RF,=V(EZASOKET)
+         CALL  (15),                                                   *
+               (CALSCFUN,CALSCDES,                                     *
+               CALERRNO,CALRTNCD),                                     *
+               VL,                                                     *
+               MF=(E,TCPCALL)
+*
+TCP16    DS    0H
+*----------------------------------------------------------------------
+*  IET000 TERMINATION
+*----------------------------------------------------------------------
+         LA    R1,IET00007
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+*
+         L     RF,DBLWORK+4
+         L     RD,4(0,RD)               LOAD BWD CHAIN @
+         RETURN (14,12),                RESTORE CALLERS REGS           *
+               RC=(15)                  NORMAL RETURN CODE
+*----------------------------------------------------------------------
+*  IET000 WTO and ABNORMAL TERMINATION
+*----------------------------------------------------------------------
+ABN00    DS    0H
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+*
+         ABEND (R5),                                                   *
+               DUMP,                                                   *
+               STEP,                                                   *
+               USER
+         DC    H'0'                     ..ABEND IF CONTROL RETURNS
+*----------------------------------------------------------------------
+*  IET000 CONSTANTS AND LITERALS
+*----------------------------------------------------------------------
+*
+LITPOOL  DS    0D
+*
+         DS    0D
+PLDINB   DCB   DCBE=PLDINE,                                            *
+               DDNAME=PLDIN,                                           *
+               MACRF=(GL),                                             *
+               DSORG=PS
+*
+         DS    0D
+PLDINE   DCBE  RMODE31=BUFF,                                           *
+               EODAD=END00
+PLDINL   EQU   *-PLDINB
+*
+         DS    0D
+PLDOTB   DCB   DCBE=PLDOTE,                                            *
+               DDNAME=PLDOUT,                                          *
+               MACRF=(PM),                                             *
+               RECFM=V,                                                *
+               BLKSIZE=16400,                                          *
+               DSORG=PS
+*
+         DS    0D
+PLDOTE   DCBE  RMODE31=BUFF
+PLDOTL   EQU   *-PLDOTB
+*
+         DS    0F
+CALL     CALL  ,                                                       *
+               (0,0,0,0,0,0,0,0,0,0,0,0),                              *
+               VL,                                                     *
+               MF=L
+CALLLN   EQU   *-CALL
+*
+         DS    0F
+OPENLIST OPEN  (PLDINB,(INPUT)),                                       *
+               MODE=31,                                                *
+               MF=L
+OPENL    EQU   *-OPENLIST
+*
+IEA00000 DC    A(900)
+*
+IET00002 WTO   'IET00002 - TCP/IP SOCKET call failed, abend.',         *
+               MF=L
+*
+IET00004 WTO   'IET00004 - TCP/IP AT-TLS IOCTL call failed, abend.',   *
+               MF=L
+*
+IET00005 WTO   'IET00005 - TCP/IP CONNECT call failed, abend.',        *
+               MF=L
+*
+IET00007 WTO   'IET00007 - TCP/IP SSL Transmission Complete, Exiting.',*
+               MF=L
+*
+IET00012 WTO   'IET00012 - PLDIN DD OPEN failed, abend.',              *
+               MF=L
+*
+IET00013 WTO   'IET00013 - TCP/IP WRITE call failed, abend.',          *
+               MF=L
+*
+IET00014 WTO   'IET00014 - TCP/IP RECV call failed, abend.',           *
+               MF=L
+*
+IET00015 WTO   'IET00015 - PLDOUT DD OPEN failed, abend.',             *
+               MF=L
+*
+IET00016 WTO   'IET00016 - TCP/IP GETHOSTBYNAME call failed, abend.',  *
+               MF=L
+*
+IET00017 WTO   'IET00017 - HTTP BOUNDARY response not found, abend.',  *
+               MF=L
+*
+SRVRNAML DC    A(L'SRVRNAME)                     UPS DNS LEN
+SRVRNAMP DC    CL256' '                          GETHOSTBYNAME AREA
+         ORG   SRVRNAMP
+SRVRNAME DC    C'www.pld-certify.ups.com'       UPS Certification DNS
+*SRVRNAME DC    C'www.pld.ups.com'               UPS Production DNS
+         ORG
+SRVRPORT DC    AL2(443)                          UPS SSL Port
+*
+KEYRING  DC    C'CICSTC02/CTRING01 '  Test
+*KEYRING  DC    C'CICSTC01/PRD0RNG1 '  Production
+         ORG   *-1
+         DC    X'00'
+         ORG
+*
+POSTB    DS    0C
+         DC    C'POST /hapld/tos/kdwhapltos HTTP/1.1'
+         DC    X'0D',X'25'
+         DC    C'Host: www.pld-certify.ups.com'  Certification
+*         DC    C'Host: www.pld.ups.com'          Production
+         DC    X'0D',X'25'
+         DC    C'Content-type: multipart/mixed; boundary=BOUNDARY'
+         DC    X'0D',X'25'
+         DC    C'Content-length:'
+POSTLN   DC    X'40202020202020202120'
+         DC    X'0D',X'25'
+         DC    X'0D',X'25'
+POSTS    DC    C'--BOUNDARY'
+         DC    X'0D',X'25'
+         DC    C'Content-type: application/x-www-form-urlencoded'
+         DC    X'0D',X'25'
+         DC    C'Content-length:'
+APPLLN   DC    X'40202020202020202120'
+         DC    X'0D',X'25'
+         DC    X'0D',X'25'
+APPLB    DS    0C
+         DC    C'AppVersion=1.0'
+         DC    C'&&AcceptUPSLicenseAgreement=Yes'
+         DC    C'&&ResponseType=application/x-ups-pld'
+         DC    C'&&VersionNumber=V4R1'
+*
+         DC    C'&&UserId=ING001TN'              UserId
+         DC    C'&&Password=INGRAM'              Password
+*        DC    C'&&UserId=jjbsys'                UserId
+*        DC    C'&&Password=ingram'              Password
+*
+APPLE    EQU   *
+APPLL    EQU   APPLE-APPLB
+         DC    X'0D',X'25'
+         DC    X'0D',X'25'
+*
+DATA     DC    C'--BOUNDARY'
+         DC    X'0D',X'25'
+         DC    C'Content-type: application/x-ups-binary'
+         DC    X'0D',X'25'
+         DC    C'Content-length:'
+DATALN   DC    X'40202020202020202120'
+         DC    X'0D',X'25'
+         DC    X'0D',X'25'
+POSTE    EQU   *
+POSTT    EQU   (POSTE-POSTS)
+POSTL    EQU   (POSTE-POSTB)
+*
+TRLRB    DC    X'0D',X'25'
+         DC    X'0D',X'25'
+         DC    C'--BOUNDARY--'
+         DC    X'0D',X'25'
+TRLRE    EQU   *
+TRLRL    EQU   (TRLRE-TRLRB)
+*
+         LTORG
+*----------------------------------------------------------------------
+*        DCB/DCBE DSECTS
+*----------------------------------------------------------------------
+*
+         DCBD  DSORG=PS
+*
+         IHADCBE
+*
+*----------------------------------------------------------------------
+*        USER AREA BELOW 16M DSECT
+*----------------------------------------------------------------------
+*
+USER24   DSECT
+SAVEABGN DS    CL8                      EYE CATCHER
+SAVEAREA DS    18F
+SAVEAEND DS    CL8                      EYE CATCHER
+*
+DBLDBLWK DS    D
+DBLWORK  DS    D
+*
+PLDINTOT DS    F                        PLDIN TOTAL Byte Count
+PLDINCNT DS    F                        PLDIN TOTAL Record Count
+PLDINLRL DS    F                        PLDIN Last Record Length
+PLDINRCL DS    F                        PLDIN Record Length
+*
+         DS    0F
+TCPCALL  DS    XL(CALLLN)               TCP CALL PARMS
+*
+SRVRADDR DS    A                        UPS Server GETHOSTBYNAME IP @
+*
+CALSCFUN DS    CL16                     SOCKET FUNCTION
+*
+CALAFF   DS    F                        AF_INET (F-WORD)
+*
+CALAF    DS    H                        ADDRESSING FAMILY
+CALAFINT EQU   2                        ..AF_INET (H-WORD)
+CALPORT  DS    H                        SERVER PORT
+CALIPADR DS    F                        SERVER IP ADDRESS
+CALRSVD8 DS    2F                       RESERVED
+*
+CALSCDES DS    H                        SOCKET DESCRIPTOR
+CALRSVD2 DS    H                        Reserved
+*
+CALSCTYP DS    F                        SOCKET TYPE
+CALSTREM EQU   1                        ..STREAM
+CALDGRAM EQU   2                        ..DATA GRAM
+CALNBYTE DS    F                        WRITE/READ BYTE COUNT
+CALPROTO DS    F                        SOCKET PROTOCOL
+*                                       ..IF ZERO, AND
+*                                           SOCKET TYPE=STREAM THEN TCP
+*                                           SOCKET TYPE=DGRAM THEN UDP
+*
+CALFLG   DS    F                        FLAGS ARGUMENT
+*                                       ..USED AS HOSTENT GETHOSTBYNAME
+CALERREY DS    CL8                      EYE CATCHER
+CALERRNO DS    F                        DEPENDS ON RETURN CODE
+*                                       ..USED AS HOSTENT GETHOSTBYNAME
+CALRTNEY DS    CL8                      EYE CATCHER
+CALRTNCD DS    F                        DEPENDS ON SOCKET FUNCTION
+*
+         DS    0D
+OPEN     DS    XL(OPENL)
+*
+         DS    0D
+PLDIN    DS    XL(PLDINL)
+*
+PLDBUF@  DS    A
+PLDBUFLN DS    F
+*
+         DS    0D
+PLDLL    DS    H
+PLDBB    DS    H
+PLDBUF   DS    XL16384
+*
+USER24LN EQU   *-USER24
+*
+         END
+

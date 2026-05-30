@@ -1,0 +1,920 @@
+*ASM XOPTS(EXCI,NOPROLOG,NOEPILOG,NATLANG(EN))                          00010000
+*********************************************************************** 00020000
+*                                                                     * 00030000
+* MODULE NAME = IEB501                                                * 00040000
+*                                                                     * 00050000
+* DESCRIPTIVE NAME = ASSEMBLER CALLABLE EXCI CLIENT                   * 00060000
+*                                                                     * 00070000
+* ENTRY POINT = IEB501                                                * 00080000
+*                                                                     * 00090000
+* DESCRIPTION:  PROVIDE BATCH PROGRAMS ACCESS TO CICS RESOURCES       * 00100000
+*               VIA A CALLABLE EXCI CICS CLIENT.                      * 00110000
+*                                                                     * 00120000
+*                                                                     * 00130000
+*                                                                     * 00140000
+*********************************************************************** 00150000
+         DFHREGS                                                        00160000
+*                                                                       00170000
+IEB501   CSECT                               NON-RE-ENTRANT             00180000
+IEB501   AMODE 31                            EXECUTE ABOVE 16M          00190000
+IEB501   RMODE ANY                           RESIDE ABOVE 16M           00200000
+IEB501   DFHEIENT CODEREG=(R12,R11)                                     00210000
+         ENTRY IEB501                        MODULE ENTRY @             00220000
+         DS    0H                                                       00230000
+*                                                                       00240000
+*=====================================================================* 00250000
+*   USE DSECT BASE REGS                                               * 00260000
+*=====================================================================* 00270000
+*                                                                       00280000
+         LA    R10,EXCIWRKA                  CALL RETURNS CODES         00290000
+         USING EXCI_RETURN_CODE,R10                                     00300000
+         LA    R9,EXCIDPLA                   DPL RETURN CODES           00310000
+         USING EXCI_DPL_RETAREA,R9                                      00320000
+*                                                                       00330000
+*=====================================================================* 00340000
+*   CLEAR WORK AREAS                                                  * 00350000
+*=====================================================================* 00360000
+*                                                                       00370000
+         XC    WORKAREA(WORKALEN),WORKAREA                              00380000
+         MVC   EXCIEYE,=C'EXCI_RET'                                     00390000
+         MVC   DPLEYE,=C'DPL_RET_'                                      00400000
+*                                                                       00410000
+*=====================================================================* 00420000
+*   RETRIEVE CALLER'S PASSED PARAMETERS                               * 00430000
+*=====================================================================* 00440000
+*                                                                       00450000
+         ST    R1,SAVEPARM                   SAVE PLIST PASSED          00460000
+         LTR   R8,R1                         WAS A PLIST PASSED?        00470000
+         L     R1,RSPNOPRM                   LOAD ERROR CODE            00480000
+         BZ    WTO01                         ..NO, EXIT                 00490000
+         USING USRPARM,R8                                               00500000
+         L     R1,RSPTOFEW                   LOAD ERROR CODE            00510000
+         TM    USRA00,X'80'                  ONE PARM PASSED            00520000
+         BO    WTO02                         ..YES, EXIT                00530000
+         TM    USRA04,X'80'                  TWO PARMS PASSED           00540000
+         BO    WTO02                         ..YES, EXIT                00550000
+         TM    USRA08,X'80'                  THREE PARMS PASSED         00560000
+         BO    WTO02                         ..YES, EXIT                00570000
+*                                                                       00580000
+*=====================================================================* 00590000
+*   VERIFY CICS CONNECTION/TRANSACTION                                * 00600000
+*=====================================================================* 00610000
+*                                                                       00620000
+         LA    R7,TARGAREA                   LOAD TARGETS TABLE         00630000
+         USING TARGETS,R7                                               00640000
+         LA    R15,TARGETSM                  MAX TARGET TABLE ENTRIES   00650000
+         L     R1,USRA12                     LOAD USRSYS @              00660000
+INT05    DS    0H                                                       00670000
+         ST    R7,SAVETARG                   SAVE TARGET CONTROL BLK @  00680000
+         OC    TARGSYSI,TARGSYSI             EMPTY TABLE ENTRY          00690000
+         BZ    INT10                         ..YES, USE IT              00700000
+         CLC   TARGSYSI,0(R1)                REQUESTED TARGET SYSTEM    00710000
+         BE    INT15                         ..YES, USE IT              00720000
+         LA    R7,TARGETSL(,R7)              INDEX TO NEXT TABLE ENTRY  00730000
+         BCT   R15,INT05                     END OF TARGET CONTROL BLX  00740000
+         L     R1,RSPTOMNY                   LOAD ERROR CODE            00750000
+         B     WTO03                         ..YES, EXIT                00760000
+INT10    DS    0H                                                       00770000
+         MVC   TARGSYSI,0(R1)                REQUESTED TARGET SYSTEM    00780000
+         MVC   TARGTRAN,=CL4'EXCI'           SET DEFAULT SERVER TRANS   00790000
+         CLC   8(3,R1),=CL4'EXCI'            "EXC?" TRANS SPECIFIED     00800000
+         BNE   INT12                         ..NO, USE DEFAULT          00810000
+         MVC   TARGTRAN,8(R1)                SET "EXC?" TRANS           00820000
+INT12    DS    0H                                                       00830000
+*                                                                       00840000
+*=====================================================================* 00850000
+*   INIT USER CALL                                                    * 00860000
+*=====================================================================* 00870000
+*                                                                       00880000
+         MVI   PROCESS,PROCINNI              SET INTERNAL PROCESS       00890000
+         MVC   EXCIUTOK,INITUTOK             SET USER TOKEN             00900000
+         OC    INITUTOK,INITUTOK             INIT USER ALREADY          00910000
+         BNZ   INT15                         ..YES, BYPASS ANOTHER      00920000
+         MVC   EXCIVERS,=AL4(VERSION_1)      SET UP VERSION NUM         00930000
+         MVC   EXCITYPE,=AL4(INIT_USER)      LOAD CALL-TYPE AND         00940000
+*                                                                       00950000
+         CALL  DFHXCIS,                                                *00960000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE),                  *00970000
+               VL,                                                     *00980000
+               MF=(E,EXCICALL)                                          00990000
+*                                                                       01000000
+         MVI   PROCESS,PROCOUTI              SET INTERNAL PROCESS       01010000
+         OC    EXCIWRKA(4),EXCIWRKA          CHECK RESPONSE CODE        01020000
+         MVC   CALLRC1(8),EXCIWRKA           SET RESPONSE CODE          01030000
+         BNZ   EXITRSP                                                  01040000
+INT15    DS    0H                                                       01050000
+         MVI   PROCESS,C' '                  SET INTERNAL PROCESS       01060000
+*                                                                       01070000
+*=====================================================================* 01080000
+*   VALIDATE CALLER'S REQUEST                                         * 01090000
+*=====================================================================* 01100000
+*                                                                       01110000
+         L     R1,USRA00                     LOAD USRREQ                01120000
+         CLC   =C'RS',0(R1)                  RESOURCE REQUEST           01130000
+         BE    RES01                         ..YES BRANCH               01140000
+         CLC   =C'BG',0(R1)                  BEGIN REQUEST              01150000
+         BE    BGN01                         ..YES BRANCH               01160000
+         CLC   =C'EN',0(R1)                  END REQUEST                01170000
+         BE    END01                         ..YES BRANCH               01180000
+         CLC   =C'TB',0(R1)                  TRACE BEGIN REQUEST        01190000
+         BE    TBG01                         ..YES BRANCH               01200000
+         CLC   =C'TE',0(R1)                  TRACE END REQUEST          01210000
+         BE    TEN01                         ..YES BRANCH               01220000
+         MVC   CALLRC1,RSPINVRQ              SET INVALID REQUEST        01230000
+         B     EXITRSP                       ..ERROR                    01240000
+*                                                                       01250000
+*=====================================================================* 01260000
+*   PROCESS BEGIN CICS CONNECTION REQUEST                             * 01270000
+*=====================================================================* 01280000
+*                                                                       01290000
+BGN01    DS    0H                                                       01300000
+         MVC   CALLRC1,RSPBADRQ              SET BAD REQUEST            01310000
+         CLC   TARGSTAT,NULLS                CURRENT STATE NULL         01320000
+         BE    BGN03                         ..YES, BRANCH              01330000
+         CLC   TARGSTAT,=C'EN'               CURRENT STATE END          01340000
+         BE    BGN03                         ..YES, BRANCH              01350000
+         CLC   TARGSTAT,=C'RS'               CURRENT STATE RESOURCE     01360000
+         BE    EXITRSP                       ..YES, BRANCH              01370000
+         CLC   TARGSTAT,=C'BG'               CURRENT STATE BEGIN        01380000
+         BE    EXITRSP                       ..YES, BRANCH              01390000
+         MVC   CALLRC1,RSPBADST              SET BAD STATE              01400000
+         B     EXITRSP                       ..ERROR                    01410000
+BGN03    DS    0H                                                       01420000
+*                                                                       01430000
+*=====================================================================* 01440000
+*   ALLOCATE PIPE CALL                                                * 01450000
+*=====================================================================* 01460000
+*                                                                       01470000
+         MVI   PROCESS,PROCINNA              SET INTERNAL PROCESS       01480000
+         MVC   EXCITYPE,=AL4(ALLOCATE_PIPE)  LOAD CALL-TYPE AND         01490000
+         MVC   EXCIOPTS,=AL1(GENERIC_PIPE)   SET GENERIC PIPE           01500000
+*                                                                       01510000
+         CALL  DFHXCIS,                                                *01520000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE,EXCIPTOK,          *01530000
+               TARGSYSI,EXCIOPTS),                                     *01540000
+               VL,                                                     *01550000
+               MF=(E,EXCICALL)                                          01560000
+*                                                                       01570000
+         MVI   PROCESS,PROCOUTA              SET INTERNAL PROCESS       01580000
+         OC    EXCIWRKA(4),EXCIWRKA          CHECK RESPONSE CODE        01590000
+         MVC   CALLRC1(8),EXCIWRKA           SET RESPONSE CODE          01600000
+         BNZ   EXITRSP                                                  01610000
+*                                                                       01620000
+*=====================================================================* 01630000
+*   OPEN PIPE CALL                                                    * 01640000
+*=====================================================================* 01650000
+*                                                                       01660000
+         MVI   PROCESS,PROCINNO              SET INTERNAL PROCESS       01670000
+         MVC   EXCITYPE,=AL4(OPEN_PIPE)      LOAD CALL-TYPE             01680000
+*                                                                       01690000
+         CALL  DFHXCIS,                                                *01700000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE,EXCIPTOK),         *01710000
+               VL,                                                     *01720000
+               MF=(E,EXCICALL)                                          01730000
+*                                                                       01740000
+         MVI   PROCESS,PROCOUTO              SET INTERNAL PROCESS       01750000
+         OC    EXCIWRKA(4),EXCIWRKA          CHECK RESPONSE CODE        01760000
+         MVC   CALLRC1(8),EXCIWRKA           SET RESPONSE CODE          01770000
+         BNZ   EXITRSP                                                  01780000
+         MVI   PROCESS,C' '                  SET INTERNAL PROCESS       01790000
+*                                                                       01800000
+         MVC   TARGSTAT,=C'BG'               SET CURRENT STATE BEGIN    01810000
+         XC    CALLRC1(8),CALLRC1            SET RESPONSE CODE          01820000
+         B     EXITRSP                       EXIT                       01830000
+*                                                                       01840000
+*=====================================================================* 01850000
+*   PROCESS END CICS CONNECTION REQUEST                               * 01860000
+*=====================================================================* 01870000
+*                                                                       01880000
+END01    DS    0H                                                       01890000
+         MVC   CALLRC1,RSPBADRQ              SET BAD REQUEST            01900000
+         CLC   TARGSTAT,=C'BG'               CURRENT STATE BEGIN        01910000
+         BE    END03                         ..YES, BRANCH              01920000
+         CLC   TARGSTAT,=C'RS'               CURRENT STATE RESOURCE     01930000
+         BE    END03                         ..YES, BRANCH              01940000
+         CLC   TARGSTAT,NULLS                CURRENT STATE NULL         01950000
+         BE    EXITRSP                       ..YES, BRANCH              01960000
+         CLC   TARGSTAT,=C'EN'               CURRENT STATE END          01970000
+         BE    EXITRSP                       ..YES, BRANCH              01980000
+         MVC   CALLRC1,RSPBADST              SET BAD STATE              01990000
+         B     EXITRSP                       ..ERROR                    02000000
+*                                                                       02010000
+END03    DS    0H                                                       02020000
+*                                                                       02030000
+*=====================================================================* 02040000
+*   CLOSE PIPE CALL                                                   * 02050000
+*=====================================================================* 02060000
+*                                                                       02070000
+         MVI   PROCESS,PROCINNC              SET INTERNAL PROCESS       02080000
+         MVC   EXCITYPE,=AL4(CLOSE_PIPE)     LOAD CALL-TYPE             02090000
+*                                                                       02100000
+         CALL  DFHXCIS,                                                *02110000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE,EXCIPTOK),         *02120000
+               VL,                                                     *02130000
+               MF=(E,EXCICALL)                                          02140000
+*                                                                       02150000
+         MVI   PROCESS,PROCOUTC              SET INTERNAL PROCESS       02160000
+         OC    EXCIWRKA(4),EXCIWRKA          CHECK RESPONSE CODE        02170000
+         MVC   CALLRC1(8),EXCIWRKA           SET RESPONSE CODE          02180000
+         BNZ   EXITRSP                                                  02190000
+*                                                                       02200000
+*=====================================================================* 02210000
+*   DEALLOCATE PIPE CALL                                              * 02220000
+*=====================================================================* 02230000
+*                                                                       02240000
+         MVI   PROCESS,PROCINND              SET INTERNAL PROCESS       02250000
+         MVC   EXCITYPE,=AL4(DEALLOCATE_PIPE) LOAD CALL-TYPE            02260000
+*                                                                       02270000
+         CALL  DFHXCIS,                                                *02280000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE,EXCIPTOK),         *02290000
+               VL,                                                     *02300000
+               MF=(E,EXCICALL)                                          02310000
+*                                                                       02320000
+         MVI   PROCESS,PROCOUTD              SET INTERNAL PROCESS       02330000
+         OC    EXCIWRKA(4),EXCIWRKA          CHECK RESPONSE CODE        02340000
+         MVC   CALLRC1(8),EXCIWRKA           SET RESPONSE CODE          02350000
+         BNZ   EXITRSP                                                  02360000
+         MVI   PROCESS,C' '                  SET INTERNAL PROCESS       02370000
+*                                                                       02380000
+         MVC   TARGSTAT,=C'EN'               SET CURRENT STATE BEGIN    02390000
+         XC    CALLRC1(8),CALLRC1            SET RESPONSE CODE          02400000
+         B     EXITRSP                       EXIT                       02410000
+*                                                                       02420000
+*=====================================================================* 02430000
+*   PROCESS TRACE BEGIN REQUEST                                       * 02440000
+*=====================================================================* 02450000
+*                                                                       02460000
+TBG01    DS    0H                                                       02470000
+         MVC   CALLRC1,RSPBADTR              SET BAD TRACE STATE        02480000
+         CLI   TRACSTAT,TRACEOFF             CURRENT STATE ENDED        02490000
+         BNE   EXITRSP                       ..ERROR                    02500000
+         OC    TRACEEP,TRACEEP               ALREADY LOADED             02510000
+         BNZ   TBG05                         ..YES, BRANCH              02520000
+         LOAD  ERRET=TBG90,                                            *02530000
+               SF=(E,LOADTRAC)                                          02540000
+         ST    R0,TRACEEP                    SAVE EP @                  02550000
+TBG05    DS    0H                                                       02560000
+         MVI   TRACSTAT,TRACEON              CURRENT STATE ENDED        02570000
+         XC    CALLRC1(8),CALLRC1            SET RETURN CODE            02580000
+         B     EXITRSP                       ..EXIT                     02590000
+TBG90    DS    0H                                                       02600000
+         LA    R2,WTOC00                                                02610000
+         LA    R3,WTOD04                                                02620000
+         LA    R4,WTOD98                                                02630000
+         WTO   TEXT=(((R2),),((R3),),((R4),)),                         *02640000
+               MF=(E,WTOERROR)                                          02650000
+         MVC   CALLRC1,RSPLODTR              SET TRACE LOAD FAILED      02660000
+         B     EXITRSP                       ..EXIT                     02670000
+*                                                                       02680000
+*=====================================================================* 02690000
+*   PROCESS TRACE END REQUEST                                         * 02700000
+*=====================================================================* 02710000
+*                                                                       02720000
+TEN01    DS    0H                                                       02730000
+         MVC   CALLRC1,RSPBADTR              SET BAD TRACE STATE        02740000
+         CLI   TRACSTAT,TRACEON              CURRENT STATE BEGIN        02750000
+         BNE   EXITRSP                       ..ERROR                    02760000
+         MVI   TRACSTAT,TRACEOFF             CURRENT STATE ENDED        02770000
+         XC    CALLRC1(8),CALLRC1            SET RETURN CODE            02780000
+         B     EXITRSP                       ..EXIT                     02790000
+*                                                                       02800000
+*=====================================================================* 02810000
+*   VERIFY TARGET STATE                                               * 02820000
+*=====================================================================* 02830000
+*                                                                       02840000
+RES01    DS    0H                                                       02850000
+         MVC   CALLRC1,RSPBADRQ              SET BAD REQUEST            02860000
+         CLC   TARGSTAT,=C'RS'               CURRENT STATE RESOURCE     02870000
+         BE    RES03                         ..YES, BRANCH              02880000
+         CLC   TARGSTAT,=C'BG'               CURRENT STATE BEGIN        02890000
+         BE    RES03                         ..YES, BRANCH              02900000
+         CLC   TARGSTAT,=C'EN'               CURRENT STATE END          02910000
+         BE    EXITRSP                       ..YES, BRANCH              02920000
+         CLC   TARGSTAT,NULLS                CURRENT STATE NULL         02930000
+         BE    EXITRSP                       ..YES, BRANCH              02940000
+         MVC   CALLRC1,RSPBADST              SET BAD STATE              02950000
+         B     EXITRSP                       ..ERROR                    02960000
+*                                                                       02970000
+*=====================================================================* 02980000
+*   VALIDATE RESOURCE TYPE                                            * 02990000
+*=====================================================================* 03000000
+*                                                                       03010000
+RES03    DS    0H                                                       03020000
+         L     R1,USRA20                     LOAD USRTYP @              03030000
+         CLC   =C'FI',0(R1)                  FILE TYPE                  03040000
+         BE    RES05                         ..YES, BRANCH              03050000
+         CLC   =C'TD',0(R1)                  TD TYPE                    03060000
+         BE    RES25                                                    03070000
+         CLC   =C'TS',0(R1)                  TS TYPE                    03080000
+         BE    RES45                                                    03090000
+         CLC   =C'PG',0(R1)                  PROGRAM TYPE               03100000
+         BE    RES65                                                    03110000
+         MVC   CALLRC1,RSPBADRT              SET INVALID RESOURCE TYPE  03120000
+         B     EXITRSP                       ..ERROR                    03130000
+*                                                                       03140000
+*=====================================================================* 03150000
+*   PROCESS FILE RESOURCE REQUEST                                     * 03160000
+*=====================================================================* 03170000
+*                                                                       03180000
+RES05    DS    0H                                                       03190000
+         MVC   TARGPROG,=CL8'IEB601'         SET SERVER PROGRAM         03200000
+         L     R1,USRA04                     LOAD USRFUN @              03210000
+         CLC   =C'RD',0(R1)                  READ REQUEST               03220000
+         BE    RES09                         ..YES, BRANCH              03230000
+         CLC   =C'RN',0(R1)                  READ NEXT BROWSE REQUEST   03240000
+         BE    RES09                         ..YES, BRANCH              03250000
+         CLC   =C'RP',0(R1)                  READ PREV BROWSE REQUEST   03260000
+         BE    RES09                         ..YES, BRANCH              03270000
+         CLC   =C'UP',0(R1)                  UPDATE REQUEST             03280000
+         BE    RES09                         ..YES, BRANCH              03290000
+         CLC   =C'AD',0(R1)                  ADD REQUEST                03300000
+         BE    RES09                         ..YES, BRANCH              03310000
+         CLC   =C'DL',0(R1)                  DELETE REQUEST             03320000
+         BE    RES09                         ..YES, BRANCH              03330000
+         XC    CALLRC1(8),CALLRC1            SET RC                     03340000
+         CLC   =C'SB',0(R1)                  START BROWSE REQUEST       03350000
+         BE    EXITRSP                       ..YES, BRANCH              03360000
+         CLC   =C'EB',0(R1)                  END BROWSE REQUEST         03370000
+         BE    EXITRSP                       ..YES, BRANCH              03380000
+         MVC   CALLRC1,RSPINVFN              SET INVALID FUNCTION       03390000
+         B     EXITRSP                       ..ERROR                    03400000
+*                                                                       03410000
+RES09    DS    0H                                                       03420000
+         LA    R2,COMMAX                     LOAD MAX FIXED COMMAREA    03430000
+         L     R1,USRA24                     LOAD USRKYL @              03440000
+         AH    R2,0(,R1)                     ADD KEY LENGTH             03450000
+         L     R1,USRA32                     LOAD USRARL @              03460000
+         AH    R2,0(,R1)                     ADD AREA LENGTH            03470000
+         ST    R2,COMMXMIT                   SAVE COMMAREA LENGTH       03480000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     03490000
+         BAS   R5,GTM00                      OBTAIN STORAGE             03500000
+         ST    R6,COMMADDR                   SAVE COMMAREA @            03510000
+         USING COMMON,R6                     USE BASE REG               03520000
+         MVC   COMMEYE,=C'COMMAREA'                                     03530000
+         L     R1,USRA04                     LOAD USRFUN @              03540000
+         MVC   COMFUN,0(R1)                  SET READNEXT               03550000
+         L     R1,USRA16                     LOAD USRRSC @              03560000
+         MVC   COMRSC,0(R1)                  SET FILE ID TO ACCESS      03570000
+         L     R1,USRA20                     LOAD USRTYP @              03580000
+         MVC   COMRES,0(R1)                  SET RESOURCE TYPE          03590000
+         XC    COMRSP(8),COMRSP              CLR RESPONSE               03600000
+         L     R1,USRA24                     LOAD USRKYL @              03610000
+         MVC   COMKYL,0(R1)                  SET FILE KEY LENGTH        03620000
+         LA    R2,COMKYL+L'COMKYL            CALC KEY @                 03630000
+         ST    R2,SAVKEY                     SAVE KEY @                 03640000
+         L     R3,USRA28                     LOAD USRKEY @              03650000
+         LH    R1,COMKYL                     LOAD KEY LENGTH            03660000
+         BCTR  R1,0                          DECR FOR EXECUTE           03670000
+         EX    R1,MVCKEY                     MOVE THE KEY TO COMMON     03680000
+*MVCKEY  MVC   0(0,R2),0(R3)                 EXECUTED INSTRUCTION       03690000
+         AH    R2,COMKYL                     CALC AREA LENGTH @         03700000
+         ST    R2,SAVARL                     SAVE AREA LENGTH @         03710000
+         L     R1,USRA32                     LOAD USRARL @              03720000
+         MVC   0(2,R2),0(R1)                 SET FILE RECORD LENGTH     03730000
+         LA    R2,2(,R2)                     CALC AREA @                03740000
+         ST    R2,SAVARA                     SAVE AREA LENGTH @         03750000
+         LH    R3,0(,R1)                     LOAD RECORD LENGTH         03760000
+         L     R0,USRA36                     LOAD USRARA @              03770000
+         LR    R1,R3                         SET MVCL LENGTH            03780000
+         MVCL  R2,R0                         MOVE RECORD AREA           03790000
+         BAS   R5,DPL00                      ISSUE DPL REQUEST          03800000
+         L     R2,USRA28                     LOAD USRKEY @              03810000
+         L     R3,SAVKEY                     LOAD SAVKEY @              03820000
+         LH    R1,COMKYL                     LOAD KEY LENGTH            03830000
+         BCTR  R1,0                          DECR FOR EXECUTE           03840000
+         EX    R1,MVCKEY                     MOVE THE KEY TO COMMON     03850000
+*MVCKEY  MVC   0(0,R2),0(R3)                 EXECUTED INSTRUCTION       03860000
+         L     R3,SAVARL                     LOAD AREA LENGTH @         03870000
+         LH    R3,0(,R3)                     LOAD AREA LENGTH           03880000
+         L     R0,SAVARA                     SAVE AREA LENGTH @         03890000
+         L     R2,USRA36                     LOAD USRARA @              03900000
+         LR    R1,R3                         SET MVCL LENGTH            03910000
+         MVCL  R2,R0                         MOVE RECORD AREA           03920000
+         L     R2,COMMXMIT                   LOAD COMMAREA LENGTH       03930000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     03940000
+         BAS   R5,FRM00                      RELEASE STORAGE            03950000
+         B     EXITRSP                                                  03960000
+*                                                                       03970000
+MVCKEY   MVC   0(0,R2),0(R3)                 EXECUTED INSTRUCTION       03980000
+*                                                                       03990000
+*=====================================================================* 04000000
+*   PROCESS TDQ RESOURCE REQUEST                                      * 04010000
+*=====================================================================* 04020000
+*                                                                       04030000
+RES25    DS    0H                                                       04040000
+         MVC   TARGPROG,=CL8'IEB602'         SET SERVER PROGRAM         04050000
+         L     R1,USRA04                     LOAD USRFUN @              04060000
+         CLC   =C'RQ',0(R1)                  READ QUEUE REQUEST         04070000
+         BE    RES29                         ..YES, BRANCH              04080000
+         CLC   =C'WQ',0(R1)                  WRITE QUEUE REQUEST        04090000
+         BE    RES29                         ..YES, BRANCH              04100000
+         MVC   CALLRC1,RSPINVFN              SET INVALID FUNCTION       04110000
+         B     EXITRSP                       ..ERROR                    04120000
+*                                                                       04130000
+RES29    DS    0H                                                       04140000
+         LA    R2,COMMAX                     LOAD MAX FIXED COMMAREA    04150000
+         L     R1,USRA32                     LOAD USRARL @              04160000
+         AH    R2,0(,R1)                     ADD AREA LENGTH            04170000
+         ST    R2,COMMXMIT                   SAVE COMMAREA LENGTH       04180000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     04190000
+         BAS   R5,GTM00                      OBTAIN STORAGE             04200000
+         ST    R6,COMMADDR                   SAVE COMMAREA @            04210000
+         USING COMMON,R6                     USE BASE REG               04220000
+         MVC   COMMEYE,=C'COMMAREA'                                     04230000
+         L     R1,USRA04                     LOAD USRFUN @              04240000
+         MVC   COMFUN,0(R1)                  SET TD FUNCTION            04250000
+         L     R1,USRA16                     LOAD USRRSC @              04260000
+         MVC   COMRSC,0(R1)                  SET TD QUEUE TO ACCESS     04270000
+         L     R1,USRA20                     LOAD USRTYP @              04280000
+         MVC   COMRES,0(R1)                  SET RESOURCE TYPE          04290000
+         XC    COMRSP(8),COMRSP              CLR RESPONSE               04300000
+         LA    R2,COMKYL+L'COMKYL            LOAD COMMAREA LENGTH @     04310000
+         ST    R2,SAVARL                     SAVE COMMAREA LENGTH @     04320000
+         L     R1,USRA32                     LOAD USRARL @              04330000
+         MVC   0(2,R2),0(R1)                 SET TD RECORD LENGTH       04340000
+         LA    R2,2(,R2)                     CALC RECORD AREA @         04350000
+         ST    R2,SAVARA                     SAVE RECORD AREA @         04360000
+         LH    R3,0(,R1)                     LOAD RECORD LENGTH         04370000
+         L     R0,USRA36                     LOAD USRARA @              04380000
+         LR    R1,R3                         SET MVCL LENGTH            04390000
+         MVCL  R2,R0                         MOVE RECORD AREA           04400000
+         BAS   R5,DPL00                      ISSUE DPL REQUEST          04410000
+         L     R3,SAVARL                     LOAD AREA LENGTH @         04420000
+         LH    R3,0(,R3)                     LOAD AREA LENGTH           04430000
+         L     R0,SAVARA                     SAVE AREA LENGTH @         04440000
+         L     R2,USRA36                     LOAD USRARA @              04450000
+         LR    R1,R3                         SET MVCL LENGTH            04460000
+         MVCL  R2,R0                         MOVE RECORD AREA           04470000
+         L     R2,COMMXMIT                   LOAD COMMAREA LENGTH       04480000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     04490000
+         BAS   R5,FRM00                      RELEASE STORAGE            04500000
+         B     EXITRSP                                                  04510000
+*                                                                       04520000
+*=====================================================================* 04530000
+*   PROCESS TS RESOURCE REQUEST                                       * 04540000
+*=====================================================================* 04550000
+*                                                                       04560000
+RES45    DS    0H                                                       04570000
+         MVC   TARGPROG,=CL8'IEB603'         SET SERVER PROGRAM         04580000
+         L     R1,USRA04                     LOAD USRFUN @              04590000
+         CLC   =C'RQ',0(R1)                  READ QUEUE REQUEST         04600000
+         BE    RES49                         ..YES, BRANCH              04610000
+         CLC   =C'WQ',0(R1)                  WRITE QUEUE REQUEST        04620000
+         BE    RES49                         ..YES, BRANCH              04630000
+         CLC   =C'DQ',0(R1)                  DELETE QUEUE REQUEST       04640000
+         BE    RES49                         ..YES, BRANCH              04650000
+         MVC   CALLRC1,RSPINVFN              SET INVALID FUNCTION       04660000
+         B     EXITRSP                       ..ERROR                    04670000
+RES49    DS    0H                                                       04680000
+         LA    R2,COMMAX                     LOAD MAX FIXED COMMAREA    04690000
+         L     R1,USRA24                     LOAD USRKYL @              04700000
+         AH    R2,0(,R1)                     ADD KEY LENGTH             04710000
+         L     R1,USRA32                     LOAD USRARL @              04720000
+         AH    R2,0(,R1)                     ADD AREA LENGTH            04730000
+         ST    R2,COMMXMIT                   SAVE COMMAREA LENGTH       04740000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     04750000
+         BAS   R5,GTM00                      OBTAIN STORAGE             04760000
+         ST    R6,COMMADDR                   SAVE COMMAREA @            04770000
+         USING COMMON,R6                     USE BASE REG               04780000
+         MVC   COMMEYE,=C'COMMAREA'                                     04790000
+         L     R1,USRA04                     LOAD USRFUN @              04800000
+         MVC   COMFUN,0(R1)                  SET TS FUNCTION            04810000
+         L     R1,USRA16                     LOAD USRRSC @              04820000
+         MVC   COMRSC,0(R1)                  SET TS QUEUE TO ACCESS     04830000
+         L     R1,USRA20                     LOAD USRTYP @              04840000
+         MVC   COMRES,0(R1)                  SET RESOURCE TYPE          04850000
+         XC    COMRSP(8),COMRSP              CLR RESPONSE               04860000
+         L     R1,USRA04                     LOAD USRFUN @              04870000
+         CLC   =C'DQ',0(R1)                  DELETE QUEUE REQUEST       04880000
+         BE    RES50                         ..YES, BRANCH              04890000
+         L     R1,USRA24                     LOAD USRKYL @              04900000
+         MVC   COMKYL,0(R1)                  SET FILE KEY LENGTH        04910000
+         LA    R2,COMKYL+L'COMKYL            LOAD COMMAREA LENGTH @     04920000
+         ST    R2,SAVKEY                     SAVE KEY @                 04930000
+         L     R3,USRA28                     LOAD USRKEY @              04940000
+         LH    R1,COMKYL                     LOAD KEY LENGTH            04950000
+         BCTR  R1,0                          DECR FOR EXECUTE           04960000
+         EX    R1,MVCKEY                     MOVE THE KEY TO COMMON     04970000
+*MVCKEY  MVC   0(0,R2),0(R3)                 EXECUTED INSTRUCTION       04980000
+         AH    R2,COMKYL                     CALC AREA LENGTH @         04990000
+         ST    R2,SAVARL                     SAVE COMMAREA LENGTH @     05000000
+         L     R1,USRA32                     LOAD USRARL @              05010000
+         MVC   0(2,R2),0(R1)                 SET TS RECORD LENGTH       05020000
+         LA    R2,2(,R2)                     CALC RECORD AREA @         05030000
+         ST    R2,SAVARA                     SAVE RECORD AREA @         05040000
+         LH    R3,0(,R1)                     LOAD RECORD LENGTH         05050000
+         L     R0,USRA36                     LOAD USRARA @              05060000
+         LR    R1,R3                         SET MVCL LENGTH            05070000
+         MVCL  R2,R0                         MOVE RECORD AREA           05080000
+RES50    DS    0H                                                       05090000
+         BAS   R5,DPL00                      ISSUE DPL REQUEST          05100000
+         L     R1,USRA04                     LOAD USRFUN @              05110000
+         CLC   =C'DQ',0(R1)                  DELETE QUEUE REQUEST       05120000
+         BE    RES52                         ..YES, BRANCH              05130000
+         L     R3,SAVARL                     LOAD AREA LENGTH @         05140000
+         LH    R3,0(,R3)                     LOAD AREA LENGTH           05150000
+         L     R0,SAVARA                     SAVE AREA LENGTH @         05160000
+         L     R2,USRA36                     LOAD USRARA @              05170000
+         LR    R1,R3                         SET MVCL LENGTH            05180000
+         MVCL  R2,R0                         MOVE RECORD AREA           05190000
+RES52    DS    0H                                                       05200000
+         L     R2,COMMXMIT                   LOAD COMMAREA LENGTH       05210000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     05220000
+         BAS   R5,FRM00                      RELEASE STORAGE            05230000
+         B     EXITRSP                                                  05240000
+*                                                                       05250000
+*=====================================================================* 05260000
+*   PROCESS PROGRAM RESOURCE REQUEST                                  * 05270000
+*=====================================================================* 05280000
+*                                                                       05290000
+RES65    DS    0H                                                       05300000
+         MVC   TARGPROG,=CL8'IEB604'         SET SERVER PROGRAM         05310000
+         L     R1,USRA04                     LOAD USRFUN @              05320000
+         CLC   =C'LK',0(R1)                  LINK REQUEST               05330000
+         BE    RES69                         ..YES, BRANCH              05340000
+         MVC   CALLRC1,RSPINVFN              SET INVALID FUNCTION       05350000
+         B     EXITRSP                       ..ERROR                    05360000
+*                                                                       05370000
+RES69    DS    0H                                                       05380000
+         LA    R2,COMMAX                     LOAD MAX FIXED COMMAREA    05390000
+         L     R1,USRA32                     LOAD USRARL @              05400000
+         AH    R2,0(,R1)                     ADD AREA LENGTH            05410000
+         ST    R2,COMMXMIT                   SAVE COMMAREA LENGTH       05420000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     05430000
+         BAS   R5,GTM00                      OBTAIN STORAGE             05440000
+         ST    R6,COMMADDR                   SAVE COMMAREA @            05450000
+         USING COMMON,R6                     USE BASE REG               05460000
+         MVC   COMMEYE,=C'COMMAREA'                                     05470000
+         L     R1,USRA04                     LOAD USRFUN @              05480000
+         MVC   COMFUN,0(R1)                  SET FUNCTION               05490000
+         L     R1,USRA16                     LOAD USRRSC @              05500000
+         MVC   COMRSC,0(R1)                  SET PROGRAM ID             05510000
+         L     R1,USRA20                     LOAD USRTYP @              05520000
+         MVC   COMRES,0(R1)                  SET RESOURCE TYPE          05530000
+         XC    COMRSP(8),COMRSP              CLR RESPONSE               05540000
+         L     R1,USRA24                     LOAD USRKYL @              05550000
+         LA    R2,COMKYL+L'COMKYL            LOAD COMMAREA LENGTH @     05560000
+         ST    R2,SAVARL                     SAVE COMMAREA LENGTH @     05570000
+         L     R1,USRA32                     LOAD USRARL @              05580000
+         MVC   0(2,R2),0(R1)                 SET COMMAREA LENGTH        05590000
+         LA    R2,2(,R2)                     CALC AREA @                05600000
+         ST    R2,SAVARA                     SAVE AREA LENGTH @         05610000
+         LH    R3,0(,R1)                     LOAD RECORD LENGTH         05620000
+         L     R0,USRA36                     LOAD USRARA @              05630000
+         LR    R1,R3                         SET MVCL LENGTH            05640000
+         MVCL  R2,R0                         MOVE COMMAREA              05650000
+         BAS   R5,DPL00                      ISSUE DPL REQUEST          05660000
+         L     R3,SAVARL                     LOAD COMMAREA LENGTH @     05670000
+         LH    R3,0(,R3)                     LOAD COMMAREA LENGTH       05680000
+         L     R0,SAVARA                     LOAD COMMAREA @            05690000
+         L     R2,USRA36                     LOAD USRARA @              05700000
+         LR    R1,R3                         SET MVCL LENGTH            05710000
+         MVCL  R2,R0                         MOVE COMMAREA              05720000
+         L     R2,COMMXMIT                   LOAD COMMAREA LENGTH       05730000
+         LA    R2,L'COMMEYE(,R2)             ADD EYE CATCHER LENGTH     05740000
+         BAS   R5,FRM00                      RELEASE STORAGE            05750000
+         B     EXITRSP                                                  05760000
+*                                                                       05770000
+*=====================================================================* 05780000
+*   DPL REQUEST                                                       * 05790000
+*=====================================================================* 05800000
+*                                                                       05810000
+DPL00    DS    0H                                                       05820000
+         MVI   PROCESS,PROCINNP              SET INTERNAL PROCESS       05830000
+         MVC   EXCITYPE,=AL4(DPL_REQUEST)    LOAD CALL-TYPE AND         05840000
+         MVC   EXCIOPTS,=AL1(SYNCONRETURN)   SET SYNCONRETURN           05850000
+*                                                                       05860000
+         CALL  DFHXCIS,                                                *05870000
+               (EXCIVERS,EXCIWRKA,EXCIUTOK,EXCITYPE,EXCIPTOK,          *05880000
+               TARGPROG,COMMAREA,COMMXMIT,COMMXMIT,                    *05890000
+               TARGTRAN,0,0,EXCIDPLA,EXCIOPTS),                        *05900000
+               VL,                                                     *05910000
+               MF=(E,EXCICALL)                                          05920000
+*                                                                       05930000
+         L     R1,=A(EXITRSP)                                           05940000
+         MVI   PROCESS,PROCOUTP              SET INTERNAL PROCESS       05950000
+         MVC   CALLRC1(8),EXCI_RESPONSE                                 05960000
+         OC    CALLRC1,CALLRC1                                          05970000
+         BNZR  R1                                                       05980000
+         MVC   CALLRC1(8),EXCI_DPL_RESP                                 05990000
+         OC    CALLRC1,CALLRC1                                          06000000
+         BNZR  R1                                                       06010000
+         MVI   PROCESS,C' '                  SET INTERNAL PROCESS       06020000
+*                                                                       06030000
+         MVC   CALLRC1(8),COMRSP             RETURN SERVER RC           06040000
+         CLC   COMRSP,=F'1000'               SERVER ERROR?              06050000
+         BHR   R1                                                       06060000
+         BR    R5                            RETURN TO CALLER           06070000
+*                                                                       06080000
+*=====================================================================* 06090000
+*   OBTAIN WORKING STORAGE                                            * 06100000
+*=====================================================================* 06110000
+*                                                                       06120000
+GTM00    DS    0H                                                       06130000
+         STORAGE OBTAIN,                                               *06140000
+               ADDR=(R6),                                              *06150000
+               BNDRY=DBLWD,                                            *06160000
+               COND=YES,                                               *06170000
+               LENGTH=(R2),                                            *06180000
+               LOC=RES,                                                *06190000
+               SP=0                                                     06200000
+         LTR   R15,R15                       GETMAIN SUCCESSFUL         06210000
+         BZR   R5                            ..YES, BRANCH              06220000
+         L     R1,RSPGMFAL(R15)              LOAD GETMAIN FAILED RC     06230000
+         ST    R1,CALLRC1                    SET GETMAIN FAILED         06240000
+         L     R5,=A(EXITRSP)                ..ERROR                    06250000
+         BR    R5                                                       06260000
+*                                                                       06270000
+*=====================================================================* 06280000
+*   RELEASE WORKING STORAGE                                           * 06290000
+*=====================================================================* 06300000
+*                                                                       06310000
+FRM00    DS    0H                                                       06320000
+         STORAGE RELEASE,                                              *06330000
+               ADDR=(R6),                                              *06340000
+               LENGTH=(R2)                                              06350000
+         BR    R5                                                       06360000
+*                                                                       06370000
+*=====================================================================* 06380000
+*   SET REGISTER 15 TO RETURN CODE AND EXIT.                          * 06390000
+*=====================================================================* 06400000
+*                                                                       06410000
+EXITRSP  DS    0H                                                       06420000
+         L     R1,USRA08                     LOAD USRRSP @              06430000
+         MVC   0(8,R1),CALLRC1               SET USERRSP                06440000
+         BAS   R14,TRC01                     PERFORM TRACE              06450000
+         DFHEIRET                                                       06460000
+*                                                                       06470000
+*=====================================================================* 06480000
+*   TRACE ACTIVITY                                                    * 06490000
+*=====================================================================* 06500000
+*                                                                       06510000
+TRC01    DS    0H                                                       06520000
+         L     R15,TRACEEP                   LOAD TRACE ENTRY @         06530000
+         LTR   R15,R15                       IS IEB502 LOADED           06540000
+         BZR   R14                           ..NO, RETURN TO CALLER     06550000
+         ST    R14,TRACRTN                   SAVE CALLERS RETURN @      06560000
+         LA    R1,TRACE                      LOAD TRACE PARMS           06570000
+         BASSM R14,R15                       CALL IEB502                06580000
+         L     R14,TRACRTN                   LOAD CALLERS RETURN @      06590000
+         BR    R14                           RETURN TO CALLER           06600000
+*                                                                       06610000
+*=====================================================================* 06620000
+*   SEND WTO ERROR MESSAGES AND ABEND JOB STEP                        * 06630000
+*=====================================================================* 06640000
+*                                                                       06650000
+WTO01    DS    0H                                                       06660000
+         LA    R3,WTOD01                                                06670000
+         B     WTO99                                                    06680000
+WTO02    DS    0H                                                       06690000
+         LA    R3,WTOD02                                                06700000
+         B     WTO99                                                    06710000
+WTO03    DS    0H                                                       06720000
+         LA    R3,WTOD03                                                06730000
+         B     WTO99                                                    06740000
+WTO99    DS    0H                                                       06750000
+         LA    R2,WTOC00                                                06760000
+         LA    R4,WTOD99                                                06770000
+         LR    R5,R1                                                    06780000
+         WTO   TEXT=(((R2),),((R3),),((R4),)),                         *06790000
+               MF=(E,WTOERROR)                                          06800000
+*                                                                       06810000
+         ABEND (R5),                                                   *06820000
+               DUMP,                                                   *06830000
+               STEP,                                                   *06840000
+               USER                                                     06850000
+         DC    H'0'                                                     06860000
+*                                                                       06870000
+*=====================================================================* 06880000
+*    NON-REENTRANT CONSTANTS AND WORKAREAS                            * 06890000
+*=====================================================================* 06900000
+*                                                                       06910000
+         DC    CL24'**TRACE PARAMETER LIST**'                           06920000
+TRACE    DS    0F                       TRACE CONTROL TABLE             06930000
+SAVEPARM DC    A(0)                     CALLER PARAMETER LIST @         06940000
+SAVETARG DC    A(0)                     TARGET CONTROL BLOCK @          06950000
+SAVETRAC DC    A(TRACSTAT)              TRACE CONTROL BLOCK @           06960000
+*                                                                       06970000
+INITUTOK DC    F'0'                     GLOBAL INIT USER TOKEN          06980000
+*                                                                       06990000
+RSPNOPRM DC    AL4(1501)                NOPARMLIST                      07000000
+RSPTOFEW DC    AL4(1502)                TOOFEWPARMS                     07010000
+RSPTOMNY DC    AL4(1503)                EXCEED25CONN                    07020000
+RSPINVRQ DC    AL4(1504)                REQUESTINVAL                    07030000
+RSPBADRQ DC    AL4(1505)                REQUESTILLOG                    07040000
+RSPBADST DC    AL4(1506)                CICSSTATEERR                    07050000
+RSPBADRT DC    AL4(1507)                RESOURCETYPE                    07060000
+RSPINVFN DC    AL4(1508)                FUNCTIONCODE                    07070000
+RSPGMFAL EQU   *-4                      NOTE - POSITINALLY DEPENDENT    07080000
+         DC    AL4(1509)                GTMAINFAIL04                    07090000
+         DC    AL4(1510)                GTMAINFAIL08                    07100000
+         DC    AL4(1511)                GTMAINFAIL12                    07110000
+         DC    AL4(1512)                GTMAINFAIL16                    07120000
+RSPBADTR DC    AL4(1513)                TRACESTATEER                    07130000
+RSPLODTR DC    AL4(1514)                TRACELOADERR                    07140000
+*                                                                       07150000
+NULLS    DC    XL2'0000'                                                07160000
+*                                                                       07170000
+LOADTRAC LOAD  EP=IEB502,                                              *07180000
+               DCB=0,                                                  *07190000
+               SF=L                                                     07200000
+*                                                                       07210000
+EXCICALL CALL  ,                                                       *07220000
+               (0,0,0,0,0,                                             *07230000
+               0,0,0,0,                                                *07240000
+               0,0,0,0,0),                                             *07250000
+               VL,                                                     *07260000
+               MF=L                                                     07270000
+*                                                                       07280000
+WTOERROR WTO   TEXT=((,C),(,D),(,DE)),                                 *07290000
+               ROUTCDE=(2,11),                                         *07300000
+               DESC=(6),                                               *07310000
+               MF=L                                                     07320000
+*                                                                       07330000
+WTOC00   DC    AL2(L'WTOC00M)                                           07340000
+WTOC00M  DC    C'IEB50100 IEI EXCI Callable Client'                     07350000
+WTOD01   DC    AL2(L'WTOD01M)                                           07360000
+WTOD01M  DC    C'IEB50101 Caller failed to pass a parameter list'       07370000
+WTOD02   DC    AL2(L'WTOD02M)                                           07380000
+WTOD02M  DC    C'IEB50102 Caller failed to pass minimum parameters'     07390000
+WTOD03   DC    AL2(L'WTOD03M)                                           07400000
+WTOD03M  DC    C'IEB50103 Caller attempted too many CICS connects'      07410000
+WTOD04   DC    AL2(L'WTOD04M)                                           07420000
+WTOD04M  DC    C'IEB50104 Load for trace module IEB502 failed'          07430000
+WTOD98   DC    AL2(L'WTOD04M)                                           07440000
+WTOD98M  DC    C'IEB50198 Processing continues without trace active'    07450000
+WTOD99   DC    AL2(L'WTOD99M)                                           07460000
+WTOD99M  DC    C'IEB50199 Job step will abend'                          07470000
+*                                                                       07480000
+TRACSTAT DC    CL1'E'                   TRACE STATE                     07490000
+TRACEON  EQU   C'B'                     ..TRACE BEGIN STATE             07500000
+TRACEOFF EQU   C'E'                     ..TRACE ENDED STATE             07510000
+         DC    3X'00'                   FILLER                          07520000
+TRACEEP  DC    A(0)                     IEB502 ENTRY @                  07530000
+TRACRTN  DC    A(0)                     IEB502 RETURN @                 07540000
+*                                                                       07550000
+TARGAREA DC    (TARGETSL*TARGETSM)F'0'  TARGET CONTROL TABLE            07560000
+*                                                                       07570000
+*====================================================================*  07580000
+*    DEFINITIONS FOR WORKING STORAGE                                 *  07590000
+*====================================================================*  07600000
+*                                                                       07610000
+         DFHEISTG                                                       07620000
+*                                                                       07630000
+WORKAREA DS    0F                                                       07640000
+*                                                                       07650000
+COMMADDR DS    A                        DPL COMMAREA @                  07660000
+COMMXMIT DS    A                        DPL COMMAREA LENGTH             07670000
+*                                                                       07680000
+SAVKEY   DS    A                        COMMAREA KEY @                  07690000
+SAVARL   DS    A                        COMMAREA AREA LENGTH @          07700000
+SAVARA   DS    A                        COMMAREA AREA @                 07710000
+*                                                                       07720000
+EXCIEYE  DS    CL8                      =EYE CATCHER=                   07730000
+EXCIWRKA DS    CL(EXCI_RETURN_CODE__LEN)                                07740000
+*                                                                       07750000
+DPLEYE   DS    CL8                      =EYE CATCHER=                   07760000
+EXCIDPLA DS    CL(EXCI_DPL_RETAREA__LEN)                                07770000
+*                                                                       07780000
+WORKALEN EQU   *-WORKAREA                                               07790000
+*                                                                       07800000
+*---------------------------------------------------------------------- 07810000
+         DFHEIEND                                                       07820000
+*                                                                       07830000
+*=====================================================================* 07840000
+*   TARGET SYSTEMS WORKAREA DSECT                                     * 07850000
+*=====================================================================* 07860000
+*                                                                       07870000
+TARGETS  DSECT                                                          07880000
+TARGSYSI DS    CL8                      TARGET CICS SYSTEM              07890000
+TARGPROG DS    CL8                      TARGET SERVER PROGRAM           07900000
+TARGTRAN DS    CL4                      TARGET TRANSACTION NAME         07910000
+EXCIUTOK DS    F                        USER TOKEN                      07920000
+EXCIPTOK DS    F                        PIPE TOKEN                      07930000
+EXCIVERS DS    F                        VERSION NUMBER                  07940000
+EXCITYPE DS    F                        CALL TYPE                       07950000
+CALLRC1  DS    F                        RETURN CODE 1 SAVE AREA         07960000
+CALLRC2  DS    F                        RETURN CODE 2 SAVE AREA         07970000
+TARGSTAT DS    CL2                      TARGET STATE                    07980000
+EXCIOPTS DS    XL1                      DPL AND ALLOCATE OPTIONS        07990000
+PROCESS  DS    CL1                      INTERNAL TRACE INDICATOR        08000000
+*                                                                       08010000
+PROCINNI EQU   C'A'                     ..INIT USER CALL IN             08020000
+PROCINNA EQU   C'B'                     ..ALLOCATE PIPE CALL IN         08030000
+PROCINNO EQU   C'C'                     ..OPEN PIPE CALL IN             08040000
+PROCINNC EQU   C'D'                     ..CLOSE PIPE CALL IN            08050000
+PROCINND EQU   C'E'                     ..DEALLOCATE PIPE CALL IN       08060000
+PROCINNP EQU   C'F'                     ..DPL CALL IN                   08070000
+*                                                                       08080000
+PROCOUTI EQU   C'U'                     ..INIT USER CALL OUT            08090000
+PROCOUTA EQU   C'V'                     ..ALLOCATE PIPE CALL OUT        08100000
+PROCOUTO EQU   C'W'                     ..OPEN PIPE CALL OUT            08110000
+PROCOUTC EQU   C'X'                     ..CLOSE PIPE CALL OUT           08120000
+PROCOUTD EQU   C'Y'                     ..DEALLOCATE PIPE CALL OUT      08130000
+PROCOUTP EQU   C'Z'                     ..DPL CALL OUT                  08140000
+*                                                                       08150000
+TARGETSL EQU   *-TARGETS                TARGET TABLE LENGTH             08160000
+TARGETSM EQU   25                       MAX TARGET TABLE ENTRIES        08170000
+*                                                                       08180000
+*=====================================================================* 08190000
+*   DPL CLIENT COMMAREA DSECT                                         * 08200000
+*=====================================================================* 08210000
+*                                                                       08220000
+COMMON   DSECT                                                          08230000
+*                                                                       08240000
+COMMEYE  DS    CL8                      =EYE CATCHER=                   08250000
+COMMAREA DS    0F                       COMMAREA FOR DATA TRANSFER      08260000
+*                                                                       08270000
+COMFUN   DS    CL2                      FUNCTION TYPE                   08280000
+*                                       ..AD = ADD                      08290000
+*                                       ..DL = DELETE                   08300000
+*                                       ..DQ = DELETE QUEUE             08310000
+*                                       ..LK = LINK                     08320000
+*                                       ..RD = READ                     08330000
+*                                       ..RN = READNEXT                 08340000
+*                                       ..RQ = READ QUEUE               08350000
+*                                       ..RP = READPREV                 08360000
+*                                       ..UP = UPDATE                   08370000
+*                                       ..WQ = WRITE QUEUE              08380000
+*                                                                       08390000
+COMRES   DS    CL2                      RESOURCE TYPE                   08400000
+*                                       ..FI = VSAM FILE (IEB601)       08410000
+*                                       ..TD = TD QUEUE  (IEB602)       08420000
+*                                       ..TS = TS QUEUE  (IEB603)       08430000
+*                                       ..PG = PROGRAM   (IEB604)       08440000
+*                                                                       08450000
+COMRSC   DS    CL8                      RESOURCE NAME                   08460000
+*                                                                       08470000
+COMRSP   DS    A                        RETURN CODE 1                   08480000
+COMRSP2  DS    A                        RETURN CODE 2                   08490000
+*                                       ..0 = NORMAL                    08500000
+*                                       ..n = RESP ERROR CODE           08510000
+*                                       ..n = SERVER ERROR CODE         08520000
+*                                                                       08530000
+COMMIN   EQU   *-COMMAREA               MINIMUM COMMAREA LENGTH         08540000
+*                                                                       08550000
+COMKYL   DS    H                        RESOURCE KEY LENGTH             08560000
+*                                                                       08570000
+COXKEY   EQU   *                        VARIABLE KEY AREA               08580000
+*                                                                       08590000
+COXARL   DS    H                        RESOURCE AREA LENGTH            08600000
+*                                                                       08610000
+COXREC   EQU   *                        VARIABLE AREA LENGTH            08620000
+*                                                                       08630000
+COMMAX   EQU   *-COMMAREA               MAXIMUM COMMAREA LENGTH         08640000
+*=====================================================================* 08650000
+*   CALLER'S PARAMETER LIST DSECT                                     * 08660000
+*=====================================================================* 08670000
+*                                                                       08680000
+USRPARM  DSECT                                                          08690000
+USRA00   DS    A                        REQUEST TYPE @                  08700000
+USRA04   DS    A                        FUNCTION TYPE @                 08710000
+USRA08   DS    A                        RETURN CODE @                   08720000
+USRA12   DS    A                        CICS SYSTEM APPL @              08730000
+USRA16   DS    A                        CICS RESOURCE NAME @            08740000
+USRA20   DS    A                        CICS RESOURCE TYPE @            08750000
+USRA24   DS    A                        RESOURCE KEY LEN @              08760000
+USRA28   DS    A                        RESOURCE KEY @                  08770000
+USRA32   DS    A                        RESOURCE AREA LEN @             08780000
+USRA36   DS    A                        RESOURCE AREA @                 08790000
+*                                                                       08800000
+USRREQ   DS    CL2                      REQUEST TYPE                    08810000
+*                                       ..BG = BEGIN                    08820000
+*                                       ..RS = RESOURCE                 08830000
+*                                       ..EN = END                      08840000
+*                                                                       08850000
+USRFUN   DS    CL2                      FUNCTION TYPE (SEE COMFUN)      08860000
+*                                                                       08870000
+USRTYP   DS    CL2                      RESOURCE TYPE (SEE COMRES)      08880000
+*                                                                       08890000
+USRRSC   DS    CL8                      RESOURCE NAME                   08900000
+*                                                                       08910000
+USRSYS   DS    CL8                      CICS SYSTEM APPL                08920000
+*                                                                       08930000
+USRRSP   DS    A                        RETURN CODE 1                   08940000
+USRRSP2  DS    A                        RETURN CODE 2                   08950000
+*                                       ..0 = NORMAL                    08960000
+*                                       ..n = ERROR                     08970000
+*                                                                       08980000
+USRKYL   DS    H                        RESOURCE KEY LENGTH             08990000
+*                                                                       09000000
+USRARL   DS    H                        RESOURCE AREA LENGTH            09010000
+*                                                                       09020000
+USRKEY   DS    0X                       VARIABLE RESOURCE KEY           09030000
+*                                                                       09040000
+USRARA   DS    0X                       VARIABLE RESOURCE AREA          09050000
+*                                                                       09060000
+*=====================================================================* 09070000
+*   EXCI RETURN CODES AND DSECTS                                      * 09080000
+*=====================================================================* 09090000
+*                                                                       09100000
+         COPY  DFHXCRCD                                                 09110000
+*                                                                       09120000
+*=====================================================================* 09130000
+*   EXCI PARAMETER LIST EQUATES                                       * 09140000
+*=====================================================================* 09150000
+*                                                                       09160000
+         COPY  DFHXCPLD                                                 09170000
+*                                                                       09180000
+         END                                                            09190000
+

@@ -1,0 +1,2010 @@
+         TITLE '**  CICS EXCI DPL LINK TO SMTP-E WITH ATTACHMENTS **'
+*----------------------------------------------------------------------
+*  IEB005 CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+R0       EQU   0
+R1       EQU   1
+R2       EQU   2
+R3       EQU   3
+R4       EQU   4
+R5       EQU   5
+R6       EQU   6
+R7       EQU   7
+R8       EQU   8
+R9       EQU   9
+RA       EQU   10
+RB       EQU   11
+RC       EQU   12
+RD       EQU   13
+RE       EQU   14
+RF       EQU   15
+IEB005   RSECT
+         BAKR  RE,0
+         J     INT00                    BRANCH AROUND DUMP ID
+IEB005   AMODE 64                       MAY EXECUTE ABOVE 2G
+*
+* MUST BE RMODE31 FOR DCB EODAD 32 BIT ADDRESS
+*
+IEB005   RMODE 31                       MUST RESIDE BELOW 16M
+         DS    0H
+         DC    CL8'IEB005'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+         SYSSTATE ASCENV=P,                                            *
+               AMODE64=YES,                                            *
+               ARCHLVL=2
+         TAM
+         JO    INT05
+         SAM64
+INT05    DS    0H
+         LARL  RC,LITPOOL
+         USING LITPOOL,RC
+*----------------------------------------------------------------------
+*  GETMAIN SAVE AREA AND WORKING STORAGE AREAS
+*----------------------------------------------------------------------
+         LAY   R2,USER24LN              LOAD STORAGE LENGTH
+         STORAGE OBTAIN,                WORKING STORAGE AREA           *
+               ADDR=(R1),                                              *
+               BNDRY=DBLWD,                                            *
+               COND=YES,                                               *
+               LENGTH=(R2),                                            *
+               LOC=24,                                                 *
+               SP=0
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         LGR   RD,R1                    USE NEW SA
+         USING USER24,RD                USE IT
+         MVC   SAVEAREA+4(4),=C'F4SA'
+*
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    TOBUFLN,TOBUFLN          SET TO BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,TOBUF@                STORE TO BUFFER @
+         STG   R1,TOBUFP@
+*
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    CCBUFLN,CCBUFLN          SET CC BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,CCBUF@                STORE CC BUFFER @
+         STG   R1,CCBUFP@
+*
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    SM1BFLN,SM1BFLN          SET SYMBOL BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,SM1BF@                STORE SYMBOL BUFFER @
+         STG   R1,SM1BFP@
+*
+         LAY   R4,SM21BF@
+         LAY   R5,9
+INT10    DS    0H
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    16(L'SM21BFLN,R4),16(R4) SET SYMBOL BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,0(,R4)                STORE SYMBOL BUFFER @
+         STG   R1,8(,R4)
+         LAY   R4,24(,R4)
+         JCT   R5,INT10
+*
+         LAY   R4,SM31BF@
+         LAY   R5,9
+INT20    DS    0H
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    16(L'SM31BFLN,R4),16(R4) SET SYMBOL BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,0(,R4)                STORE SYMBOL BUFFER @
+         STG   R1,8(,R4)
+         LAY   R4,24(,R4)
+         JCT   R5,INT20
+*
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    SM4BFLN,SM4BFLN          SET SYMBOL BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,SM4BF@                STORE SYMBOL BUFFER @
+         STG   R1,SM4BFP@
+*
+         LAY   R4,TX1BF@
+         LAY   R5,9
+INT30    DS    0H
+         LGF   R2,=A(32*1024)           LOAD 32K STORAGE LENGTH
+         XC    16(L'TX1BFLN,R4),16(R4)  SET TEXTL BUFFER LEN
+         JASL  R9,GETM31
+         LTR   RF,RF                    GETMAIN SUCCESSFUL
+         JLNZ  ABN00
+         STG   R1,0(,R4)                STORE TEXT BUFFER @
+         STG   R1,8(,R4)
+         LAY   R4,24(,R4)
+         JCT   R5,INT30
+*
+         MVC   REPT,RT                  INITIAL HEADER TITLE
+         MVC   REPH,RH                  INITIAL HEADER TITLE
+         XC    LC,LC
+         ZAP   PC,=P'1'
+*----------------------------------------------------------------------
+*  OPEN SYSIN AND SYSPRINT DCBS
+*----------------------------------------------------------------------
+         MVC   SYSIN,SYSINB             INITIALIZE DCB/DCBE
+         MVC   SYSPRINT,SYSPRB          INITIALIZE DCB/DCBE
+         MVC   OPEN,OPENLIST            INITIALIZE OPEN LIST
+         LAY   R2,SYSIN
+         USING IHADCB,R2
+         LAY   R1,SYSIN+(SYSINE-SYSINB)
+         STY   R1,DCBDCBE
+*
+         DROP  R2
+         LGR   R2,R1
+         USING DCBE,R2
+         LARL  R1,END00
+         STY   R1,DCBEEODA
+         DROP  R2
+*
+         LAY   R2,SYSPRINT
+         USING IHADCB,R2
+         LAY   R1,SYSPRINT+(SYSPRE-SYSPRB)
+         STY   R1,DCBDCBE
+         DROP  R2
+         LAY   R1,OPEN
+         LAY   R4,SYSIN
+         LAY   R5,SYSPRINT
+         SAM31
+         OPEN  ((R4),(INPUT),(R5),(OUTPUT)),                           *
+               MODE=31,                                                *
+               MF=(E,(1))
+         SAM64
+         TMY   SYSIN+48,DCBOFOPN        OPEN SUCCESSFUL
+         JLZ   ABN01                    ..NO, BRANCH
+         TMY   SYSPRINT+48,DCBOFOPN     OPEN SUCCESSFUL
+         JLZ   ABN02                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*  LOAD IEB501 TO KEEP IT RESIDENT
+*----------------------------------------------------------------------
+         SAM31
+         LAY   RF,LOAD501
+         LAY   R2,IEB501
+         LOAD  EPLOC=(R2),                                             *
+               DCB=(0),                                                *
+               SF=(E,(RF))
+         SAM64
+         STG   R0,IEB501EP                   SAVE EP @
+*----------------------------------------------------------------------
+*  PRIME PARAMETER AREAS
+*----------------------------------------------------------------------
+         XC    USRMAXRC,USRMAXRC
+         MVIY  PRCC,C' '
+         MVC   PRDATA,PRCC
+         MVC   USRREQ,=CL80' '
+         MVC   USRFUN,=CL80' '
+         MVC   USRSYS,=CL80' '
+         MVC   USRTRN,=CL80' '
+         MVC   USRTYP,=CL80' '
+         MVC   USRRSC,=CL80' '
+         MVC   USRKEY,=CL80' '
+         MVC   BINDSN,=CL80' '
+         XC    USRKYL,USRKYL
+         XC    USRARL,USRARL
+         XC    USRRC1,USRRC1
+         XC    USRRC2,USRRC2
+         MVIY  COMSERVR,C'I'
+         MVIY  COMSEGS,C' '
+         MVIY  COMRESP,C' '
+         MVIY  COMATYP,C'T'
+         MVIY  COMDELIM,C'&&'
+         MVC   COMAEXT,=C'TXT'
+         XC    COMFROM,COMFROM
+         XC    COMNAME,COMNAME
+         XC    COMSUBJ,COMSUBJ
+         MVC   COM01TMP,=CL80' '
+         XC    COM01TSQ,=CL8'EXSMTP01'
+         MVC   COM02TMP,=CL80' '
+         XC    COM02TSQ,COM02TSQ
+         MVC   COM03TMP,=CL80' '
+         XC    COM03TSQ,COM03TSQ
+         MVC   COM04TMP,=CL80' '
+         XC    COM04TSQ,COM04TSQ
+*----------------------------------------------------------------------
+*  PROCESS SYSIN DATA SET PARAMETERS
+*----------------------------------------------------------------------
+PRC00    DS    0H
+         LAY   R2,SYSIN
+         SAM31
+         GET   (R2)
+         SAM64
+         LGFR  R2,R1
+         MVC   PRDATA(100),0(R2)
+         JASL  R9,OUT00
+         CLIY  0(R2),C'*'
+         JLE   PRC00
+*
+         CLC   =C'CICS=',0(R2)
+         JLNE  PRC02
+         MVC   USRSYS,5(R2)
+         MVC   USRTRN,=C'EXCO'
+         J     PRC00
+*
+PRC02    DS    0H
+         CLC   =C'SERVER=',0(R2)
+         JLNE  PRC03
+         MVC   COMSERVR,7(R2)
+         J     PRC00
+*
+PRC03    DS    0H
+         CLC   =C'SYMBOL_DELIMITER=',0(R2)
+         JLNE  PRC04
+         MVC   COMDELIM,17(R2)
+         J     PRC00
+*
+PRC04    DS    0H
+         CLC   =C'DOC_SEGMENTS=',0(R2)
+         JLNE  PRC06
+         MVC   COMSEGS,13(R2)
+         J     PRC00
+*
+PRC06    DS    0H
+         CLC   =C'ATTACHMENT_TYPE=',0(R2)
+         JLNE  PRC08
+         MVC   COMATYP,16(R2)
+         J     PRC00
+*
+PRC08    DS    0H
+         CLC   =C'ATTACHMENT_EXTENSION=',0(R2)
+         JLNE  PRC10
+         MVC   COMAEXT,21(R2)
+         J     PRC00
+*
+PRC10    DS    0H
+         CLC   =C'FROM_ADDRESS=',0(R2)
+         JLNE  PRC11
+         MVC   COMFROM,13(R2)
+         LAY   R1,COMFROM+L'COMFROM-1
+PRC10L   DS    0H
+         CLIY  0(R1),C' '
+         JLNE  PRC00
+         MVIY  0(R1),X'00'
+         JCTG  R1,PRC10L
+         J     PRC00
+*
+PRC11    DS    0H
+         CLC   =C'FROM_NAME=',0(R2)
+         JLNE  PRC12
+         MVC   COMNAME,10(R2)
+         LAY   R1,COMNAME+L'COMNAME-1
+PRC11L   DS    0H
+         CLIY  0(R1),C' '
+         JLNE  PRC00
+         MVIY  0(R1),X'00'
+         JCTG  R1,PRC11L
+         J     PRC00
+*
+PRC12    DS    0H
+         CLC   =C'SUBJECT=',0(R2)
+         JLNE  PRC14
+         MVC   COMSUBJ,8(R2)
+         LAY   R1,COMSUBJ+L'COMSUBJ-1
+PRC12L   DS    0H
+         CLIY  0(R1),C' '
+         JLNE  PRC00
+         MVIY  0(R1),X'00'
+         JCTG  R1,PRC12L
+         J     PRC00
+*
+PRC14    DS    0H
+         CLC   =C'SEG01_TEMPLATE=',0(R2)
+         JLNE  PRC16
+         MVC   COM01TMP,15(R2)
+         J     PRC00
+*
+PRC16    DS    0H
+         CLC   =C'SEG01_TSQNAME=',0(R2)
+         JLNE  PRC18
+         MVC   COM01TSQ,14(R2)
+         J     PRC00
+*
+PRC18    DS    0H
+         CLC   =C'SEG02_TEMPLATE=',0(R2)
+         JLNE  PRC20
+         MVC   COM02TMP,15(R2)
+         J     PRC00
+*
+PRC20    DS    0H
+         CLC   =C'SEG02_TSQNAME=',0(R2)
+         JLNE  PRC22
+         MVC   COM02TSQ,14(R2)
+         J     PRC00
+*
+PRC22    DS    0H
+         CLC   =C'SEG03_TEMPLATE=',0(R2)
+         JLNE  PRC24
+         MVC   COM03TMP,15(R2)
+         J     PRC00
+*
+PRC24    DS    0H
+         CLC   =C'SEG03_TSQNAME=',0(R2)
+         JLNE  PRC26
+         MVC   COM03TSQ,14(R2)
+         J     PRC00
+*
+PRC26    DS    0H
+         CLC   =C'SEG04_TEMPLATE=',0(R2)
+         JLNE  PRC28
+         MVC   COM04TMP,15(R2)
+         J     PRC00
+*
+PRC28    DS    0H
+         CLC   =C'SEG04_TSQNAME=',0(R2)
+         JLNE  PRC30
+         MVC   COM04TSQ,14(R2)
+         J     PRC00
+*
+PRC30    DS    0H
+         CLC   =C'SEG01_BIN_DSNAME=',0(R2)
+         JLNE  PRC32
+         MVC   BINDSN,17(R2)
+         J     PRC00
+*
+PRC32    DS    0H
+         CLC   =C'SEG01_TO=',0(R2)
+         JLNE  PRC34
+         LAY   R3,99(,R2)
+PRC32L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC32M
+         JCTG  R3,PRC32L
+PRC32M   DS    0H
+         LAY   R2,9(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TOBUFLN
+         LAY   R1,2(,R1)
+         STG   R1,TOBUFLN
+         LG    R1,TOBUFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         LAY   R1,0(R3,R1)
+         MVIY  1(R1),X'00'
+         LAY   R1,2(,R1)
+         STG   R1,TOBUFP@
+         J     PRC00
+*
+PRC34    DS    0H
+         CLC   =C'SEG01_CC=',0(R2)
+         JLNE  PRC36
+         LAY   R3,99(,R2)
+PRC34L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC34M
+         JCTG  R3,PRC34L
+PRC34M   DS    0H
+         LAY   R2,9(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,CCBUFLN
+         LAY   R1,2(,R1)
+         STG   R1,CCBUFLN
+         LG    R1,CCBUFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),X'00'
+         LAY   R1,2(,R1)
+         STG   R1,CCBUFP@
+         J     PRC00
+*
+PRC36    DS    0H
+         CLC   =C'SEG01_SYMBOL=',0(R2)
+         JLNE  PRC38
+         LAY   R3,99(,R2)
+PRC36L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC36M
+         JCTG  R3,PRC36L
+PRC36M   DS    0H
+         LAY   R2,13(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM1BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM1BFLN
+         LG    R1,SM1BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM1BFP@
+         J     PRC00
+*
+PRC38    DS    0H
+         CLC   =C'SEG04_SYMBOL=',0(R2)
+         JLNE  PRC40
+         OC    COM04TSQ,COM04TSQ
+         JLNZ  PRC38Q
+         MVC   COM04TSQ,=C'EXSMTP04'
+PRC38Q   DS    0H
+         LAY   R3,99(,R2)
+PRC38L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC38M
+         JCTG  R3,PRC38L
+PRC38M   DS    0H
+         LAY   R2,13(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM4BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM4BFLN
+         LG    R1,SM4BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM4BFP@
+         J     PRC00
+*
+PRC40    DS    0H
+         CLC   =C'SEG02_SYMBOL_01=',0(R2)
+         JLNE  PRC41
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC40Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC40Q   DS    0H
+         LAY   R3,99(,R2)
+PRC40L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC40M
+         JCTG  R3,PRC40L
+PRC40M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM21BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM21BFLN
+         LG    R1,SM21BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM21BFP@
+         J     PRC00
+*
+PRC41    DS    0H
+         CLC   =C'SEG02_SYMBOL_02=',0(R2)
+         JLNE  PRC42
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC41Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC41Q   DS    0H
+         LAY   R3,99(,R2)
+PRC41L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC41M
+         JCTG  R3,PRC41L
+PRC41M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM22BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM22BFLN
+         LG    R1,SM22BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM22BFP@
+         J     PRC00
+*
+PRC42    DS    0H
+         CLC   =C'SEG02_SYMBOL_03=',0(R2)
+         JLNE  PRC43
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC42Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC42Q   DS    0H
+         LAY   R3,99(,R2)
+PRC42L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC42M
+         JCTG  R3,PRC42L
+PRC42M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM23BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM23BFLN
+         LG    R1,SM23BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM23BFP@
+         J     PRC00
+*
+PRC43    DS    0H
+         CLC   =C'SEG02_SYMBOL_04=',0(R2)
+         JLNE  PRC44
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC43Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC43Q   DS    0H
+         LAY   R3,99(,R2)
+PRC43L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC43M
+         JCTG  R3,PRC43L
+PRC43M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM24BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM24BFLN
+         LG    R1,SM24BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM24BFP@
+         J     PRC00
+*
+PRC44    DS    0H
+         CLC   =C'SEG02_SYMBOL_05=',0(R2)
+         JLNE  PRC45
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC44Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC44Q   DS    0H
+         LAY   R3,99(,R2)
+PRC44L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC44M
+         JCTG  R3,PRC44L
+PRC44M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM25BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM25BFLN
+         LG    R1,SM25BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM25BFP@
+         J     PRC00
+*
+PRC45    DS    0H
+         CLC   =C'SEG02_SYMBOL_06=',0(R2)
+         JLNE  PRC46
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC45Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC45Q   DS    0H
+         LAY   R3,99(,R2)
+PRC45L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC45M
+         JCTG  R3,PRC45L
+PRC45M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM26BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM26BFLN
+         LG    R1,SM26BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM26BFP@
+         J     PRC00
+*
+PRC46    DS    0H
+         CLC   =C'SEG02_SYMBOL_07=',0(R2)
+         JLNE  PRC47
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC46Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC46Q   DS    0H
+         LAY   R3,99(,R2)
+PRC46L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC46M
+         JCTG  R3,PRC46L
+PRC46M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM27BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM27BFLN
+         LG    R1,SM27BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM27BFP@
+         J     PRC00
+*
+PRC47    DS    0H
+         CLC   =C'SEG02_SYMBOL_08=',0(R2)
+         JLNE  PRC48
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC47Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC47Q   DS    0H
+         LAY   R3,99(,R2)
+PRC47L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC47M
+         JCTG  R3,PRC47L
+PRC47M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM28BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM28BFLN
+         LG    R1,SM28BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM28BFP@
+         J     PRC00
+*
+PRC48    DS    0H
+         CLC   =C'SEG02_SYMBOL_09=',0(R2)
+         JLNE  PRC50
+         OC    COM02TSQ,COM02TSQ
+         JLNZ  PRC48Q
+         MVC   COM02TSQ,=C'EXSMTP02'
+PRC48Q   DS    0H
+         LAY   R3,99(,R2)
+PRC48L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC48M
+         JCTG  R3,PRC48L
+PRC48M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM29BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM29BFLN
+         LG    R1,SM29BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM29BFP@
+         J     PRC00
+*
+PRC50    DS    0H
+         CLC   =C'SEG03_SYMBOL_01=',0(R2)
+         JLNE  PRC51
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC50Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC50Q   DS    0H
+         LAY   R3,99(,R2)
+PRC50L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC50M
+         JCTG  R3,PRC50L
+PRC50M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM31BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM31BFLN
+         LG    R1,SM31BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM31BFP@
+         J     PRC00
+*
+PRC51    DS    0H
+         CLC   =C'SEG03_SYMBOL_02=',0(R2)
+         JLNE  PRC52
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC51Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC51Q   DS    0H
+         LAY   R3,99(,R2)
+PRC51L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC51M
+         JCTG  R3,PRC51L
+PRC51M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM32BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM32BFLN
+         LG    R1,SM32BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM32BFP@
+         J     PRC00
+*
+PRC52    DS    0H
+         CLC   =C'SEG03_SYMBOL_03=',0(R2)
+         JLNE  PRC53
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC52Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC52Q   DS    0H
+         LAY   R3,99(,R2)
+PRC52L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC52M
+         JCTG  R3,PRC52L
+PRC52M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM33BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM33BFLN
+         LG    R1,SM33BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM33BFP@
+         J     PRC00
+*
+PRC53    DS    0H
+         CLC   =C'SEG03_SYMBOL_04=',0(R2)
+         JLNE  PRC54
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC53Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC53Q   DS    0H
+         LAY   R3,99(,R2)
+PRC53L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC53M
+         JCTG  R3,PRC53L
+PRC53M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM34BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM34BFLN
+         LG    R1,SM34BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM34BFP@
+         J     PRC00
+*
+PRC54    DS    0H
+         CLC   =C'SEG03_SYMBOL_05=',0(R2)
+         JLNE  PRC55
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC54Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC54Q   DS    0H
+         LAY   R3,99(,R2)
+PRC54L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC54M
+         JCTG  R3,PRC54L
+PRC54M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM35BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM35BFLN
+         LG    R1,SM35BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM35BFP@
+         J     PRC00
+*
+PRC55    DS    0H
+         CLC   =C'SEG03_SYMBOL_06=',0(R2)
+         JLNE  PRC56
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC55Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC55Q   DS    0H
+         LAY   R3,99(,R2)
+PRC55L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC55M
+         JCTG  R3,PRC55L
+PRC55M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM36BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM36BFLN
+         LG    R1,SM36BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM36BFP@
+         J     PRC00
+*
+PRC56    DS    0H
+         CLC   =C'SEG03_SYMBOL_07=',0(R2)
+         JLNE  PRC57
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC56Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC56Q   DS    0H
+         LAY   R3,99(,R2)
+PRC56L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC56M
+         JCTG  R3,PRC56L
+PRC56M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM37BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM37BFLN
+         LG    R1,SM37BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM37BFP@
+         J     PRC00
+*
+PRC57    DS    0H
+         CLC   =C'SEG03_SYMBOL_08=',0(R2)
+         JLNE  PRC58
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC57Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC57Q   DS    0H
+         LAY   R3,99(,R2)
+PRC57L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC57M
+         JCTG  R3,PRC57L
+PRC57M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM38BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM38BFLN
+         LG    R1,SM38BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM38BFP@
+         J     PRC00
+*
+PRC58    DS    0H
+         CLC   =C'SEG03_SYMBOL_09=',0(R2)
+         JLNE  PRC60
+         OC    COM03TSQ,COM03TSQ
+         JLNZ  PRC58Q
+         MVC   COM03TSQ,=C'EXSMTP03'
+PRC58Q   DS    0H
+         LAY   R3,99(,R2)
+PRC58L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC58M
+         JCTG  R3,PRC58L
+PRC58M   DS    0H
+         LAY   R2,16(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,SM39BFLN
+         LAY   R1,2(,R1)
+         STG   R1,SM39BFLN
+         LG    R1,SM39BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         MVIY  1(R1),C'&&'
+         LAY   R1,2(,R1)
+         STG   R1,SM39BFP@
+         J     PRC00
+*
+PRC60    DS    0H
+         CLC   =C'SEG01_TEXT_01=',0(R2)
+         JLNE  PRC61
+         LAY   R3,99(,R2)
+PRC60L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC60M
+         JCTG  R3,PRC60L
+PRC60M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX1BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX1BFLN
+         LG    R1,TX1BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX1BFP@
+         J     PRC00
+*
+PRC61    DS    0H
+         CLC   =C'SEG01_TEXT_02=',0(R2)
+         JLNE  PRC62
+         LAY   R3,99(,R2)
+PRC61L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC61M
+         JCTG  R3,PRC61L
+PRC61M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX2BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX2BFLN
+         LG    R1,TX2BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX2BFP@
+         J     PRC00
+*
+PRC62    DS    0H
+         CLC   =C'SEG01_TEXT_03=',0(R2)
+         JLNE  PRC63
+         LAY   R3,99(,R2)
+PRC62L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC62M
+         JCTG  R3,PRC62L
+PRC62M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX3BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX3BFLN
+         LG    R1,TX3BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX3BFP@
+         J     PRC00
+*
+PRC63    DS    0H
+         CLC   =C'SEG01_TEXT_04=',0(R2)
+         JLNE  PRC64
+         LAY   R3,99(,R2)
+PRC63L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC63M
+         JCTG  R3,PRC63L
+PRC63M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX4BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX4BFLN
+         LG    R1,TX4BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX4BFP@
+         J     PRC00
+*
+PRC64    DS    0H
+         CLC   =C'SEG01_TEXT_05=',0(R2)
+         JLNE  PRC65
+         LAY   R3,99(,R2)
+PRC64L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC64M
+         JCTG  R3,PRC64L
+PRC64M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX5BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX5BFLN
+         LG    R1,TX5BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX5BFP@
+         J     PRC00
+*
+PRC65    DS    0H
+         CLC   =C'SEG01_TEXT_06=',0(R2)
+         JLNE  PRC66
+         LAY   R3,99(,R2)
+PRC65L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC65M
+         JCTG  R3,PRC65L
+PRC65M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX6BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX6BFLN
+         LG    R1,TX6BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX6BFP@
+         J     PRC00
+*
+PRC66    DS    0H
+         CLC   =C'SEG01_TEXT_07=',0(R2)
+         JLNE  PRC67
+         LAY   R3,99(,R2)
+PRC66L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC66M
+         JCTG  R3,PRC66L
+PRC66M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX7BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX7BFLN
+         LG    R1,TX7BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX7BFP@
+         J     PRC00
+*
+PRC67    DS    0H
+         CLC   =C'SEG01_TEXT_08=',0(R2)
+         JLNE  PRC68
+         LAY   R3,99(,R2)
+PRC67L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC67M
+         JCTG  R3,PRC67L
+PRC67M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX8BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX8BFLN
+         LG    R1,TX8BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX8BFP@
+         J     PRC00
+*
+PRC68    DS    0H
+         CLC   =C'SEG01_TEXT_09=',0(R2)
+         JLNE  PRC99
+         LAY   R3,99(,R2)
+PRC68L   DS    0H
+         CLIY  0(R3),C' '
+         JLNE  PRC68M
+         JCTG  R3,PRC68L
+PRC68M   DS    0H
+         LAY   R2,14(,R2)
+         SGR   R3,R2
+         JLNP  PRC99
+         LGR   R1,R3
+         AG    R1,TX9BFLN
+         LAY   R1,1(,R1)
+         STG   R1,TX9BFLN
+         LG    R1,TX9BFP@
+         LARL  RF,EXMVC
+         EX    R3,0(,RF)
+*EXMVC   MVC   0(0,R1),0(R2)
+         AGR   R1,R3
+         LAY   R1,1(,R1)
+         STG   R1,TX9BFP@
+         J     PRC00
+*
+PRC99    DS    0H
+         MVC  PRDATA(42),=C'**** ERROR ABOVE COMMAND UNRECOGNIZED ****'
+         BRASL R9,OUT00
+         MVC   USRMAXRC,=F'4'
+         J     PRC00
+*
+EXMVC    MVC   0(0,R1),0(R2)
+*----------------------------------------------------------------------
+*  END OF SYSIN DATA
+*----------------------------------------------------------------------
+END00    DS    0H
+         LG    R1,CCBUFLN
+         LTR   R1,R1
+         JLNZ  END10
+         LAY   R1,1
+         STG   R1,CCBUFLN
+         LG    R1,CCBUFP@
+         MVIY  0(R1),X'00'
+END10    DS    0H
+         LAY   R4,TX1BF@
+         LAY   R5,9
+END15    DS    0H
+         OC    16(L'TX1BFLN,R4),16(R4)
+         JLZ   END20
+         LG    R1,8(,R4)
+         BCTGR R1,0
+         BCTGR R1,0
+         CLC   0(2,R1),=X'0D25'
+         JLE   END20
+         LG    R1,8(,R4)
+         MVC   0(2,R1),=X'0D25'
+         LG    R1,16(,R4)
+         LAY   R1,2(,R1)
+         STG   R1,16(,R4)
+END20    DS    0H
+         LAY   R4,24(,R4)
+         JCTG  R5,END15
+*
+*----------------------------------------------------------------------
+*  CALL IEB501 TO PERFORM EXCI REQUESTS
+*----------------------------------------------------------------------
+         XC    USRRSP1(L'USRRSP1+L'USRRSP2),USRRSP1
+         MVC   USRREQ,REQTRB                    "BEGIN TRACE'
+         XC    USRRSP1,USRRSP1
+         BRASL R9,CAS00
+         OC    USRRSP1,USRRSP1
+         JLZ   DPL10
+*
+         LAY   R1,IEB00504
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*
+DPL10    DS    0H
+         MVC   USRREQ,REQBEG                    "BEGIN EXCI'
+         BRASL R9,CAS00
+         OC    USRRSP1,USRRSP1
+         JLZ   DPL12
+*
+         LAY   R1,IEB00505
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*----------------------------------------------------------------------
+*  BUILD TS QUEUE #1
+*----------------------------------------------------------------------
+DPL12    DS    0H
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         MVC   USRKEY,=H'1'
+         MVC   USRKYL,=H'2'
+         LG    R4,TOBUF@                     TO TS RECORD
+         LAY   R5,TOBUFLN+6                  TO TS RECORD LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+*
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         MVC   USRKEY,=H'2'
+         MVC   USRKYL,=H'2'
+         LG    R4,CCBUF@                     TO TS RECORD
+         LAY   R5,CCBUFLN+6                  TO TS RECORD LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+*
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         MVC   USRKEY,=H'3'
+         MVC   USRKYL,=H'2'
+         LG    R4,SM1BF@                     TO TS RECORD
+         LAY   R5,SM1BFLN+6                  TO TS RECORD LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+*
+         CLIY  COMATYP,C'B'
+         JLNE  DPL12E
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         MVC   USRKEY,=H'4'
+         MVC   USRKYL,=H'2'
+         LAY   R4,BINDSN                     BIN ATTACH DSN TS RECORD
+         LAY   R5,=AL2(L'BINDSN)             BIN ATTACH DSN TS REC LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+*
+DPL12E   DS    0H
+         CLIY  COMATYP,C'T'
+         JLNE  DPL14
+         LAY   R6,TX1BF@
+         LAY   R7,9
+         MVC   USRKEY,=H'3'
+*
+DPL12L   DS    0H
+         OC    16(L'TX1BFLN,R6),16(R6)
+         JLZ   DPL14
+*
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         LH    R1,USRKEY
+         AHI   R1,1
+         STH   R1,USRKEY
+         MVC   USRKYL,=H'2'
+         LG    R4,0(,R6)                     BIN ATTACH TXT RECORD
+         LAY   R5,22(,R6)                    BIN ATTACH TXT TS REC LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+         LAY   R6,24(,R6)
+         JCTG  R7,DPL12L
+         J     DPL14
+*
+DPL13    DS    0H
+         LAY   R1,IEB00506
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*----------------------------------------------------------------------
+*  BUILD TS QUEUE #2
+*----------------------------------------------------------------------
+DPL14    DS    0H
+         LAY   R6,SM21BF@
+         OC    8(L'SM21BFLN,R6),8(R6)
+         JLZ   DPL16
+         OC    COM02TSQ,COM02TSQ
+         JLZ   DPL16
+         LAY   R7,9
+         XC    USRKEY,USRKEY
+*
+DPL14L   DS    0H
+         OC    16(L'SM21BFLN,R6),16(R6)
+         JLZ   DPL16
+*
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM02TSQ
+         MVC   USRTYP,TYPTS
+         LH    R1,USRKEY
+         AHI   R1,1
+         STH   R1,USRKEY
+         MVC   USRKYL,=H'2'
+         LG    R4,0(,R6)                     SYMBOL LIST TS RECORD
+         LAY   R5,22(,R6)                    SYMBOL LIST TS REC LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+         LAY   R6,24(,R6)
+         JCTG  R7,DPL14L
+*----------------------------------------------------------------------
+*  BUILD TS QUEUE #3
+*----------------------------------------------------------------------
+DPL16    DS    0H
+         LAY   R6,SM31BF@
+         OC    16(L'SM31BFLN,R6),16(R6)
+         JLZ   DPL19
+         OC    COM03TSQ,COM03TSQ
+         JLZ   DPL19
+         LAY   R7,9
+         XC    USRKEY,USRKEY
+*
+DPL16L   DS    0H
+         OC    16(L'SM31BFLN,R6),16(R6)
+         JLZ   DPL19
+*
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM03TSQ
+         MVC   USRTYP,TYPTS
+         LH    R1,USRKEY
+         AHI   R1,1
+         STH   R1,USRKEY
+         MVC   USRKYL,=H'2'
+         LG    R4,0(,R6)                     SYMBOL LIST TS RECORD
+         LAY   R5,22(,R6)                    SYMBOL LIST TS REC LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+         LAY   R6,24(,R6)
+         JCTG  R7,DPL16L
+*----------------------------------------------------------------------
+*  BUILD TS QUEUE #4
+*----------------------------------------------------------------------
+DPL19    DS    0H
+         LG    R6,SM4BFLN
+         LTGR  R6,R6
+         JLZ   DPL20
+         OC    COM04TSQ,COM04TSQ
+         JLZ   DPL20
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNWQ
+         MVC   USRRSC,COM04TSQ
+         MVC   USRTYP,TYPTS
+         MVC   USRKEY,=H'1'
+         MVC   USRKYL,=H'2'
+         LG    R4,SM4BF@                     TO TS RECORD
+         LAY   R5,SM4BFLN+6                  TO TS RECORD LEN
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL13
+*----------------------------------------------------------------------
+*  DPL LINK TO SEND SMTP-E BINARY ATTACHMENT
+*----------------------------------------------------------------------
+DPL20    DS    0H
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNLK
+         MVC   USRRSC,=CL8'IET131'
+         MVC   USRTYP,TYPPG
+         XC    USRKEY,USRKEY
+         XC    USRKYL,USRKYL
+         LAY   RF,USRARAL
+         STH   RF,USRARL
+         LAY   R5,USRARL
+         LAY   R4,COMMAREA
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLZ   DPL30
+*
+         LAY   R1,IEB00507
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*
+DPL30    DS    0H
+         CLIY  COMRESP,C' '                  E-MAIL SENT
+         JLE   DPL80
+         MVC   PRDATA(41),=C'<ERROR> ? RETURN CODE FROM IET131 <ERROR>'
+         MVC   PRDATA+8(1),COMRESP
+         BRASL R9,OUT00
+         MVC   USRMAXRC,=F'16'
+*----------------------------------------------------------------------
+*  DELETE TS QUEUES
+*----------------------------------------------------------------------
+DPL80    DS    0H
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNDQ
+         MVC   USRRSC,COM01TSQ
+         MVC   USRTYP,TYPTS
+         XC    USRKEY,USRKEY
+         XC    USRKYL,USRKYL
+         XC    USRARA,USRARA
+         XC    USRARL,USRARL
+         LAY   R5,USRARL
+         LAY   R4,USRARA
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLZ   DPL84
+*
+DPL82    DS    0H
+         LAY   R1,IEB00508
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*
+DPL84    DS    0H
+         OC    COM02TSQ,COM02TSQ
+         JLZ   DPL86
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNDQ
+         MVC   USRRSC,COM02TSQ
+         MVC   USRTYP,TYPTS
+         XC    USRKEY,USRKEY
+         XC    USRKYL,USRKYL
+         XC    USRARA,USRARA
+         XC    USRARL,USRARL
+         LAY   R5,USRARL
+         LAY   R4,USRARA
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL82
+*
+DPL86    DS    0H
+         OC    COM03TSQ,COM03TSQ
+         JLZ   DPL88
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNDQ
+         MVC   USRRSC,COM03TSQ
+         MVC   USRTYP,TYPTS
+         XC    USRKEY,USRKEY
+         XC    USRKYL,USRKYL
+         XC    USRARA,USRARA
+         XC    USRARL,USRARL
+         LAY   R5,USRARL
+         LAY   R4,USRARA
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL82
+*
+DPL88    DS    0H
+         OC    COM04TSQ,COM04TSQ
+         JLZ   DPL90
+         MVC   USRREQ,REQRES                    "RESOURCE"
+         MVC   USRFUN,FUNDQ
+         MVC   USRRSC,COM04TSQ
+         MVC   USRTYP,TYPTS
+         XC    USRKEY,USRKEY
+         XC    USRKYL,USRKYL
+         XC    USRARA,USRARA
+         XC    USRARL,USRARL
+         LAY   R5,USRARL
+         LAY   R4,USRARA
+         BRASL R9,CAL00
+         OC    USRRSP1,USRRSP1
+         JLNZ  DPL82
+*----------------------------------------------------------------------
+*  DISCONNECT EXCI SESSION AND TERMINATE TRACE
+*----------------------------------------------------------------------
+DPL90    DS    0H
+         MVC   USRREQ,REQEND                    "END EXCI"
+         XC    USRRSP1,USRRSP1
+         BRASL R9,CAS00
+         OC    USRRSP1,USRRSP1
+         JLZ   DPL95
+*
+         LAY   R1,IEB00509
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*
+DPL95    DS    0H
+         MVC   USRREQ,REQTRE                    "END TRACE"
+         XC    USRRSP1,USRRSP1
+         BRASL R9,CAS00
+*
+*----------------------------------------------------------------------
+*  CLOSE SYSIN AND SYSPRINT DCBS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         SAM31
+         LAY   R1,OPEN
+         LAY   R4,SYSIN
+         LAY   R5,SYSPRINT
+         CLOSE ((R4),,(R5)),                                           *
+               MODE=31,                                                *
+               MF=(E,(1))
+         SAM64
+*----------------------------------------------------------------------
+*  RETURN TO CALLER
+*----------------------------------------------------------------------
+         LGF   RF,USRMAXRC              LOAD HIGHEST RC
+         PR
+*----------------------------------------------------------------------
+*  GETMAIN STORAGE ABOVE 16M LINE
+*----------------------------------------------------------------------
+GETM31   DS    0H
+         SGR   RF,RF
+         STORAGE OBTAIN,                "TO ADDRESS" BUFFER            *
+               ADDR=(R1),                                              *
+               BNDRY=DBLWD,                                            *
+               COND=YES,                                               *
+               LENGTH=(R2),                                            *
+               LOC=31,                                                 *
+               SP=0
+         BR    R9
+*----------------------------------------------------------------------
+*  ABNORMAL TERMINATION ENTRIES
+*----------------------------------------------------------------------
+*
+ABN00    DS    0H
+         LAY   R1,IEB00501
+         J     ABN99
+*
+ABN01    DS    0H
+         LAY   R1,IEB00502
+         J     ABN99
+*
+ABN02    DS    0H
+         LAY   R1,IEB00503
+*
+ABN99    DS    0H
+         WTO   (R1),                                                   *
+               MF=(E,(1))
+         DC    H'0'                     FORCED S/0C1 ABEND
+*
+*----------------------------------------------------------------------
+*  WRITE REPORT LINES
+*----------------------------------------------------------------------
+OUT00    DS    0H
+         CLIY  REPT+8,C'M'              DATE SET
+         JLNE  OUT05                    ..YES,BRANCH
+         TIME  DEC,                                                    *
+               DBLDBLWK,                                               *
+               DATETYPE=MMDDYYYY,                                      *
+               ZONE=LT,                                                *
+               LINKAGE=SYSTEM,                                         *
+               MF=(E,TIMEPARM)
+         LTGFR RF,RF                    TIME SUCCESSFUL
+         JLNZ  OUT05                    ..NO, BRANCH
+         SGR   R0,R0                    CLR REG
+         LGF   R1,DBLWORK               LOAD MMDDYYYY
+         SLDL  R0,4                     0000000M MDDYYYY0
+         STMY  R0,R1,DBLWORK            STORE MMDDYYYY0
+         OIY   DBLWORK+7,X'0F'          SET PACKED
+         MVC   REPT+6(12),=X'402120206120206120202020'
+         ED    REPT+6(12),DBLWORK+3     EDIT DATE
+OUT05    DS    0H
+         SAM31
+         LY    R1,LC
+         LTGR  R1,R1
+         JLNZ  OUT10
+         PUT   SYSPRINT,REPT
+         PUT   SYSPRINT,REPH
+OUT10    DS    0H
+         PUT   SYSPRINT,PRBUF
+         SAM64
+         LY    R1,LC
+         AGHI  R1,1
+         CGF   R1,=F'55'
+         STY   R1,LC
+         JLL   OUT15
+         XC    LC,LC
+         AP    PC,=P'1'
+         OIY   PC+L'PC-1,X'0F'
+         UNPK  REPT+90(5),PC
+OUT15    DS    0H
+         MVIY  PRCC,C' '
+         MVC   PRDATA,PRCC
+         BR    R9
+*----------------------------------------------------------------------
+*  CALL IEB501 SHORT PARM LIST
+*----------------------------------------------------------------------
+CAS00    DS    0H
+         SYSSTATE ASCENV=P,                                            *
+               AMODE64=NO,                                             *
+               ARCHLVL=2
+         SAM31
+         LG    RF,IEB501EP                   SAVE EP @
+         CALL  (15),(USRREQ,USRFUN,USRRSP1,USRSYS),                    *
+               VL,                                                     *
+               MF=(E,PARMLIST)
+         LA    R9,0(,R9)
+         SAM64
+         BR    R9
+*----------------------------------------------------------------------
+*  CALL IEB501 LONG PARM LIST
+*----------------------------------------------------------------------
+CAL00    DS    0H
+         SAM31
+         LG    RF,IEB501EP                   LOAD EP @
+         CALL  (15),(USRREQ,USRFUN,USRRSP1,USRSYS,USRRSC,USRTYP,USRKYL,*
+               USRKEY,(R5),(R4)),                                      *
+               VL,                                                     *
+               MF=(E,PARMLIST)
+         LA    R9,0(,R9)
+         SAM64
+         BR    R9
+         SYSSTATE ASCENV=P,                                            *
+               AMODE64=YES,                                            *
+               ARCHLVL=2
+*----------------------------------------------------------------------
+*  CONSTANTS AND LITERALS
+*----------------------------------------------------------------------
+LITPOOL  DS    0D
+*
+IEB501   DC    CL8'IEB501'
+*
+REQBEG   DC    CL2'BG'
+REQEND   DC    CL2'EN'
+REQRES   DC    CL2'RS'
+REQTRB   DC    CL2'TB'
+REQTRE   DC    CL2'TE'
+*
+FUNDQ    DC    CL2'DQ'              DELETE QUEUE FUNCTION
+FUNLK    DC    CL2'LK'              DPL LINK FUNCTION
+FUNWQ    DC    CL2'WQ'              WRITE QUEUE FUNCTION
+*
+TYPPG    DC    CL2'PG'              PROGRAM TYPE
+TYPTS    DC    CL2'TS'              TEMPORARY STORAGE TYPE
+*
+TIMEPARM TIME  LINKAGE=SYSTEM,                                         *
+               MF=L
+*
+         DS    0D
+SYSINB   DCB   DCBE=SYSINE,                                            *
+               DDNAME=SYSIN,                                           *
+               MACRF=(GL),                                             *
+               DSORG=PS,                                               *
+               LRECL=100
+*
+         DS    0D
+SYSINE   DCBE  RMODE31=BUFF,                                           *
+               EODAD=END00
+SYSINL   EQU   *-SYSINB
+*
+         DS    0D
+SYSPRB   DCB   DCBE=SYSPRE,                                            *
+               DDNAME=SYSPRINT,                                        *
+               MACRF=(PM),                                             *
+               DSORG=PS,                                               *
+               LRECL=133,                                              *
+               BLKSIZE=3660,                                           *
+               RECFM=FBA
+*
+         DS    0D
+SYSPRE   DCBE  RMODE31=BUFF
+SYSPRL   EQU   *-SYSPRB
+*
+         DS    0F
+OPENLIST OPEN  (SYSINB,(INPUT),SYSPRB,(OUTPUT)),                       *
+               MODE=31,                                                *
+               MF=L
+OPENL    EQU   *-OPENLIST
+*
+RT       DC    AL1(PRNP)            REPORT HEADER
+         DC    CL132'DATE:  MM/DD/YYYY      CICS EXCI SMTP-E CALLABLE C*
+               LIENT INPUT COMMAND REPORT      PAGE:  00001'
+RH       DC    AL1(PRDS)            REPORT HEADER
+         DC    CL132' '
+*
+IEB00501 WTO   'IEB00501 - STORAGE OBTAIN FAILED, ABEND.',             *
+               MF=L
+IEB00502 WTO   'IEB00502 - SYSIN DD OPEN FAILED, ABEND.',              *
+               MF=L
+IEB00503 WTO   'IEB00503 - SYSPRINT DD OPEN FAILED, ABEND.',           *
+               MF=L
+IEB00504 WTO   'IEB00504 - EXCI TRACE BEGIN REQUEST FAILED, ABEND.',   *
+               MF=L
+IEB00505 WTO   'IEB00505 - EXCI BEGIN REQUEST FAILED, ABEND.',         *
+               MF=L
+IEB00506 WTO   'IEB00506 - EXCI WRITEQ REQUEST FAILED, ABEND.',        *
+               MF=L
+IEB00507 WTO   'IEB00507 - EXCI DPLINK REQUEST FAILED, ABEND.',        *
+               MF=L
+IEB00508 WTO   'IEB00508 - EXCI DELETEQ REQUEST FAILED, ABEND.',       *
+               MF=L
+IEB00509 WTO   'IEB00509 - EXCI END REQUEST FAILED, ABEND.',           *
+               MF=L
+*
+         LTORG
+*----------------------------------------------------------------------
+*        USER AREA BELOW 16M DSECT
+*----------------------------------------------------------------------
+*
+USER24   DSECT
+SAVEAREA DS    36F
+*
+DBLDBLWK DS    D
+DBLWORK  DS    D
+*
+IEB501EP DS    D
+PARMLIST DS    10A
+LOAD501  LOAD  SF=L
+*
+         DS    0D
+SYSIN    DS    XL(SYSINL)
+*
+         DS    0D
+SYSPRINT DS    XL(SYSPRL)
+*
+         DS    0F
+OPEN     DS    XL(OPENL)
+*
+USRMAXRC DS    F
+USRRSP1  DS    F
+USRRSP2  DS    F
+*
+TOBUF@   DS    D
+TOBUFP@  DS    D
+TOBUFLN  DS    D
+*
+CCBUF@   DS    D
+CCBUFP@  DS    D
+CCBUFLN  DS    D
+*
+SM1BF@   DS    D
+SM1BFP@  DS    D
+SM1BFLN  DS    D
+*
+SM21BF@  DS    D
+SM21BFP@ DS    D
+SM21BFLN DS    D
+*
+SM22BF@  DS    D
+SM22BFP@ DS    D
+SM22BFLN DS    D
+*
+SM23BF@  DS    D
+SM23BFP@ DS    D
+SM23BFLN DS    D
+*
+SM24BF@  DS    D
+SM24BFP@ DS    D
+SM24BFLN DS    D
+*
+SM25BF@  DS    D
+SM25BFP@ DS    D
+SM25BFLN DS    D
+*
+SM26BF@  DS    D
+SM26BFP@ DS    D
+SM26BFLN DS    D
+*
+SM27BF@  DS    D
+SM27BFP@ DS    D
+SM27BFLN DS    D
+*
+SM28BF@  DS    D
+SM28BFP@ DS    D
+SM28BFLN DS    D
+*
+SM29BF@  DS    D
+SM29BFP@ DS    D
+SM29BFLN DS    D
+*
+SM31BF@  DS    D
+SM31BFP@ DS    D
+SM31BFLN DS    D
+*
+SM32BF@  DS    D
+SM32BFP@ DS    D
+SM32BFLN DS    D
+*
+SM33BF@  DS    D
+SM33BFP@ DS    D
+SM33BFLN DS    D
+*
+SM34BF@  DS    D
+SM34BFP@ DS    D
+SM34BFLN DS    D
+*
+SM35BF@  DS    D
+SM35BFP@ DS    D
+SM35BFLN DS    D
+*
+SM36BF@  DS    D
+SM36BFP@ DS    D
+SM36BFLN DS    D
+*
+SM37BF@  DS    D
+SM37BFP@ DS    D
+SM37BFLN DS    D
+*
+SM38BF@  DS    D
+SM38BFP@ DS    D
+SM38BFLN DS    D
+*
+SM39BF@  DS    D
+SM39BFP@ DS    D
+SM39BFLN DS    D
+*
+SM4BF@   DS    D
+SM4BFP@  DS    D
+SM4BFLN  DS    D
+*
+TX1BF@   DS    D
+TX1BFP@  DS    D
+TX1BFLN  DS    D
+*
+TX2BF@   DS    D
+TX2BFP@  DS    D
+TX2BFLN  DS    D
+*
+TX3BF@   DS    D
+TX3BFP@  DS    D
+TX3BFLN  DS    D
+*
+TX4BF@   DS    D
+TX4BFP@  DS    D
+TX4BFLN  DS    D
+*
+TX5BF@   DS    D
+TX5BFP@  DS    D
+TX5BFLN  DS    D
+*
+TX6BF@   DS    D
+TX6BFP@  DS    D
+TX6BFLN  DS    D
+*
+TX7BF@   DS    D
+TX7BFP@  DS    D
+TX7BFLN  DS    D
+*
+TX8BF@   DS    D
+TX8BFP@  DS    D
+TX8BFLN  DS    D
+*
+TX9BF@   DS    D
+TX9BFP@  DS    D
+TX9BFLN  DS    D
+*
+BINDSN   DS    CL44
+*
+USRREQ   DS    CL2
+USRFUN   DS    CL2
+*
+USREXCIO DS    0CL12
+USRSYS   DS    CL8
+USRTRN   DS    CL4
+*
+USRTYP   DS    CL2
+*
+USRRSC   DS    CL8
+*
+USRKEY   DS    CL8
+USRKYL   DS    H
+USRARL   DS    H
+USRARA   DS    A
+*
+USRRC1   DS    XL4
+USRRC2   DS    XL4
+*
+LC       DS    F
+PC       DS    PL3
+*
+REPT     DS    CL133
+REPH     DS    CL133
+*
+PRBUF    DS    0CL133
+PRCC     DS    CL1
+PRNP     EQU   C'1'                     ..NEW PAGE
+PRSS     EQU   C' '                     ..SINGLE SPACE
+PRDS     EQU   C'0'                     ..DOUBLE SPACE
+PRTS     EQU   C'-'                     ..TRIPLE SPACE
+PRDATA   DS    CL132
+*
+COMMAREA DS    0XL(USRARAL)
+COMSERVR DS    CL1
+COMSEGS  DS    CL1
+COMRESP  DS    CL1
+COMATYP  DS    CL1
+COMAEXT  DS    CL3
+COMDELIM DS    XL1
+COMFROM  DS    CL60
+COMNAME  DS    CL80
+COMSUBJ  DS    CL80
+COM01TMP DS    CL48
+COM01TSQ DS    CL8
+COM02TMP DS    CL48
+COM02TSQ DS    CL8
+COM03TMP DS    CL48
+COM03TSQ DS    CL8
+COM04TMP DS    CL48
+COM04TSQ DS    CL8
+USRARAL  EQU   *-COMSERVR
+*
+USER24LN EQU   *-USER24
+*
+*----------------------------------------------------------------------
+*        DCB/DCBE DSECTS
+*----------------------------------------------------------------------
+*
+         DCBD  DSORG=PS
+*
+         IHADCBE
+*
+         END
+

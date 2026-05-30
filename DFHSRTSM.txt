@@ -1,0 +1,24 @@
+//TSSS013S JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,
+//         MSGLEVEL=(1,1),REGION=0M,NOTIFY=&SYSUID TYPRUN=SCAN
+//*
+//         JCLLIB ORDER=(CICSIE.TS51.PTABLES)
+//*
+//TABLEASM EXEC $GENTABL,
+//         NAME='PROD.SYSLIB'
+//SYSUT1   DD   *
+SRTSM    TITLE 'SRTSM:  CICS/TS V5.1 COMMON SYSTEM RECOVERY TABLE'
+         DFHSRT TYPE=INITIAL,                                          *
+               SUFFIX=SM
+*
+         DFHSRT TYPE=SYSTEM,                                           *
+               ABCODE=(106,306,406,53E,702,706,806,906,A06),           *
+               RECOVER=YES
+*
+         DFHSRT TYPE=SYSTEM,       CPSM ABEND RECOVERY                 *
+               ABCODE=(052,053,067,0D3,0D4,0D5,0D6,0D7,0D8,0E0,202),   *
+               RECOVER=YES
+*
+         DFHSRT TYPE=FINAL
+         END   DFHSRTBA
+/*
+

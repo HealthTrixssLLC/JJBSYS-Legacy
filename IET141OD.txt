@@ -1,0 +1,1823 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IET141   TITLE '**  CICS/TS HTTP UPS XML TOOLS CALLABLE CLIENT  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IET141   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IET141   RSECT
+IET141   AMODE 31
+IET141   RMODE ANY
+IET141   DFHEIENT CODEREG=(12,11),                                     *
+               DATAREG=(13),                                           *
+               EIBREG=(10)
+*
+         LA    RC,LITPOOL
+         LA    RB,2048(,RB)
+         LA    RB,2048(,RB)
+         DROP  12,11
+         USING LITPOOL,RC,RB
+*
+         MVC   EISEYE,=CL16'IET141 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         L     R1,=A(MSG03)             Load MSG03 @
+         MVC   MSG3,0(R1)               SET MSG3
+         XC    SESTOKEN,SESTOKEN        CLR SESSION TOKEN
+         MVC   POST,DFHVALUE(POST)
+         MVC   CONVERT,DFHVALUE(CLICONVERT)
+*----------------------------------------------------------------------
+*        Obtain System Environment
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('IEP110'),                                      *
+               COMMAREA(SYSENV),                                       *
+               LENGTH(=AL2(SYSMIN))
+*----------------------------------------------------------------------
+*        Verify Caller's Parameters
+*----------------------------------------------------------------------
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH
+         JL    ABN01                    ..NO CHOICE BUT ABEND
+         EXEC  CICS,                                                   *
+               ADDRESS,                                                *
+               COMMAREA(R9),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND
+         JNE   ABN02                    ..NO CHOICE BUT ABEND
+         USING COMPARM,R9
+*
+         LA    R2,COMMIN                LOAD MIN COMMAREA LEN
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH
+         MVI   RESPSAVE,COMRSPCL        LOAD INVALID COMMAREA LEN
+         CR    R1,R2                    COMMAREA LARGE ENOUGH
+         JL    XIT00                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*        Verify TCP/IP is active
+*----------------------------------------------------------------------
+         MVI   RESPSAVE,COMRSPNO        LOAD CICS TCP/IP NOT OPEN
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TCPIP,                                                  *
+               OPENSTATUS(FULWORK)
+         CLC   FULWORK,DFHVALUE(OPEN)   TCP/IP ACTIVE
+         JNE   XIT00                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*        Verify UPS Access Request Template
+*----------------------------------------------------------------------
+         MVI   RESPSAVE,COMRSTMA        SET UPS ACCESS TEMPLATE ERROR
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(DOCTMPAC),                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Verify TS Queue Name is Valid
+*----------------------------------------------------------------------
+         MVI   RESPSAVE,COMRSPQE        SET CALLER TS QUEUE ERROR
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TSQUEUE(COMSGTSQ),                                      *
+               NUMITEMS(TSQITEMS),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Verify UPS Tool Request Code
+*----------------------------------------------------------------------
+         MVI   COMUPOD,COMUPODN         Set POD Letter Absent
+         MVI   COMUSIG,COMUSIGN         Set POD Signature Absent
+         XC    HTMGIFSW,HTMGIFSW        Set HTM/GIF Switch
+         MVI   RESPSAVE,COMRSPTE        Set Caller Request Error
+*
+         CLI   COMTOL,COMTOLSA          UPS ShipmentAccept Tool
+         JE    ACC00                    ..Yes, Branch
+         CLI   COMTOL,COMTOLSC          UPS ShipmentConfirm Tool
+         JE    CON00                    ..Yes, Branch
+         CLI   COMTOL,COMTOLTK          UPS Tracking Tool
+         JE    TRK00                    ..Yes, Branch
+         CLI   COMTOL,COMTOLTN          UPS TimeInTransit Tool
+         JE    TNT00                    ..Yes, Branch
+         CLI   COMTOL,COMTOLVD          UPS Void Shipment Tool
+         JE    VOD00                    ..Yes, Branch
+         J     XIT00
+*----------------------------------------------------------------------
+*        ShipmentAccept Tool Document Construction
+*----------------------------------------------------------------------
+ACC00    DS    0H
+         LA    R5,=CL8'UPSHPAP'
+         CLI   SYSENV,SYSENVP
+         JE    CON05
+         LA    R5,=CL8'UPSHPAT'
+*----------------------------------------------------------------------
+*        Verify UPS ShipmentAccept Request Template
+*----------------------------------------------------------------------
+ACC05    DS    0H
+         MVI   RESPSAVE,COMRSHPC        Set UPS ShipAccept Template Err
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSHPARQ'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Create UPS ShipmentAccept Request XML Document
+*----------------------------------------------------------------------
+         CLI   SYSENV,SYSENVP
+         JE    ACC07
+         LA    R1,UPSACCLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACC),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     ACC08
+ACC07    DS    0H
+         LA    R1,UPSACPLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACP),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+ACC08    DS    0H
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    ACC10
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+ACC10    DS    0H
+         MVI   RESPSAVE,COMRSITM        SET CALLER TS QUEUE ITEM ERROR
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               UNESCAPED,                                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    ACC20
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+ACC20    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSHPARQ'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC00
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        ShipmentConfirm Tool Document Construction
+*----------------------------------------------------------------------
+CON00    DS    0H
+         LA    R5,=CL8'UPSHPCP'
+         CLI   SYSENV,SYSENVP
+         JE    CON05
+         LA    R5,=CL8'UPSHPCT'
+*----------------------------------------------------------------------
+*        Verify UPS ShipmentConfirm Request Template
+*----------------------------------------------------------------------
+CON05    DS    0H
+         MVI   RESPSAVE,COMRSHPC        Set UPS ShipConf Template Err
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSHPCRQ'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSHPCPK'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSHPCND'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Create UPS ShipmentConfirm Request XML Document
+*----------------------------------------------------------------------
+         CLI   SYSENV,SYSENVP
+         JE    CON07
+         LA    R1,UPSACCLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACC),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     CON08
+CON07    DS    0H
+         LA    R1,UPSACPLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACP),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+CON08    DS    0H
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON10
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+CON10    DS    0H
+         MVI   RESPSAVE,COMRSITM        SET CALLER TS QUEUE ITEM ERROR
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON20
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+CON20    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSHPCRQ'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON30
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+CON30    DS    0H
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               NEXT,                                                   *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   CON50
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON40
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+CON40    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSHPCPK'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    CON30
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+CON50    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSHPCND'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC00
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        Tracking Tool Document Construction
+*----------------------------------------------------------------------
+TRK00    DS    0H
+         LA    R5,=CL8'UPSTRKP'
+         CLI   SYSENV,SYSENVP
+         JE    TRK05
+         LA    R5,=CL8'UPSTRKT'
+*----------------------------------------------------------------------
+*        Verify UPS Tracking Request template
+*----------------------------------------------------------------------
+TRK05    DS    0H
+         MVI   RESPSAVE,COMRSTMT        Set UPS Tracking Template Err
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSTRKRQ'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Create UPS Tracking Request XML Document
+*----------------------------------------------------------------------
+         CLI   SYSENV,SYSENVP
+         JE    TRK07
+         LA    R1,UPSACCLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACC),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     TRK08
+TRK07    DS    0H
+         LA    R1,UPSACPLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACP),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+TRK08    DS    0H
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    TRK10
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+TRK10    DS    0H
+         MVI   RESPSAVE,COMRSITM        SET CALLER TS QUEUE ITEM ERROR
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    TRK20
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+TRK20    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSTRKRQ'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC00
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        TimeInTransit Tool Document Construction
+*----------------------------------------------------------------------
+TNT00    DS    0H
+         LA    R5,=CL8'UPSTNTP'
+         CLI   SYSENV,SYSENVP
+         JE    TNT05
+         LA    R5,=CL8'UPSTNTT'
+*----------------------------------------------------------------------
+*        Verify UPS TimeInTransit Request template
+*----------------------------------------------------------------------
+TNT05    DS    0H
+         MVI   RESPSAVE,COMRSTNT        Set TimeInTransit Template Err
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSTNTRQ'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Create UPS TimeInTransit Request XML Document
+*----------------------------------------------------------------------
+         CLI   SYSENV,SYSENVP
+         JE    TNT07
+         LA    R1,UPSACCLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACC),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     TNT08
+TNT07    DS    0H
+         LA    R1,UPSACPLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACP),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+TNT08    DS    0H
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    TNT10
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+TNT10    DS    0H
+         MVI   RESPSAVE,COMRSITM        SET CALLER TS QUEUE ITEM ERROR
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    TNT20
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+TNT20    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSTNTRQ'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC00
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        VoidShipment Tool Document Construction
+*----------------------------------------------------------------------
+VOD00    DS    0H
+         LA    R5,=CL8'UPSHPVP'
+         CLI   SYSENV,SYSENVP
+         JE    VOD05
+         LA    R5,=CL8'UPSHPVT'
+*----------------------------------------------------------------------
+*        Verify UPS VoidShipment Request template
+*----------------------------------------------------------------------
+VOD05    DS    0H
+         MVI   RESPSAVE,COMRSTMV        Set VoidShipment Template Err
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(=CL48'UPSHPVRQ'),                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+*----------------------------------------------------------------------
+*        Create UPS VoidShipment Request XML Document
+*----------------------------------------------------------------------
+         CLI   SYSENV,SYSENVP
+         JE    VOD07
+         LA    R1,UPSACCLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACC),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     VOD08
+VOD07    DS    0H
+         LA    R1,UPSACPLN
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               CREATE,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(DOCTMPAC),                                     *
+               SYMBOLLIST(UPSACP),                                     *
+               LISTLENGTH(FULWORK),                                    *
+               DELIMITER('&&'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+VOD08    DS    0H
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    VOD10
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+VOD10    DS    0H
+         MVI   RESPSAVE,COMRSITM        SET CALLER TS QUEUE ITEM ERROR
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               ITEM(=H'1'),                                            *
+               SET(R2),                                                *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               SET,                                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               SYMBOLLIST(0(R2)),                                      *
+               LENGTH(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    VOD20
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT CREATE INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT CREATE NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT CREATE SYMBOLERR
+         CLC   RESP,DFHRESP(SYMBOLERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT CREATE TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+VOD20    DS    0H
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               INSERT,                                                 *
+               DOCTOKEN(DOCTOKEN),                                     *
+               DOCSIZE(DOCSIZE),                                       *
+               TEMPLATE(=CL48'UPSHPVRQ'),                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC00
+         MVI   RESPSAVE,COMRSDOC        SET DOCUMENT INSERT INVREQ
+         CLC   RESP,DFHRESP(INVREQ)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOD        SET DOCUMENT INSERT NOTFND
+         CLC   RESP,DFHRESP(NOTFND)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOE        SET DOCUMENT INSERT SYMBOLERR
+         CLC   RESP,DFHRESP(TEMPLATERR)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSDOF        SET DOCUMENT INSERT TEMPLATERR
+         J     XIT00                    RETURN RESP CODE
+*----------------------------------------------------------------------
+*        Converse with UPS XML Tools Server
+*----------------------------------------------------------------------
+WBC00    DS    0H
+*
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               INITIMG(=X'00'),                                        *
+               SET(R2),                                                *
+               FLENGTH(DOCSIZE)
+*
+         EXEC  CICS,                                                   *
+               DOCUMENT,                                               *
+               RETRIEVE,                                               *
+               DOCTOKEN(DOCTOKEN),                                     *
+               INTO(0(,R2)),                                           *
+               LENGTH(DOCSIZE),                                        *
+               MAXLENGTH(DOCSIZE),                                     *
+               DATAONLY
+*
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE('XMLT'),                                          *
+               FROM(0(R2)),                                            *
+               LENGTH(DOCSIZE+2)
+*
+         EXEC  CICS,                                                   *
+               FREEMAIN,                                               *
+               DATAPOINTER(R2)
+*
+         EXEC  CICS,                                                   *
+               WEB,                                                    *
+               OPEN,                                                   *
+               URIMAP(0(R5)),                                          *
+               SESSTOKEN(SESTOKEN),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         MVI   RESPSAVE,COMRSWBO
+         CLC   RESP,DFHRESP(TIMEDOUT)
+         JE    XIT00
+         MVI   RESPSAVE,COMRSWBE
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         L     R5,=A(MEDIA)
+*
+         EXEC  CICS,                                                   *
+               WEB,                                                    *
+               CONVERSE,                                               *
+               SESSTOKEN(SESTOKEN),                                    *
+               CLIENTCONV(CONVERT),                                    *
+               DOCTOKEN(DOCTOKEN),                                     *
+               MEDIATYPE(0(R5)),                                       *
+               METHOD(POST),                                           *
+               SET(R2),                                                *
+               STATUSCODE(STATCODE),                                   *
+               STATUSLEN(STATLEN),                                     *
+               STATUSTEXT(STATTEXT),                                   *
+               TOLENGTH(TOLEN),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         ST    R2,TOADDR
+         LH    R1,STATCODE
+         CVD   R1,DBLWORK
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         UNPK  COMHTTPC,DBLWORK+6(2)
+         MVI   RESPSAVE,COMRSWBC
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   XIT00
+         CLC   COMHTTPC,=C'200'
+         JNE   XIT00
+         L     R1,TOADDR
+         LTR   R1,R1
+         JZ    XIT00
+         OC    TOLEN,TOLEN
+         JZ    XIT00
+*
+         MVI   RESPSAVE,COMRSPOK        SET CALLER NORMAL RESPONSE
+         L     R2,TOADDR
+         L     R1,TOLEN
+         ST    R1,DBLWORK
+WBC01    DS    0H
+         C     R1,=A(30000)
+         JNH   WBC02
+         S     R1,=A(30000)
+         ST    R1,DBLWORK
+         L     R1,=A(30000)
+         MVI   RESPSAVE,COMRSMTS        Set Multi TS RECS for XML RSP
+         J     WBC03
+WBC02    DS    0H
+         XC    DBLWORK,DBLWORK
+WBC03    DS    0H
+         STH   R1,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               QUEUE(COMSGTSQ),                                        *
+               FROM(0(R2)),                                            *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   WBC04
+*
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE('XMLT'),                                          *
+               FROM(0(R2)),                                            *
+               LENGTH(HLFWORK)
+*
+         A     R2,=A(30000)
+         L     R1,DBLWORK
+         LTR   R1,R1
+         JNZ   WBC01                    ..Loop
+         J     WBC05                    ..Continue
+WBC04    DS    0H
+         MVI   RESPSAVE,COMRSPUT        SET CALLER TSQ WRITE ERROR
+         J     XIT00
+*----------------------------------------------------------------------
+*        Process Tracking Responses and POD Letters
+*----------------------------------------------------------------------
+WBC05    DS    0H
+         CLI   COMTOL,COMTOLTK          UPS Tracking Tool
+         JNE   XIT00                    ..No, Branch
+         CLC   EIBTRNID,=CL4'EXCU'      UPS EXCI TranID
+         JNE   XIT00                    ..No, Branch
+         MVC   TRACKNUM,=CL64' '
+         MVI   TRACKIDX,C'0'
+         MVI   TRKHTMIX,C'0'
+         MVI   TRKGIFIX,C'0'
+         MVI   SAVTSQ,C'#'
+         EXEC  CICS,                                                   *
+               ASKTIME,                                                *
+               ABSTIME(DBLWORK)
+         OI    DBLWORK+L'DBLWORK-1,X'0F'
+         UNPK  SAVTSQ+1(L'SAVTSQ-1),DBLWORK+4(4)
+         EXEC  CICS,                                                   *
+               ENQ,   ,                                                *
+               RESOURCE(SAVTSQ),                                       *
+               LENGTH(=AL2(L'SAVTSQ)),                                 *
+               TASK
+         L     R2,TOADDR
+         L     R3,TOLEN
+*----------------------------------------------------------------------
+*        SETUP C:E PARMS for UPSFTPOD Mailbox
+*----------------------------------------------------------------------
+WBC20    DS    0H
+         MVI   HTMGIFSW,C' '            Clr GIF Switch
+         MVI   VBQREQ,VBQREQAD
+         XC    VBQRSP,VBQRSP
+         MVI   VBQSTR,VBQSTRFL
+         MVC   VBQCESYS,=CL8'IEPCCMBX'
+         MVC   VBQCEMBX,=CL8'UPSFTPOD'
+         MVC   VBQTSQ,SAVTSQ
+         MVC   VBQCEBID,=CL64' '
+         MVC   VBQCEBNO,=CL64' '
+         MVI   VBQCEXMT,C'Y'
+         MVI   VBQCEMXT,C'N'
+         MVI   VBQCEOXT,C'Y'
+         MVI   VBQCEOEX,C'N'
+*----------------------------------------------------------------------
+*        Parse UPS Signature Tracking Response
+*----------------------------------------------------------------------
+WBC22    DS    0H
+         CLC   =C'<TrackingNumber>',0(R2)
+         JE    WBC30
+         CLC   =C'<HTMLImage>',0(R2)
+         JE    WBC40
+         CLC   =C'<GraphicImage>',0(R2)
+         JE    WBC40
+         LA    R2,1(,R2)
+         JCT   R3,WBC22
+         J     WBC60
+*
+WBC25    DS    0H
+         LA    R2,1(,R2)
+         JCT   R3,WBC20
+         J     WBC60
+*----------------------------------------------------------------------
+*        Process Tracking Number
+*----------------------------------------------------------------------
+WBC30    DS    0H
+         MVI   TRACKSFX,X'C0'           Initial Key Suffix
+         LA    R4,16(,R2)               <TrackingNumber>
+         LR    R5,R4
+WBC32    DS    0H
+         CLI   0(R5),C'<'
+         JE    WBC34
+         LA    R5,1(,R5)
+         J     WBC32
+WBC34    DS    0H
+         SR    R5,R4                    Tracking Number Len
+         BCTR  R5,0                     Minus 1
+         EX    R5,MVCINST               Save Tracking Number
+*MVCINST MVC   TRACKNUM(0),0(R4)
+         SR    R1,R1                    Clr Reg
+         IC    R1,TRACKSFX              Load Key Suffix
+         LA    R1,1(,R1)                Index Suffix Key
+         STC   R1,TRACKSFX              Store Key Suffix
+*
+         L     R1,=A(30000)             Load Output Area Len
+         LA    R1,L'TRACKNUM+L'TRACKSFX(,R1) Add Key Len
+         ST    R1,FULWORK               Set GETMAIN Len
+         XC    DBLWORK,DBLWORK
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               INITIMG(=X'00'),                                        *
+               SET(R6),                                                *
+               FLENGTH(FULWORK),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC35
+         MVI   RESPSAVE,COMRSFIG        SET CALLER Error RESPONSE
+         J     XIT00
+*
+WBC35    DS    0H
+         L     RE,TOADDR                Set Move Source @
+         ST    RE,DBLWORK+4             Save Move Source @
+         LR    R1,R6                    Set Move Target @
+         MVC   0(L'TRACKNUM+L'TRACKSFX,R1),TRACKNUM Set Key
+         LA    R0,L'TRACKNUM+L'TRACKSFX(,R1) Index Record @
+         L     RE,TOLEN                 Load XML Len
+WBC36    DS    0H
+         C     RE,=A(30000)
+         JNH   WBC37
+         S     RE,=A(30000)
+         ST    RE,DBLWORK
+         L     RE,=A(30000)
+WBC37    DS    0H
+         LR    R1,RE                    Set XML Copy Len
+         LA    RE,L'TRACKNUM+L'TRACKSFX(,RE) Add Key Len
+         STH   RE,HLFWORK               Set WRITE Len
+         L     RE,DBLWORK+4             Set Move Source @
+         LR    RF,R1                    Set Move Source Len
+         MVCL  R0,RE                    Move UPS XML Rsp to File @
+*
+         MVC   FILEID,=CL8'UPODXML'     Set File Write
+         L     RF,=A(FIL00)
+         BASR  R8,RF                    Perform File Write
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC38
+         MVI   RESPSAVE,COMRSFIK        SET CALLER Error RESPONSE
+         MVC   COMEXRSP,RESP+3          Save RESP code
+         J     XIT00
+*
+WBC38    DS    0H
+         OC    DBLWORK(4),DBLWORK
+         JZ    WBC39
+         L     R8,DBLWORK+4             Load Move Source @
+         AH    R8,HLFWORK               Add Last Write Len
+         BCTR  R8,0                     Minus 1
+         ST    R8,DBLWORK+4             Save Move Source @
+         SR    R8,R8                    Clr Reg
+         IC    R8,TRACKSFX              Load Key Suffix
+         LA    R8,1(,R8)                Index Suffix Key
+         STC   R8,TRACKSFX              Store Key Suffix
+         MVC   0(L'TRACKNUM+L'TRACKSFX,R6),TRACKNUM Set Key
+         LR    R1,R6
+         LA    R0,L'TRACKNUM+L'TRACKSFX(,R1) Index Record @
+         L     RE,DBLWORK               Load XML Len
+         LA    RE,1(,RE)                Plus 1
+         SH    RE,=AL2(L'TRACKNUM+L'TRACKSFX) Write Len Minus Key Len
+         XC    DBLWORK(4),DBLWORK
+         J     WBC36
+WBC39    DS    0H
+         EXEC  CICS,                                                   *
+               FREEMAIN,                                               *
+               DATAPOINTER(R6),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC25
+         MVI   RESPSAVE,COMRSFIL        SET CALLER Error RESPONSE
+         J     XIT00
+*----------------------------------------------------------------------
+*        Process HTMLImage/GraphicImage
+*----------------------------------------------------------------------
+WBC40    DS    0H
+         MVI   TRACKSFX,X'C0'           Initial Key Suffix
+         CLC   TRACKNUM(L'TRACKNUM-1),TRACKNUM+1
+         JE    WBC25
+         LA    R4,11(,R2)               <HTMLImage>
+         CLC   =C'<HTMLImage>',0(R2)
+         JE    WBC41
+         MVI   HTMGIFSW,SETGIF          Set GIF Switch
+         MVC   TRACKIDX,TRKGIFIX        Set GIF Multiple Index
+         SR    R1,R1
+         IC    R1,TRKGIFIX              Load GIF Multiple Index
+         LA    R1,1(,R1)                Index GIF Multiple Index
+         STC   R1,TRKGIFIX              Save GIF Multiple Index
+         LA    R4,14(,R2)               <GraphicImage>
+         LR    R5,R4
+         LA    R1,COMUSIG               Load POD Signature @
+         J     WBC42
+WBC41    DS    0H
+         MVI   HTMGIFSW,SETHTM          Set HTM Switch
+         MVC   TRACKIDX,TRKHTMIX        Set HTM Multiple Index
+         SR    R1,R1
+         IC    R1,TRKHTMIX              Load HTM Multiple Index
+         LA    R1,1(,R1)                Index HTM Multiple Index
+         STC   R1,TRKHTMIX              Save HTM Multiple Index
+         LR    R5,R4
+         LA    R1,COMUPOD               Load POD Letter @
+WBC42    DS    0H
+         CLI   0(R5),C'<'
+         JE    WBC44
+         LA    R5,1(,R5)
+         J     WBC42
+WBC44    DS    0H
+         SR    R5,R4
+         ST    R4,BFADDR                Save Scan @
+         LTR   R5,R5
+         JZ    WBC25
+         ST    R5,BFLEN                 Save Record Len
+         LA    RE,L'TRACKNUM+L'TRACKSFX(,R5) Add File Key len
+         ST    RE,FULWORK               Save GETMAIN Len
+*
+         MVI   0(R1),COMUPODY           Set POD Letter/Signature YES
+*
+         EXEC  CICS,                                                   *
+               GETMAIN,                                                *
+               INITIMG(=X'00'),                                        *
+               SET(R6),                                                *
+               FLENGTH(FULWORK),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC45
+         MVI   RESPSAVE,COMRSE19        SET CALLER Error RESPONSE
+         J     XIT00
+*
+WBC45    DS    0H
+         ST    R6,B64GETM               Save GETMAIN @
+*
+*----------------------------------------------------------------------
+*        Decode Base64 Processing
+*----------------------------------------------------------------------
+         L     R0,BFLEN                 LOAD Base64 LENGTH
+         SR    R1,R1                    Clr reg
+         SRDL  R0,2                     Divide by 4
+         LTR   R1,R1                    Multiple of 4
+         JNZ   WBC25                    ..No, Bypass
+         LR    RF,R0                    Save decode loop control
+*                                       EBCDIC to ASCII TRANSLATION
+         L     RE,B64GETM               Load output record @
+         LA    RE,L'TRACKNUM+L'TRACKSFX(,RE) Index Record @ Past Key
+         ST    RE,B64OPTR               Save output record @
+         XC    B64OLL(L'B64OLL+L'B64OBB),B64OLL Clr llbb
+         L     R4,BFADDR                Load Input Scan @
+*
+WBC46    DS    0H
+         MVC   FULWORK,0(R4)
+         L     R6,=A(B64TBL)
+         TR    FULWORK,0(R6)            Translate Input
+         L     R6,FULWORK               Load 4 byte input
+         SRDL  R6,6                     Save 1st 6-bits
+         SRL   R6,2                     Discard 1st 2-bits
+         SRDL  R6,6                     Save 2nd 6-bits
+         SRL   R6,2                     Discard 2nd 2-bits
+         SRDL  R6,6                     Save 3rd 6-bits
+         SRL   R6,2                     Discard 3rd 2-bits
+         SRDL  R6,6                     Save 4th 6-Bits
+         STCM  R7,B'1110',0(RE)         Save 3 byte output
+         LA    RE,3(,RE)                Index output buffer @
+         ST    RE,B64OPTR               Save output record @
+         LH    R1,B64OLL                Load output record len
+         AHI   R1,3                     Index output record len
+         STH   R1,B64OLL
+         LA    R4,4(,R4)                Index input record @
+         JCT   RF,WBC46                 ..Loop
+*----------------------------------------------------------------------
+*        Send Decoded Base64 to C:E VBQs in 30K (30000 bytes) Chunks
+*----------------------------------------------------------------------
+         L     R6,B64GETM
+         LA    R6,L'TRACKNUM+L'TRACKSFX(,R6) Index Record @ Past Key
+         MVC   B64OBB,B64OLL
+WBC50    DS    0H
+         LH    R1,B64OBB
+         LTR   R1,R1
+         JZ    WBC56
+         CHI   R1,30000
+         JNH   WBC52
+         SH    R1,=AL2(30000)
+         STH   R1,B64OBB
+         LH    R1,=AL2(30000)
+         ST    R1,FULWORK
+         J     WBC54
+WBC52    DS    0H
+         ST    R1,FULWORK
+         XC    B64OBB,B64OBB
+WBC54    DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               MAIN,                                                   *
+               QUEUE(SAVTSQ),                                          *
+               FROM(0(R6)),                                            *
+               LENGTH(FULWORK+2),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC55
+         MVI   RESPSAVE,COMRSE18        SET CALLER Error RESPONSE
+         J     XIT00
+*
+WBC55    DS    0H
+         L     R6,B64GETM               Load Record @
+         MVC   FILEID,=CL8'UPODHTM'     Set HTM File Write
+         CLI   HTMGIFSW,SETGIF          HTM/GIF Switch = GIF
+         JNE   WBC55A                   ..No, Branch
+         MVC   FILEID,=CL8'UPODGIF'     Set GIF File Write
+*
+WBC55A   DS    0H
+         LH    R1,FULWORK+2             Calc File Record Len
+         LA    R1,L'TRACKNUM+L'TRACKSFX(,R1)
+         STH   R1,HLFWORK               Set File Record Len
+         SR    R1,R1                    Clr Reg
+         IC    R1,TRACKSFX              Load Key Suffix
+         LA    R1,1(,R1)                Index Suffix Key
+         STC   R1,TRACKSFX              Store Key Suffix
+         MVC   0(L'TRACKNUM+L'TRACKSFX,R6),TRACKNUM Set Key
+*
+         L     RF,=A(FIL00)
+         BASR  R8,RF                    Perform File Write
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC50                    ..Loop
+         MVC   COMEXRSP,RESP+3          Save RESP code
+         MVI   RESPSAVE,COMRSFIS        SET HTM Error RESPONSE
+         CLI   HTMGIFSW,SETGIF          HTM/GIF Switch = GIF
+         JNE   XIT00                    ..No, Branch
+         MVI   RESPSAVE,COMRSFIU        SET GIF Error RESPONSE
+         J     XIT00
+*
+WBC56    DS    0H
+         L     R6,B64GETM
+         EXEC  CICS,                                                   *
+               FREEMAIN,                                               *
+               DATAPOINTER(R6)
+*
+         MVC   VBQCEBID(L'TRACKNUM),TRACKNUM
+         XC    SYSRSV,SYSRSV
+         MVI   SYSRSV+X'40',X'FF'
+         ST    R2,FULWORK
+         TRT   VBQCEBID,SYSRSV
+         L     R2,FULWORK
+         ST    R1,FULWORK
+         JZ    WBC49
+         LA    R0,VBQCEBID
+         SR    R1,R0
+         CHI   R1,4
+         JL    WBC49
+         L     R1,FULWORK
+         MVC   0(4,R1),=C'.htm'
+         CLC   =C'<HTMLImage>',0(R2)
+         JE    WBC47
+         MVC   0(4,R1),=C'.gif'
+*
+WBC47    DS    0H
+         CLI   SYSENV,SYSENVP           Production Evnironment
+         J     WBC49                    ..Always Branch
+******** JNE   WBC48                    ..No, Branch
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('IEE101'),                                      *
+               COMMAREA(VBQREQ),                                       *
+               LENGTH(=AL2(VBQMIN)),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC48
+         MVI   RESPSAVE,COMRSE17        SET CALLER Error RESPONSE
+         J     XIT00
+WBC48    DS    0H
+*
+         OC    VBQRSP,VBQRSP
+         JZ    WBC49
+*
+         ICM   R0,B'0011',VBQRSP
+         SRDL  R0,4
+         SRL   R1,4
+         STCM  R1,B'1000',FULWORK+3
+         SRDL  R0,4
+         SRL   R1,4
+         STCM  R1,B'1000',FULWORK+2
+         SRDL  R0,4
+         SRL   R1,4
+         STCM  R1,B'1000',FULWORK+1
+         SRDL  R0,4
+         SRL   R1,4
+         STCM  R1,B'1000',FULWORK
+         L     RE,=A(TRHEX)
+         TR    FULWORK,0(RE)
+         MVC   MSG3+(ABC03-MSG03)(L'ABC03),FULWORK
+         MVC   MSG3+(MSG03ER-MSG03)(L'MSG03ER),FULWORK
+         MVC   MSG3+(MSG03TQ-MSG03)(L'MSG03TQ),SAVTSQ
+         MVC   MSG3+(MSG03BI-MSG03)(L'MSG03BI),VBQCEBID
+*
+         MVC   FULWORK,MSG3+(ABC03-MSG03)
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSML'),                                        *
+               FROM(MSG3),                                             *
+               LENGTH(=AL2(L'MSG3)),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         EXEC  CICS,                                                   *
+               DUMP,                                                   *
+               TRANSACTION,                                            *
+               DUMPCODE(FULWORK),                                      *
+               TASK,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         MVI   RESPSAVE,COMRSVBQ        SET CALLER Error RESPONSE
+         MVC   DBLWORK+6(2),VBQRSP
+         TM    VBQRSP+1,X'0F'
+         JO    WBC59
+         TM    VBQRSP+1,X'0E'
+         JO    WBC59
+         TM    VBQRSP+1,X'0C'
+         JO    WBC59
+         TM    VBQRSP+1,X'0A'
+         JO    WBC59
+         MVI   COMVBQER,X'FF'
+         J     XIT00
+WBC59    DS    0H
+         PACK  DBLWORK,VBQRSP
+WBC57    DS    0H
+         CVB   R1,DBLWORK
+         STC   R1,COMVBQER
+         J     XIT00
+*
+WBC49    DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(SAVTSQ),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         J     WBC25
+*
+*----------------------------------------------------------------------
+*        Process XML Response
+*        SETUP C:E PARMS for MOJOFTP Mailbox
+*----------------------------------------------------------------------
+WBC60    DS    0H
+         CLC   TRACKNUM(L'TRACKNUM-1),TRACKNUM+1
+         JE    XIT00
+         MVI   VBQREQ,VBQREQAD
+         XC    VBQRSP,VBQRSP
+         MVI   VBQSTR,VBQSTRFL
+         MVC   VBQCESYS,=CL8'IEPCCMBX'
+         MVC   VBQCEMBX,=CL8'MOJOFTP '
+         MVC   VBQTSQ,SAVTSQ
+         MVC   VBQCEBID,=CL64' '
+         MVC   VBQCEBNO,=CL64' '
+         MVI   VBQCEXMT,C'Y'
+         MVI   VBQCEMXT,C'N'
+         MVI   VBQCEOXT,C'Y'
+         MVI   VBQCEOEX,C'N'
+         L     R2,TOADDR
+         L     R1,TOLEN
+         ST    R1,DBLWORK
+*----------------------------------------------------------------------
+*        Send XML Response to C:E VBQs in 30K (30000 Bytes) Chunks
+*----------------------------------------------------------------------
+WBC62    DS    0H
+         L     R1,DBLWORK
+         C     R1,=A(30000)
+         JNH   WBC63
+         S     R1,=A(30000)
+         ST    R1,DBLWORK
+         L     R1,=A(30000)
+         ST    R1,FULWORK
+         J     WBC64
+WBC63    DS    0H
+         ST    R1,FULWORK
+         XC    DBLWORK,DBLWORK
+WBC64    DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               MAIN,                                                   *
+               QUEUE(SAVTSQ),                                          *
+               FROM(0(R2)),                                            *
+               LENGTH(FULWORK+2),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC65
+         MVI   RESPSAVE,COMRSE18        SET CALLER Error RESPONSE
+         J     XIT00
+WBC65    DS    0H
+         A     R2,=A(30000)
+         OC    DBLWORK,DBLWORK
+         JNZ   WBC62
+*
+         MVC   VBQCEBID(L'TRACKNUM),TRACKNUM
+         XC    SYSRSV,SYSRSV
+         MVI   SYSRSV+X'40',X'FF'
+         TRT   VBQCEBID,SYSRSV
+         ST    R1,DBLWORK
+         JZ    WBC70
+         LA    R0,VBQCEBID
+         SR    R1,R0
+         CHI   R1,4
+         JL    WBC70
+         L     R1,DBLWORK
+         MVC   0(4,R1),=C'.xml'
+*
+         CLI   SYSENV,SYSENVP           Production Evnironment
+         J     WBC70                    ..Always Branch
+******** JNE   WBC70                    ..No, Branch
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('IEE101'),                                      *
+               COMMAREA(VBQREQ),                                       *
+               LENGTH(=AL2(VBQMIN)),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         JE    WBC66
+         MVI   RESPSAVE,COMRSE17        SET CALLER Error RESPONSE
+         J     WBC70
+*
+WBC66    DS    0H
+         OC    VBQRSP,VBQRSP
+         JNZ   WBC48
+*
+WBC70    DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(SAVTSQ),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         J     XIT00
+*----------------------------------------------------------------------
+*        File Write Routine
+*----------------------------------------------------------------------
+FIL00    DS    0H
+         EXEC  CICS,                                                   *
+               WRITE,                                                  *
+               FILE(FILEID),                                           *
+               FROM(0(R6)),                                            *
+               LENGTH(HLFWORK),                                        *
+               RIDFLD(TRACKNUM),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8                       Return to Caller
+*----------------------------------------------------------------------
+*        Error Messages and Abends
+*----------------------------------------------------------------------
+ABN01    DS    0H
+         MVI   RESPSAVE,COMRSPCL        LOAD INVALID COMMAREA LEN/@
+         L     R2,=A(MSG01)
+         LA    R3,L'MSG01
+         L     R1,=A(ABC01)
+         ICM   R4,B'1111',0(R1)
+         J     ABN99
+ABN02    DS    0H
+         MVI   RESPSAVE,COMRSPCL        LOAD INVALID COMMAREA LEN/@
+         L     R2,=A(MSG02)
+         LA    R3,L'MSG02
+         L     R1,=A(ABC02)
+         ICM   R4,B'1111',0(R1)
+         J     ABN99
+ABN99    DS    0H
+         MVC   SAVRESP,RESP
+         MVC   SAVRESP2,RESP2
+         MVC   SAVFN,EIBFN
+         MVC   SAVRC,EIBRCODE
+         STH   R3,HLFWORK
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE(=C'CSML'),                                        *
+               FROM(0(,R2)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         ST    R4,FULWORK
+         EXEC  CICS,                                                   *
+               DUMP,                                                   *
+               TRANSACTION,                                            *
+               DUMPCODE(FULWORK),                                      *
+               TASK,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*----------------------------------------------------------------------
+*        RETURN TO CICS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         OC    SESTOKEN,SESTOKEN
+         JZ    XIT10
+*
+         EXEC  CICS,                                                   *
+               WEB,                                                    *
+               CLOSE,                                                  *
+               SESSTOKEN(SESTOKEN),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         L     R2,TOADDR
+         EXEC  CICS,                                                   *
+               FREEMAIN,                                               *
+               DATAPOINTER(R2),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+XIT10    DS    0H
+         EXEC  CICS,                                                   *
+               DEQ,                                                    *
+               RESOURCE(SAVTSQ),                                       *
+               LENGTH(=AL2(L'SAVTSQ)),                                 *
+               TASK,                                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         MVC   COMRSP,RESPSAVE          SET RETURN CODE
+         EXEC  CICS,                                                   *
+               RETURN
+*
+*----------------------------------------------------------------------
+*        Constants and Literals
+*----------------------------------------------------------------------
+LITPOOL  DS   0D
+         LTORG ,
+*
+MVCINST  MVC   TRACKNUM(0),0(R4)
+*
+STATLEN  DC    A(L'STATTEXT)            HTTP RESPONSE STATUS LEN
+*
+DOCTMPAC DC    CL48'UPSACCRQ'           Access Doc template ID
+*
+TSQENQ   DC    CL16'#IET141--IEETSQ#'
+PGMENQ   DC    CL16'#IET141--IEE101#'
+*
+UPSACC   DC    0C                       <== TEST ==>
+         DC    C'ACCKEY=BBE4A73CACF40BC5'
+         DC    C'&&USERID=jjbsys'
+         DC    C'&&PASSWORD=ingram'
+UPSACCLN EQU   *-UPSACC
+*
+UPSACP   DC    0C                       <== PRODUCTION ==>
+         DC    C'ACCKEY=BBE4A73CACF40BC5'
+         DC    C'&&USERID=jjbsys'
+         DC    C'&&PASSWORD=ingram'
+UPSACPLN EQU   *-UPSACP
+*
+MEDIA    DC    CL56'text/xml'
+*
+MSG01    DC    C'IET141001  COMMAREA length passed from caller is too s*
+               mall, T141  DUMP initiated.'
+ABC01    EQU   *-21
+*
+MSG02    DC    C'IET141002  COMMAREA address can not be located, T142  *
+               DUMP initiated.'
+ABC02    EQU   *-21
+*
+MSG03    DC    C'IET141003  C:E Error='
+MSG03ER  DC    CL4'XXXX'
+         DC    C' TSQ='
+MSG03TQ  DC    CL8'XXXXXXXX'
+         DC    C' BID='
+MSG03BI  DC    CL64'XXXXXXXXXXXXXXXXXXXXXXXX'
+         DC    C', '
+ABC03    DC    CL4'XXXX'
+         DC    C' DUMP initiated.'
+MSG03LN  EQU   *-MSG03
+*
+TRHEX    DC    C'0123456789ABCDEF'
+*
+B64TBL   DC    256C' '
+         ORG   B64TBL+C'A'
+         DC    X'000102030405060708'
+         ORG   B64TBL+C'J'
+         DC    X'090A0B0C0D0E0F1011'
+         ORG   B64TBL+C'S'
+         DC    X'1213141516171819'
+         ORG   B64TBL+C'a'
+         DC    X'1A1B1C1D1E1F202122'
+         ORG   B64TBL+C'j'
+         DC    X'232425262728292A2B'
+         ORG   B64TBL+C's'
+         DC    X'2C2D2E2F30313233'
+         ORG   B64TBL+C'0'
+         DC    X'3435363738393A3B3C3D'
+         ORG   B64TBL+C'+'
+         DC    X'3E'
+         ORG   B64TBL+C'/'
+         DC    X'3F'
+         ORG
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+SAVTSQ   DS    CL8                      SAVE C:E TSQ NAME
+*
+FILEID   DS    CL8                      File ID; XML, HTM, or GIF
+*
+SESTOKEN DS    D                        WEB OPEN SESSION TOKEN
+STATCODE DS    H                        HTTP RESPONSE STATUS CODE
+*
+HLFWORK  DS    H                        HALF WORD WORK
+ITMWORK  DS    H                        TS QUEUE ITEM NUMBER
+TSQITEMS DS    H                        TS QUEUE ITEM COUNT
+*
+DOCTOKEN DS    CL16                     DOCUMENT TOKEN
+DOCSIZE  DS    F                        DOCUMENT SIZE
+*
+TOADDR   DS    A                        RESPONSE BUFFER @
+TOLEN    DS    F                        RESPONSE BUFFER LENGTH
+*
+BFADDR   DS    A                        PARSE BUFFER @
+BFLEN    DS    F                        PARSE BUFFER LENGTH
+*
+B64GETM  DS    A
+B64OPTR  DS    A
+B64OLL   DS    H
+B64OBB   DS    H
+*
+POST     DS    A                        HTTP POST METHOD VALUE
+CONVERT  DS    A                        HTTP CLIENT CODE CONVERT VALUE
+*
+STATTEXT DS    CL256                    HTTP RESPONSE STATUS TEXT
+*
+TRACKNUM DS    CL20                     TRACKING NUMBER KEY SAVE AREA
+         ORG   *-1
+TRACKIDX DS    CL1                      Tracking Number HTM/GIF Index
+         ORG
+TRACKSFX DS    CL1                      TRACKING NUMBER KEY SUFFIX
+*
+HTMGIFSW DS    CL1                      HTML/GIF Switch
+SETGIF   EQU   C'G'                     ..GIF Process
+SETHTM   EQU   C'H'                     ..HTM Process
+*
+TRKHTMIX DS    CL1                      HTML Track Key Index
+TRKGIFIX DS    CL1                      GIF  Track Key Index
+*
+RESPSAVE DS    CL1                      Response Code Save
+*
+MSG3     DS    CL(MSG03LN)
+*
+*        IEP110 COMMAREA
+*
+         DS    0D
+SYSENV   DS    CL1                      RETURN ENVIRONMENT SETTING
+SYSENVP  EQU   C'P'                     ..PRODUCTION ENVIRONMENT
+SYSENVR  EQU   C'R'                     ..TRAINING ENVIRONMENT
+SYSENVS  EQU   C'S'                     ..SYSTEM TEST ENVIRONMENT
+SYSENVT  EQU   C'T'                     ..TEST ENVIRONMENT
+*
+SYSRSV   DS    XL256                    RESERVED FOR FUTURE USE
+*
+SYSMIN   EQU   *-SYSENV                 MINIMUM COMMAREA LENGTH
+*
+*        IEE101 COMMAREA
+*
+         DS    0D
+VBQREQ   DS    CL1                  CALLERS REQUEST CODE
+VBQREQAD EQU   C'A'                 ..ADD BATCH REQUEST
+VBQREQEX EQU   C'X'                 ..EXTRACT BATCH REQUEST
+VBQRSP   DS    XL2                  C:E RESPONSE CODES
+VBQCFN   DS    XL2                  CICS FN CODE (EIBFN)
+VBQCRC   DS    XL6                  CICS R- CODE (EIBRCODE)
+VBQCEC   DS    XL4                  CICS E- CODE (EIBERRCD)
+VBQSTR   DS    CL1                  C:E STRUCTURE TYPE
+VBQSTRFL EQU   C'F'                 ..STRUCTURE=FILE
+VBQTSQ   DS    CL8                  CALLERS DATA TSQ NAME
+VBQCESYS DS    CL8                  C:E TARGET APPC SYSTEM ID
+VBQCEMBX DS    CL8                  C:E MAILBOX ID TO PUT
+VBQCEBID DS    CL64                 C:E USER BATCH ID TO PUT
+VBQCEBNO DS    CL7                  C:E VBQ BATCH NUMBER FROM PUT
+VBQCEXMT DS    CL1                  C:E TRANSMITTABLE FLAG
+VBQCEXMY EQU   C'Y'                 ..TRANSMITABLE=YES
+VBQCEMXT DS    CL1                  C:E MULTIPLE-TRANSMIT FLAG
+VBQCEMXY EQU   C'Y'                 ..MULTIPLE-TRANSMIT=YES
+VBQCEOXT DS    CL1                  C:E TRANSMIT-ONCE FLAG
+VBQCEOXY EQU   C'Y'                 ..TRANSMIT-ONCE=YES
+VBQCEOEX DS    CL1                  C:E EXTRACT-ONCE FLAG
+VBQCEOEY EQU   C'Y'                 ..EXTRACT-ONCE=YES
+*
+VBQMIN   EQU   *-VBQREQ                 MINIMUM COMMAREA LENGTH
+*
+*
+         DFHEIEND
+*----------------------------------------------------------------------
+*        CLIENT'S COMMAREA Parm List DSECT
+*----------------------------------------------------------------------
+*
+COMPARM  DSECT
+*
+COMTOL   DS    CL1                      UPS XML TOOL ID
+COMTOLSA EQU   C'A'                     ..A = ShipmentAccept Tool
+COMTOLSC EQU   C'C'                     ..C = ShipmentConfirm Tool
+COMTOLTK EQU   C'T'                     ..T = Tracking Tool
+COMTOLTN EQU   C'N'                     ..N = TimeInTransit Tool
+COMTOLVD EQU   C'V'                     ..V = VoidShipment Tool
+*
+COMRSP   DS    CL1                      RESPONSE CODE
+COMRSPOK EQU   C' '                     ..NORMAL
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LEN/ADDR
+COMRSPTE EQU   C'2'                     ..INVALID UPS TOOL ID ERROR
+COMRSE17 EQU   C'7'                     ..IEE101 LINK Error
+COMRSE18 EQU   C'8'                     ..IEE101 WRITEQ TS Error
+COMRSE19 EQU   C'9'                     ..IEE101 GETMAIN Error
+COMRSVBQ EQU   C'B'                     ..IEE101 C:E Error Response
+COMRSDOC EQU   C'C'                     ..DOCUMENT CREATE INVREQ
+COMRSDOD EQU   C'D'                     ..DOCUMENT CREATE NOTFND
+COMRSDOE EQU   C'E'                     ..DOCUMENT CREATE SYMBOLERR
+COMRSDOF EQU   C'F'                     ..DOCUMENT CREATE TEMPLATERR
+COMRSFIG EQU   C'G'                     ..XML File GETMAIN Error
+COMRSFIK EQU   C'K'                     ..XML File WRITE Error
+COMRSFIS EQU   C'S'                     ..HTM File WRITE Error
+COMRSFIU EQU   C'U'                     ..GIF File WRITE Error
+COMRSFIL EQU   C'L'                     ..XML File FREEMAIN Error
+COMRSWBC EQU   C'H'                     ..WEB CONVERSE ERROR
+COMRSWBE EQU   C'R'                     ..WEB OPEN ERROR
+COMRSWBO EQU   C'O'                     ..WEB OPEN TIMEDOUT
+COMRSPNO EQU   C'N'                     ..CICS TCP/IP NOT ACTIVE
+COMRSMTS EQU   C'M'                     ..TS QUEUE MULTI XML RESP REC
+COMRSITM EQU   C'I'                     ..TS QUEUE ITME ERROR
+COMRSPUT EQU   C'P'                     ..TS QUEUE WRITE ERROR
+COMRSPQE EQU   C'Q'                     ..TS QUEUE ID ERROR
+COMRSTMA EQU   C'A'                     ..Access TEMPLATE ERROR
+COMRSTMT EQU   C'T'                     ..Tracking TEMPLATE ERROR
+COMRSTMV EQU   C'V'                     ..VoidShipment TEMPLATE ERROR
+COMRSTNT EQU   C'W'                     ..TimeInTransit TEMPLATE ERROR
+COMRSHPA EQU   C'Y'                     ..ShipAccept TEMPLATE ERROR
+COMRSHPC EQU   C'Z'                     ..ShipConfirm TEMPLATE ERROR
+*
+COMHTTPC DS    XL3                      HTTP STATUS CODE
+*
+COMUPOD  DS    CL1                      UPS POD Letter in XML Resp
+COMUPODN EQU   C'N'                     ..No
+COMUPODY EQU   C'Y'                     ..Yes
+*
+COMUSIG  DS    CL1                      UPS POD Signature in XML Resp
+COMUSIGN EQU   C'N'                     ..No
+COMUSIGY EQU   C'Y'                     ..Yes
+*
+COMVBQER DS    XL1                      C:E Error Code (X'18') = 24
+*
+         ORG   COMVBQER
+COMEXRSP DS    CL1                      FILE RESP CODE (Not NORMAL)
+         ORG
+*
+COMSGTSQ DS    CL8                      MESSAGE SYMBOLS QUEUE ID
+*
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH
+*----------------------------------------------------------------------
+         END
+

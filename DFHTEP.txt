@@ -1,0 +1,33 @@
+DFHTEP   CSECT
+         DFHTEPM TYPE=INITIAL,                                         *
+               DSECTPR=YES,                                            *
+               OPTIONS=(TD,EXITS,TIME,NOTCAM),                         *
+               PRINT=(ERRORS,TACPACTION,TEPACTION,TID,TACLE,NODECB,ESE)
+*
+         DFHTEPM TYPE=ERRPROC,CODE=88
+TEPCD88  DS    0H
+         BAL   R14,TEPINCR
+         BZ    TEPRET
+         TM    TCTLEPF2,TCEIDTD
+         BO    TEPCD88A
+         NI    TEPCAACT,255-(ABENDT+TERMOS+LINEOS)
+         B     TEPRET
+TEPCD88A DS    0H
+         NI    TEPCAACT,255-(LINEOS+TERMOS)
+         B     TEPRET
+*
+         DFHTEPM TYPE=ERRPROC,CODE=8D
+TEPCD8D  DS    0H
+         BAL   R14,TEPINCR
+         BZ    TEPRET
+         TM    TCTLEPF2,TCEIDTD
+         BO    TEPCD8DA
+         NI    TEPCAACT,255-(ABENDT+TERMOS)
+         B     TEPRET
+TEPCD8DA DS    0H
+         NI    TEPCAACT,255-(LINEOS+TERMOS)
+         B     TEPRET
+*
+         DFHTEPM TYPE=FINAL
+         DFHEND  DFHTEPNA
+

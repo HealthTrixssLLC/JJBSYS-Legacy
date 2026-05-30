@@ -1,0 +1,876 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IEP004   TITLE '**  CICSPLEX/SM MONITOR ALERT SMTP NOTIFICATION  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IEP004   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IEP004   RSECT
+IEP004   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEP004   RMODE ANY                      MAY RESIDE ABOVE 16M
+IEP004   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IEP004 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         MVC   COMEYE,=CL16'  *COMMONAREA*  ' SET EYE CATCHER
+         J     INT00                    BRANCH AROUND DUMP ID
+         DS    0H
+         DC    CL8'IEP004'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*---------------------------------------------------------------------* 00430003
+*        CHECK TASK TYPE                                              * 00440003
+*---------------------------------------------------------------------* 00450003
+         EXEC  CICS,                                                   *00470003
+               ASSIGN,                                                 *00480003
+               FCI(TASKTYPE),                                          *00490003
+               SYSID(SYSID),                                           *00500003
+               RESP(RESP),                                             *00510003
+               RESP2(RESP2)                                             00520003
+*---------------------------------------------------------------------* 00530003
+*        HANDLE ALL ABENDS                                            * 00540003
+*---------------------------------------------------------------------* 00550003
+         EXEC  CICS,                                                   *00560003
+               HANDLE,                                                 *00570003
+               ABEND,                                                  *00580003
+               LABEL(XIT10),                                           *00590003
+               RESP(RESP),                                             *00600003
+               RESP2(RESP2)                                             00610003
+*---------------------------------------------------------------------* 00530003
+*        CHECK FOR TS QUEUE DATA                                      * 00540003
+*---------------------------------------------------------------------* 00550003
+         XC    HLFWORK,HLFWORK
+         XC    ITEM,ITEM
+         XR    RA,RA
+INT10    DS    0H
+         LTR   RA,RA
+         JZ    INT10A
+         EXEC  CICS,                                                   *00560003
+               FREEMAIN,                                               *00570003
+               DATAPOINTER(RA)
+INT10A   DS    0H
+         LH    R1,ITEM
+         AHI   R1,1
+         STH   R1,ITEM
+         EXEC  CICS,                                                   *00560003
+               READQ,                                                  *00570003
+               TS,                                                     *00580003
+               QUEUE('CPSMTASK'),                                      *00590003
+               SET(R4),                                                *
+               LENGTH(HLFWORK),                                        *
+               ITEM(ITEM),                                             *
+               RESP(RESP),                                             *00600003
+               RESP2(RESP2)                                             00610003
+         CLC   RESP,DFHRESP(NORMAL)                                     05540003
+         JNE   XIT00                                                    05550003
+         LH    R1,HLFWORK
+         ST    R1,FULWORK
+         EXEC  CICS,                                                   *00560003
+               GETMAIN,                                                *00570003
+               SET(R6),                                                *
+               FLENGTH(FULWORK)
+         LR    RA,R6
+         LH    R7,HLFWORK
+         LR    R5,R7
+         MVCL  R6,R4
+*---------------------------------------------------------------------* 00530003
+*        FORMAT CICSPLEX/SM TASK ALERT NOTIFICATION                   * 00540003
+*---------------------------------------------------------------------* 00550003
+         USING TASK,RA
+*
+INT16    DS    0H
+         LA    R0,COMPARM
+         LA    R1,COMLEN
+         LR    R2,R0
+         LR    R3,R1
+         MVCL  R0,R2                    CLR COMMAREA
+*
+         LA    R0,WTO01
+         LA    R1,WTO99LN
+         LR    R2,R0
+         XR    R3,R3
+         ICM   R3,B'1000',=X'40'
+         MVCL  R0,R2                    BLANK WTO AREA
+*
+         MVC   WTOLIST,WTOL
+         LA    R1,WTO01LN-L'WTO01
+         STH   R1,WTO01
+         LA    R1,WTO02LN-L'WTO02
+         STH   R1,WTO02
+         LA    R1,WTO03LN-L'WTO03
+         STH   R1,WTO03
+         LA    R1,WTO04LN-L'WTO04
+         STH   R1,WTO04
+*
+         MVC   WTOTIMSG,=C'IEP00404I'
+*
+         EXEC  CICS,                                                   *00470003
+               ASKTIME,                                                *00480003
+               ABSTIME(DBLWORK)                                         00490003
+*
+         MVC   COMTIMDY,=C'DATE='
+         MVC   COMTIHMS,=C'TIME='
+         EXEC  CICS,                                                   *00470003
+               FORMATTIME,                                             *00480003
+               ABSTIME(DBLWORK),                                       *00490003
+               DATESEP('/'),                                           *00490003
+               MMDDYYYY(COMNOMDY),                                     *00490003
+               TIME(COMNOHMS),                                         *00490003
+               TIMESEP(':')                                             00490003
+*
+         MVI   COMSRV,COMSRVI           SET SMTP SERVER ID
+         MVI   COMRSP,COMRSPOK          SET LINK RETURN CODE
+*
+         MVC   COMRCVID(L'RCVID1),RCVID1 SET RECEIVER ID
+         MVC   COMSNDID(L'RCVID1),RCVID1 SET SENDER ID
+*
+         MVC   COMRCVER(L'RCVNM1),RCVNM1 SET MESSAGE RECIPIENT
+         MVC   COMSNDER(L'SNDNM1),SNDNM1 SET MESSAGE SENDER
+         MVC   COMSUBJT(L'SBJECT),SBJECT SET MESSAGE SUBJECT
+*
+         MVC   COMNOCR1,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR2,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR3,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR4,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR5,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR6,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR7,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR8,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCR9,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRA,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRB,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRC,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRD,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRE,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRF,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRG,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRH,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRI,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRJ,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRK,CRLF            SET MESSAGE TEXT CR/LF
+         MVC   COMNOCRL,CRLF            SET MESSAGE TEXT CR/LF
+*
+         MVC   COMTISYS,=C'SYSTEM='
+         MVC   WTOTISYS,=C'SYSTEM='
+         MVC   COMNOSYS,TASK_EYU_CICSNAME SET CICS SYSTEM ID
+         MVC   WTONOSYS,TASK_EYU_CICSNAME SET CICS SYSTEM ID
+         MVC   COMSUBJT+SBJECTJ(L'COMNOSYS),COMNOSYS
+         MVC   COMTITSK,=C'TASK='
+         MVC   WTOTITSK,=C'TASK='
+         UNPK  COMNOTSK,TASK_TASK+1(L'TASK_TASK-1) SET TASK #
+         OI    COMNOTSK+L'COMNOTSK-1,X'F0'
+         MVC   WTONOTSK,COMNOTSK
+         MVC   COMSUBJT+SBJECTN(L'COMNOTSK),COMNOTSK
+         MVC   COMTITRN,=C'TRAN='
+         MVC   WTOTITRN,=C'TRAN='
+         MVC   COMNOTRN,TASK_TRANID     SET CICS TRANSACTION ID
+         MVC   WTONOTRN,TASK_TRANID     SET CICS TRANSACTION ID
+         MVC   COMSUBJT+SBJECTT(L'COMNOTRN),COMNOTRN
+         MVC   COMTIPGM,=C'PROGRAM='
+         MVC   WTOTIPGM,=C'PROGRAM='
+         MVC   COMNOPGM,TASK_FIRSTPRGM  SET CICS PROGRAM ID
+         MVC   WTONOPGM,TASK_FIRSTPRGM  SET CICS PROGRAM ID
+         MVC   COMTITRM,=C'FACILITY='
+         MVC   COMNOTRM,TASK_FACILITY   SET CICS TERMINAL ID
+         MVC   COMTINET,=C'NETNAME='
+         MVC   COMNONET,TASK_NETNAME    SET SNA NETNAME ID
+         MVC   COMTIUSR,=C'USER='
+         MVC   WTOTIUSR,=C'USER='
+         MVC   COMNOUSR,TASK_USERID     SET CICS USER ID
+         MVC   WTONOUSR,TASK_USERID     SET CICS USER ID
+*
+         MVC   COMTISTR,=C'START-TIME='
+         MVC   WTOTISTR,=C'START-TIME='
+         SR    R1,R1
+         SAR   R1,R1
+         STCKCONV STCKVAL=TASK_ATTACHTIME,                             *
+               CONVVAL=DBL_DBLWORK,                                    *
+               TIMETYPE=DEC,                                           *
+               DATETYPE=MMDDYYYY,                                      *
+               MF=(E,STCKCONV)
+         LTR   RF,RF
+         JZ    INT20
+         MVC   COMNOSTR(10),=C'STCK ERROR'
+         J     INT30
+INT20    DS    0H
+         MVC   COMNOSTR,=X'F021207A20207A20204B2020'
+         ED    COMNOSTR,DBL_DBLWORK     SET START TIME
+         MVC   COMNOSTR,COMNOSTR+1
+         MVI   COMNOSTR+L'COMNOSTR-1,C' '
+         MVC   WTONOSTR,=X'F021207A20207A20204B2020'
+         ED    WTONOSTR,DBL_DBLWORK     SET START TIME
+         MVC   COMNOSTD,=X'F021206120206120202020'
+         ED    COMNOSTD,DBL_DBLWORK+8   SET START DATE
+         MVC   COMNOSTD,COMNOSTD+1
+         MVI   COMNOSTD+L'COMNOSTD-1,C' '
+*
+INT30    DS    0H
+         MVC   COMTIDTI,=C'DISPTCH-TIME/CNT='
+         MVC   WTOTIDTI,=C'DISPTCH-TIME/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_DISPTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT33
+         MVC   COMNODTI(10),=C'STCK ERROR'
+         J     INT35
+INT33    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNODTI,TIMEWORK+1
+         MVI   COMTIDCT,C'/'
+         MVC   WTONODTI,TIMEWORK+1
+         MVI   WTOTIDCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_DISPTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNODCT,TIMEWORK+6
+         MVC   WTONODCT,TIMEWORK+6
+INT35    DS    0H
+*
+         MVC   COMTISTI,=C'SUSPEND-WAIT/CNT='
+         MVC   WTOTISTI,=C'SUSPEND-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_SUSPTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT43
+         MVC   COMNOSTI(10),=C'STCK ERROR'
+         J     INT45
+INT43    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOSTI,TIMEWORK+1
+         MVI   COMTISCT,C'/'
+         MVC   WTONOSTI,TIMEWORK+1
+         MVI   WTOTISCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_SUSPTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOSCT,TIMEWORK+6
+         MVC   WTONOSCT,TIMEWORK+6
+INT45    DS    0H
+*
+         MVC   COMTITTI,=C'TERMNAL-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_TCIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT47
+         MVC   COMNOSTI(10),=C'STCK ERROR'
+         J     INT49
+INT47    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOTTI,TIMEWORK+1
+         MVI   COMTITCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_TCIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOTCT,TIMEWORK+6
+INT49    DS    0H
+*
+         MVC   COMTIFTI,=C'FILE-IO-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_FCIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT53
+         MVC   COMNOSTI(10),=C'STCK ERROR'
+         J     INT55
+INT53    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOFTI,TIMEWORK+1
+         MVI   COMTIFCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_FCIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOFCT,TIMEWORK+6
+INT55    DS    0H
+*
+         MVC   COMTI2TI,=C'DB/2-IO-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_DB2WAIT
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT57
+         MVC   COMNO2TI(10),=C'STCK ERROR'
+         J     INT59
+INT57    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNO2TI,TIMEWORK+1
+         MVI   COMTI2CT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_DB2WAIT+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNO2CT,TIMEWORK+6
+INT59    DS    0H
+*
+         MVC   COMTIQTI,=C'TS/Q-IO-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_TSIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT63
+         MVC   COMNOQTI(10),=C'STCK ERROR'
+         J     INT65
+INT63    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOQTI,TIMEWORK+1
+         MVI   COMTIQCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_TSIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOQCT,TIMEWORK+6
+INT65    DS    0H
+*
+         MVC   COMTIRTI,=C'TD/Q-IO-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_TDIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT67
+         MVC   COMNORTI(10),=C'STCK ERROR'
+         J     INT69
+INT67    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNORTI,TIMEWORK+1
+         MVI   COMTIRCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_TDIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNORCT,TIMEWORK+6
+INT69    DS    0H
+*
+         MVC   COMTIMTI,=C'IRC-I/O-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_IRIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT73
+         MVC   COMNORTI(10),=C'STCK ERROR'
+         J     INT75
+INT73    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOMTI,TIMEWORK+1
+         MVI   COMTIMCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_IRIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOMCT,TIMEWORK+6
+INT75    DS    0H
+*
+         MVC   COMTIJTI,=C'JRNL-IO-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_JCIOTIME
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT77
+         MVC   COMNOJTI(10),=C'STCK ERROR'
+         J     INT79
+INT77    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOJTI,TIMEWORK+1
+         MVI   COMTIJCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_JCIOTIME+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOJCT,TIMEWORK+6
+INT79    DS    0H
+*
+         MVC   COMTIPTI,=C'PG-LOAD-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_PCLOADTM
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT83
+         MVC   COMNOPTI(10),=C'STCK ERROR'
+         J     INT85
+INT83    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOPTI,TIMEWORK+1
+         MVI   COMTIPCT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_PCLOADTM+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOPCT,TIMEWORK+6
+INT85    DS    0H
+*
+         MVC   COMTIITI,=C'INTRVAL-WAIT/CNT='
+         XC    DBLWORK,DBLWORK
+         MVC   DBLWORK,TASK_INTVLWAIT
+         JAS   R9,STCK00
+         LTR   RF,RF
+         JZ    INT87
+         MVC   COMNOPTI(10),=C'STCK ERROR'
+         J     INT89
+INT87    DS    0H
+         MVC   TIMEWORK(16),=X'F021207A20207A20204B202020202020'
+         ED    TIMEWORK(16),DBL_DBLWORK
+         MVC   COMNOITI,TIMEWORK+1
+         MVI   COMTIICT,C'/'
+         SR    R1,R1
+         ICM   R1,7,TASK_INTVLWAIT+5
+         CVD   R1,DBLWORK
+         MVC   TIMEWORK(16),=X'F0212020202020202020202020202020'
+         ED    TIMEWORK(16),DBLWORK
+         MVC   COMNOICT,TIMEWORK+6
+INT89    DS    0H
+*
+         LA    R2,WTO01
+         LA    R3,WTO02
+         LA    R4,WTO03
+         LA    R5,WTO04
+         WTO   TEXT=(((R2),),((R3),),((R4),),((R5),)),                 *
+               MF=(E,WTOLIST)
+*
+         J     INT93                           BYPASS EMAIL NOTICES
+*
+         CLC   =C'IES0',TASK_EYU_CICSNAME+4
+         JE    INT93
+         CLC   =C'TRA1',TASK_EYU_CICSNAME+4
+         JE    INT93
+         CLC   =C'TST',TASK_EYU_CICSNAME+4
+         JNE   INT91
+         CLC   =C'TST9',TASK_EYU_CICSNAME+4
+         JNE   INT93
+*
+INT91    DS    0H
+         CLC   =C'O452',TASK_TRANID
+         JE    INT93
+         CLC   =C'O571',TASK_TRANID
+         JE    INT93
+         CLC   =C'O573',TASK_TRANID
+         JE    INT93
+*
+         EXEC  CICS,                                                   *00560003
+               LINK,                                                   *00570003
+               PROGRAM('IET111'),                                      *00590003
+               COMMAREA(COMPARM),                                      *00590003
+               LENGTH(=AL2(COMLEN)),                                   *00590003
+               RESP(RESP),                                             *00600003
+               RESP2(RESP2)                                             00610003
+*
+         CLC   RESP,DFHRESP(NORMAL)
+         JNE   ABN02
+         CLI   COMRSP,COMRSPOK
+         JNE   ABN03
+*
+INT93    DS    0H
+         EXEC  CICS,                                                   *00560003
+               WRITEQ,                                                 *00570003
+               TS,                                                     *00580003
+               QNAME('CPSMTASKHISTORY '),                              *00590003
+               MAIN,                                                   *
+               FROM(0(,RA)),                                           *
+               LENGTH(HLFWORK),                                        *
+               RESP(RESP),                                             *00600003
+               RESP2(RESP2)                                             00610003
+         J     INT10
+*---------------------------------------------------------------------* 00530003
+*        Convert Elapsed Time Clock for Printing
+*---------------------------------------------------------------------* 00530003
+STCK00   DS    0H
+         SR    R1,R1
+         SAR   R1,R1
+         STCKCONV STCKVAL=DBLWORK,                                     *
+               CONVVAL=DBL_DBLWORK,                                    *
+               TIMETYPE=DEC,                                           *
+               MF=(E,STCKCONV)
+         BR    R9
+*---------------------------------------------------------------------* 00530003
+*        NEXT INTERVAL SCHEDULER AND ABEND HANDLER                    * 00540003
+*---------------------------------------------------------------------* 00550003
+XIT00    DS    0H
+         EXEC  CICS,                                                   *00560003
+               DELETEQ,                                                *00570003
+               TS,                                                     *00580003
+               QUEUE('CPSMTASK'),                                      *00590003
+               RESP(RESP),                                             *00600003
+               RESP2(RESP2)                                             00610003
+XIT10    DS    0H
+         EXEC  CICS,                                                   *05490003
+               CANCEL,                                                 *05500003
+               REQID('$IEP004$'),                                      *05510003
+               RESP(RESP),                                             *05520003
+               RESP2(RESP2)                                             05530003
+         CLC   RESP,DFHRESP(NORMAL)                                     05540003
+         JE    XIT10                                                    05550003
+         EXEC  CICS,                                                   *05560003
+               START,                                                  *05570003
+               INTERVAL(000030),                                       *05580003
+               TRANSID(EIBTRNID),                                      *05590003
+               REQID('$IEP004$'),                                      *05600003
+               RESP(RESP),                                             *05610003
+               RESP2(RESP2)                                             05620003
+         CLC   RESP,DFHRESP(NORMAL)                                     05630003
+         JNE   ABN01                                                    05640003
+         J     XIT90                                                    05650003
+*---------------------------------------------------------------------* 05660003
+*        ABNORMAL TERMINATION                                         * 05670003
+*---------------------------------------------------------------------* 05680003
+ABN01    DS    0H                                                       05690003
+         LA    R2,MSG01                                                 05700003
+         LA    R3,L'MSG01                                               05710003
+         ICM   R4,B'1111',ABC01                                         05720003
+         J     ABN99                                                    05730003
+ABN02    DS    0H                                                       05690003
+         LA    R2,MSG02                                                 05700003
+         LA    R3,L'MSG02                                               05710003
+         ICM   R4,B'1111',ABC02                                         05720003
+         J     ABN99                                                    05730003
+ABN03    DS    0H                                                       05690003
+         MVC   MSG03X,MSG03
+         LA    R2,MSG03X                                                05700003
+         LA    R3,L'MSG03X                                              05710003
+         MVC   ABC03X(L'COMRSP),COMRSP
+         ICM   R4,B'1111',ABC03X                                        05720003
+         J     ABN99                                                    05730003
+ABN99    DS    0H                                                       06140003
+         MVC   SAVRESP,RESP                                             06150003
+         MVC   SAVRESP2,RESP2                                           06160003
+         MVC   SAVFN,EIBFN                                              06170003
+         MVC   SAVRC,EIBRCODE                                           06180003
+         STH   R3,HLFWORK                                               06190003
+         EXEC  CICS,                                                   *06200003
+               WRITEQ,                                                 *06210003
+               TD,                                                     *06220003
+               QUEUE(=C'CSML'),                                        *06230003
+               FROM(0(,R2)),                                           *06240003
+               LENGTH(HLFWORK),                                        *06250003
+               RESP(RESP),                                             *06260003
+               RESP2(RESP2)                                             06270003
+         ST    R4,FULWORK                                               06280003
+         EXEC  CICS,                                                   *06290003
+               ABEND,                                                  *06300003
+               ABCODE(FULWORK),                                        *06310003
+               RESP(RESP),                                             *06320003
+               RESP2(RESP2)                                             06330003
+*---------------------------------------------------------------------* 00530003
+*        NORMAL EXIT                                                  * 00540003
+*---------------------------------------------------------------------* 00550003
+XIT90    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS
+*----------------------------------------------------------------------
+*
+WTOL     WTO   TEXT=((,D),(,D),(,D),(,DE)),                            *
+               ROUTCDE=(2,11),                                         *
+               DESC=(6),                                               *
+               MF=L
+WTOLLN   EQU   *-WTOL
+*
+MSG01    DC    C'IEP004001  ERROR SCHEDULING INTERVAL INITIATE, ABEND P*06580003
+               4IC initiated.'                                          06590003
+ABC01    EQU   *-15                                                     06600003
+*
+MSG02    DC    C'IEP004002  LINK TO SNMP CLIENT PROGRAM FAILED, ABEND P*06580003
+               4LK initiated.'                                          06590003
+ABC02    EQU   *-15                                                     06600003
+*
+MSG03    DC    C'IEP004003  SNMP CLIENT PROCESSING UNSUCCESSFUL, ABEND *06580003
+               P4SM initiated.'                                         06590003
+ABC03    EQU   *-15                                                     06600003
+MSG03L   EQU   *-MSG03
+*
+RCVID1   DC    C'JAY.BAKER@INGRAMENTERTAINMENT.COM'
+RCVNM1   DC    C'"JAY.BAKER"'
+SNDNM1   DC    C'"TECH SERVICES"'
+SBJECT   DC    C'CPSMTASK Notice: CICSJOBN.TRAN.NNNNN'
+SBJECTJ  EQU   (*-SBJECT)-19
+SBJECTT  EQU   (*-SBJECT)-10
+SBJECTN  EQU   (*-SBJECT)-5
+*
+CRLF     DC    X'0D25'
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBL_DBLWORK  DS 2D                      DOUBLE DOUBLE WORD WORK
+DBLWORK  DS    D                        DOUBLE WORD WORK
+TIMEWORK DS    XL16                     TIME EDIT WORK AREA
+FULWORK  DS    F                        FULL WORD WORK
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+         DS    0F
+WTOLIST  DS    XL(WTOLLN)
+*
+STCKCONV STCKCONV MF=L
+*
+HLFWORK  DS    H                        HALF WORD WORK
+ITEM     DS    H                        TS QUEUE ITEM #
+*
+SYSID    DS    CL4                      CICS SYSID
+TASKTYPE DS    XL1                      CICS TASK TYPE
+*
+MSG03X   DS    CL(MSG03L)
+ABC03X   EQU   *-12
+*
+         DS    0H
+WTO01    DS    AL2(WTO01LN-L'WTO01)
+WTOTIMSG DS    C'IEP00404I'
+         DS    XL2
+WTOTISYS DS    C'SYSTEM='
+WTONOSYS DS    CL8
+         DS    XL2
+WTOTISTR DS    C'START-TIME='
+WTONOSTR DS    X'F021207A20207A20204B2020'
+WTO01LN  EQU   *-WTO01
+*
+         DS    0H
+WTO02    DS    AL2(WTO02LN-L'WTO02)
+         DS    XL11
+WTOTITSK DS    C'TASK='
+WTONOTSK DS    CL5
+         DS    XL2
+WTOTITRN DS    C'TRAN='
+WTONOTRN DS    CL4
+         DS    XL2
+WTOTIPGM DS    C'PROGRAM='
+WTONOPGM DS    CL8
+         DS    XL2
+WTOTIUSR DS    C'USER='
+WTONOUSR DS    CL8
+WTO02LN  EQU   *-WTO02
+*
+         DS    0H
+WTO03    DS    AL2(WTO03LN-L'WTO03)
+         DS    XL11
+WTOTIDTI DS    C'DISPTCH-TIME/CNT='
+WTONODTI DS    CL14
+WTOTIDCT DS    C'/'
+WTONODCT DS    X'F0212020202020202020'
+WTO03LN  EQU   *-WTO03
+*
+         DS    0H
+WTO04    DS    AL2(WTO04LN-L'WTO04)
+         DS    XL11
+WTOTISTI DS    C'SUSPEND-WAIT/CNT='
+WTONOSTI DS    CL14
+WTOTISCT DS    C'/'
+WTONOSCT DS    X'F0212020202020202020'
+WTO04LN  EQU   *-WTO04
+WTO99LN  EQU   *-WTO01
+*
+*----------------------------------------------------------------------
+*        IET111 SMTP Client COMMAREA
+*----------------------------------------------------------------------
+         DS    0D
+COMEYE   DS    CL16                     EYE CATCHER
+*
+COMPARM  EQU   *                        IET111 PARM HDR AREA BEGIN @
+COMSRV   DS    CL1                      TCP SMTP SERVER ID
+COMSRVF  EQU   C'F'                     ..F = IEFW.NEXUS:25
+COMSRVI  EQU   C'I'                     ..I = NOC2.LVRGN.NEXUS:25
+COMSRVM  EQU   C'M'                     ..M = EMS.MAIL.NEXUS:25
+COMSRVS  EQU   C'S'                     ..S = EMS.MAIL.NEXUS:5025
+COMSRVX  EQU   C'X'                     ..X = EXCHANGE.MAIL.NEXUS:25
+*
+COMRSP   DS    CL1                      RESPONSE CODE
+COMRSPOK EQU   C' '                     ..NORMAL
+COMRSPTC EQU   C'0'                     ..CICS TCP EXIT INACTIVE
+COMRSPCL EQU   C'1'                     ..INVALID COMMAREA LENGTH
+COMRSPSI EQU   C'2'                     ..INVALID SERVER ID
+COMRSPSC EQU   C'3'                     ..TCP SOCKET CALL ERROR
+COMRSPCC EQU   C'4'                     ..TCP CONNECT CALL ERROR
+COMRSPWC EQU   C'5'                     ..TCP WRITE CALL ERROR
+COMRSPRC EQU   C'6'                     ..TCP RECV CALL ERROR
+COMRSPLC EQU   C'7'                     ..TCP CLOSE CALL ERROR
+COMRSILN EQU   C'8'                     ..INBOUND MSG TO SRVR LEN=0
+COMRSOLN EQU   C'9'                     ..OUTBOUND MSG FRM SRVR LEN=0
+COMRSPGH EQU   C'G'                     ..TCP GETHOSTBYNAME CALL ERROR
+COMRSPIO EQU   C'I'                     ..TCP IOCTL CALL ERROR
+COMRS220 EQU   C'S'                     ..SMTP RC NOT 220 ERROR
+COMRS221 EQU   C'T'                     ..SMTP RC NOT 221 ERROR
+COMRS250 EQU   C'U'                     ..SMTP RC NOT 250 ERROR
+COMRS354 EQU   C'V'                     ..SMTP RC NOT 354 ERROR
+*
+COMRSV   DS    XL6                      ..RESERVED
+*
+COMTIM00 DS    XL8                      ABS TIME IET111 ENTRY
+COMTIM01 DS    XL8                      ABS TIME SOCKET CALL
+COMTIM02 DS    XL8                      ABS TIME SOCKET RETURN
+COMTIM03 DS    XL8                      ABS TIME CONNECT CALL
+COMTIM04 DS    XL8                      ABS TIME CONNECT RETURN
+COMTIM05 DS    XL8                      ABS TIME WRITE CALL
+COMTIM06 DS    XL8                      ABS TIME WRITE RETURN
+COMTIM07 DS    XL8                      ABS TIME IOCTL CALL
+COMTIM08 DS    XL8                      ABS TIME RECV RETURN
+COMTIM09 DS    XL8                      ABS TIME CLOSE CALL
+COMTIM10 DS    XL8                      ABS TIME CLOSE RETURN
+COMTIM11 DS    XL8                      ABS TIME IET111 EXIT
+*
+COMRCVID DS    CL60                     SMTP RECEIVER ID
+COMSNDID DS    CL60                     SMTP SENDER ID
+COMRCVER DS    CL80                     RECEIVER NAME
+COMSNDER DS    CL80                     SENDER NAME
+COMSUBJT DS    CL80                     MESSAGE SUBJECT
+*
+COMPARML EQU   *-COMPARM                MINIMUM COMMAREA LENGTH
+COMTEXT  DS    XL(2048-COMPARML)
+         ORG   COMTEXT
+COMTIMDY DS    C'DATE='
+COMNOMDY DS    C'MM/DD/YYYY'
+COMNOCR1 DS    XL2
+COMTIHMS DS    C'TIME='
+COMNOHMS DS    C'HH:MM:SS'
+COMNOCR2 DS    XL2
+COMTISYS DS    C'SYSTEM='
+COMNOSYS DS    CL8
+COMNOCR3 DS    XL2
+COMTITSK DS    C'TASK='
+COMNOTSK DS    CL5
+COMNOCR4 DS    XL2
+COMTISTR DS    C'START-TIME='
+COMNOSTR DS    X'F021207A20207A20204B2020'
+COMNOSTD DS    X'F021206120206120202020'
+COMNOCR5 DS    XL2
+COMTITRN DS    C'TRAN='
+COMNOTRN DS    CL4
+COMNOCR6 DS    XL2
+COMTIPGM DS    C'PROGRAM='
+COMNOPGM DS    CL8
+COMNOCR7 DS    XL2
+COMTITRM DS    C'FACILITY='
+COMNOTRM DS    CL4
+COMNOCR8 DS    XL2
+COMTINET DS    C'NETNAME='
+COMNONET DS    CL20
+COMNOCR9 DS    XL2
+COMTIUSR DS    C'USER='
+COMNOUSR DS    CL8
+COMNOCRA DS    XL2
+COMTIDTI DS    C'DISPTCH-TIME/CNT='
+COMNODTI DS    CL14
+COMTIDCT DS    C'/'
+COMNODCT DS    X'40202020202020202120'
+COMNOCRB DS    XL2
+COMTISTI DS    C'SUSPEND-WAIT/CNT='
+COMNOSTI DS    CL14
+COMTISCT DS    C'/'
+COMNOSCT DS    X'40202020202020202120'
+COMNOCRC DS    XL2
+COMTITTI DS    C'TERM-IO-WAIT/CNT='
+COMNOTTI DS    CL14
+COMTITCT DS    C'/'
+COMNOTCT DS    X'40202020202020202120'
+COMNOCRD DS    XL2
+COMTIFTI DS    C'FILE-IO-WAIT/CNT='
+COMNOFTI DS    CL14
+COMTIFCT DS    C'/'
+COMNOFCT DS    X'40202020202020202120'
+COMNOCRE DS    XL2
+COMTI2TI DS    C'DB/2-IO-WAIT/CNT='
+COMNO2TI DS    CL14
+COMTI2CT DS    C'/'
+COMNO2CT DS    X'40202020202020202120'
+COMNOCRF DS    XL2
+COMTIQTI DS    C'TS/Q-IO-WAIT/CNT='
+COMNOQTI DS    CL14
+COMTIQCT DS    C'/'
+COMNOQCT DS    X'40202020202020202120'
+COMNOCRG DS    XL2
+COMTIRTI DS    C'TD/Q-IO-WAIT/CNT='
+COMNORTI DS    CL14
+COMTIRCT DS    C'/'
+COMNORCT DS    X'40202020202020202120'
+COMNOCRH DS    XL2
+COMTIMTI DS    C'IRC-I/O-WAIT/CNT='
+COMNOMTI DS    CL14
+COMTIMCT DS    C'/'
+COMNOMCT DS    X'40202020202020202120'
+COMNOCRI DS    XL2
+COMTIJTI DS    C'JRNL-IO-WAIT/CNT='
+COMNOJTI DS    CL14
+COMTIJCT DS    C'/'
+COMNOJCT DS    X'40202020202020202120'
+COMNOCRJ DS    XL2
+COMTIPTI DS    C'PG-LOAD-WAIT/CNT='
+COMNOPTI DS    CL14
+COMTIPCT DS    C'/'
+COMNOPCT DS    X'40202020202020202120'
+COMNOCRK DS    XL2
+COMTIITI DS    C'INTRVAL-WAIT/CNT='
+COMNOITI DS    CL14
+COMTIICT DS    C'/'
+COMNOICT DS    X'40202020202020202120'
+COMNOCRL DS    XL2
+*
+COMLEN   EQU   *-COMPARM                MAXIMUM COMMAREA LENGTH
+         ORG
+*----------------------------------------------------------------------
+         DFHEIEND
+*----------------------------------------------------------------------
+         COPY  TASK
+*----------------------------------------------------------------------
+         END
+

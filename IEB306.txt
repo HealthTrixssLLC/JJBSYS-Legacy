@@ -1,0 +1,173 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010000
+IEB306   TITLE '**  CICS EXCI DPL ABSTIME/CONVERTTIME PROGRAM  **'      00020000
+*---------------------------------------------------------------------- 00030000
+*        REGISTERS                                                      00040000
+*---------------------------------------------------------------------- 00050000
+RF       EQU   15                                                       00060000
+RE       EQU   14                                                       00070000
+RD       EQU   13                                                       00080000
+RC       EQU   12                                                       00090000
+RB       EQU   11                                                       00100000
+RA       EQU   10                                                       00110000
+R9       EQU   9                                                        00120000
+R8       EQU   8                                                        00130000
+R7       EQU   7                                                        00140000
+R6       EQU   6                                                        00150000
+R5       EQU   5                                                        00160000
+R4       EQU   4                                                        00170000
+R3       EQU   3                                                        00180000
+R2       EQU   2                                                        00190000
+R1       EQU   1                                                        00200000
+R0       EQU   0                                                        00210000
+*---------------------------------------------------------------------- 00220000
+*  IEB306   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230000
+*---------------------------------------------------------------------- 00240000
+IEB306   RSECT                                                          00250000
+IEB306   AMODE 31                       MAY EXECUTE ABOVE 16M           00260000
+IEB306   RMODE ANY                      MAY RESIDE ABOVE 16M            00270000
+IEB306   DFHEIENT CODEREG=(12),                                        *00280000
+               DATAREG=(13),                                           *00290000
+               EIBREG=(11)                                              00300000
+         MVC   EISEYE,=CL16'IEB306 EI STORAGE'                          00310000
+         MVC   FAILRSP,=CL8'FAILRSP'    SET EYE CATCHER                 00320000
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00330000
+         MVC   FAILFN,=CL8'FAILFN'      SET EYE CATCHER                 00340000
+         MVC   FAILRC,=CL8'FAILRC'      SET EYE CATCHER                 00350000
+         J     INT00                    Jump AROUND DUMP ID             00360000
+         DS    0H                                                       00370000
+         DC    CL8'IEB306'              DUMP PROGRAM ID                 00380000
+         DC    CL1' '                                                   00390000
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00400000
+         DC    CL1' '                                                   00410000
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00420000
+         DC    CL1' '                                                   00430000
+INT00    DS    0H                                                       00440000
+*---------------------------------------------------------------------- 00450000
+*        VERIFY CALLER'S PARMS                                          00460000
+*---------------------------------------------------------------------- 00470000
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00480000
+         CH    R1,=AL2(COMMLN)          CHECK MINIMUM LENGTH            00490000
+         JL    ABN01                    ..NO CHOICE BUT ABEND           00500000
+         EXEC  CICS,                                                   *00510000
+               ADDRESS,                                                *00520000
+               COMMAREA(RA),                                           *00530000
+               RESP(RESP),                                             *00540000
+               RESP2(RESP2)                                             00550000
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00560000
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00570000
+         USING COMMPARM,RA                                              00580000
+         XC    COMRC1(L'COMRC1+L'COMRC2),COMRC1 CLR RETURN CODES        00590000
+*---------------------------------------------------------------------- 00600000
+*        ABSTIME / CONVERTTIME                                          00610000
+*---------------------------------------------------------------------- 00620000
+         CLI   COMDAT,C' '              DATE SUPPLIED?                  00630000
+         JNE   DAT00                    ..YES, JUMP                     00640000
+         CLC   COMDAT(L'COMDAT-1),COMDAT+1 DATE SUPPLIED?               00650000
+         JNE   DAT00                    ..YES, JUMP                     00660000
+         EXEC  CICS,                                                   *00670000
+               ASKTIME,                                                *00680000
+               ABSTIME(COMABS),                                        *00690000
+               RESP(RESP),                                             *00700000
+               RESP2(RESP2)                                             00710000
+         J     DAT10                                                    00720000
+DAT00    DS    0H                                                       00730000
+         EXEC  CICS,                                                   *00740000
+               CONVERTTIME,                                            *00750000
+               DATESTRING(COMDAT),                                     *00760000
+               ABSTIME(COMABS),                                        *00770000
+               RESP(RESP),                                             *00780000
+               RESP2(RESP2)                                             00790000
+DAT10    DS    0H                                                       00800000
+         MVC   COMRC1,RESP                                              00810000
+         MVC   COMRC2,RESP2                                             00820000
+         J     XIT00                                                    00830000
+*---------------------------------------------------------------------- 00840000
+*        ABNORMAL TERMINATION                                           00850000
+*---------------------------------------------------------------------- 00860000
+*                                                                       00870000
+ABN01    DS    0H                                                       00880000
+         LA    R2,MSG01                                                 00890000
+         LA    R3,L'MSG01                                               00900000
+         ICM   R4,B'1111',ABC01                                         00910000
+         J     ABN99                                                    00920000
+*                                                                       00930000
+ABN02    DS    0H                                                       00940000
+         LA    R2,MSG02                                                 00950000
+         LA    R3,L'MSG02                                               00960000
+         ICM   R4,B'1111',ABC02                                         00970000
+         J     ABN99                                                    00980000
+*                                                                       00990000
+ABN99    DS    0H                                                       01000000
+         MVC   SAVRESP,RESP                                             01010000
+         MVC   SAVRESP2,RESP2                                           01020000
+         MVC   SAVFN,EIBFN                                              01030000
+         MVC   SAVRC,EIBRCODE                                           01040000
+         STH   R3,HLFWORK                                               01050000
+         EXEC  CICS,                                                   *01060000
+               WRITEQ,                                                 *01070000
+               TD,                                                     *01080000
+               QUEUE(=C'CSML'),                                        *01090000
+               FROM(0(,R2)),                                           *01100000
+               LENGTH(HLFWORK),                                        *01110000
+               RESP(RESP),                                             *01120000
+               RESP2(RESP2)                                             01130000
+         ST    R4,FULWORK                                               01140000
+         EXEC  CICS,                                                   *01150000
+               ABEND,                                                  *01160000
+               ABCODE(FULWORK),                                        *01170000
+               RESP(RESP),                                             *01180000
+               RESP2(RESP2)                                             01190000
+*---------------------------------------------------------------------- 01200000
+*        RETURN TO CICS                                                 01210000
+*---------------------------------------------------------------------- 01220000
+XIT00    DS    0H                                                       01230000
+         EXEC  CICS,                                                   *01240000
+               RETURN                                                   01250000
+         DFHEIRET                                                       01260000
+*---------------------------------------------------------------------- 01270000
+*        CONSTANTS                                                      01280000
+*---------------------------------------------------------------------- 01290000
+*                                                                       01300000
+MSG01    DC    C'IEB30601 Caller COMMAREA length too small, abend B3CL *01310000
+               initiated.'                                              01320000
+ABC01    EQU   *-15                                                     01330000
+*                                                                       01340000
+MSG02    DC    C'IEB30602 Caller COMMAREA address not found, abend B3CA*01350000
+                initiated.'                                             01360000
+ABC02    EQU   *-15                                                     01370000
+*                                                                       01380000
+*---------------------------------------------------------------------- 01390000
+*        DSECTS                                                       * 01400000
+*---------------------------------------------------------------------- 01410000
+*                                                                       01420000
+         DFHEISTG                                                       01430000
+EISEYE   DS    CL16                     EYE CATCHER                     01440000
+DBLWORK  DS    D                        DOUBLE WORD WORK                01450000
+FULWORK  DS    F                        FULL WORD WORK                  01460000
+RESP     DS    F                        EXEC COMMAND RESPONSE           01470000
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01480000
+*                                                                       01490000
+FAILRSP  DS    CL8                      EYE CATCHER                     01500000
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01510000
+FAILRSP2 DS    CL8                      EYE CATCHER                     01520000
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01530000
+FAILFN   DS    CL8                      EYE CATCHER                     01540000
+SAVFN    DS    H                        SAVED EXEC EIBFN                01550000
+FAILRC   DS    CL8                      EYE CATCHER                     01560000
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01570000
+*                                                                       01580000
+HLFWORK  DS    H                        HALF WORD WORK AREA             01590000
+*                                                                       01600000
+         DFHEIEND                                                       01610000
+*                                                                       01620000
+COMMPARM DSECT ,                        COMMAREA                        01630000
+*                                       RETURNED TO CALLER...           01640000
+COMRC1   DS    A                         USER REQUEST RETURN CODE 1     01650000
+COMRC2   DS    A                         USER REQUEST RETURN CODE 2     01660000
+COMABS   DS    D                         RETURNED ABSOLUTE TIME         01670000
+*                                       PASSED BY CALLER...             01680000
+COMDAT   DS    CL64                      USER DATE/TIME STRING          01690000
+COMMLN   EQU   *-COMMPARM               COMMAREA LENGTH                 01700000
+*---------------------------------------------------------------------- 01710000
+         END                                                            01720000
+

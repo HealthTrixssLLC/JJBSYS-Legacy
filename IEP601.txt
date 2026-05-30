@@ -1,0 +1,785 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEP601   TITLE '**  CICS/ESA HTTP CLIENT NOTIFY FILE MAINTENANCE  **'   00020002
+*---------------------------------------------------------------------* 00030002
+*        REGISTER AND OTHER EQUATES                                   * 00040002
+*---------------------------------------------------------------------* 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+         COPY  DFHAID                                                   00220002
+*---------------------------------------------------------------------* 00230002
+*  IEP601   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             * 00240002
+*---------------------------------------------------------------------* 00250002
+IEP601   DFHEIENT CODEREG=(12,11),                                     *00260002
+               DATAREG=(13),                                           *00270002
+               EIBREG=(10)                                              00280002
+         MVC   EISEYE,=CL16'IEP601 EI STORAGE'                          00290002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00300002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00310002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00320002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00330002
+         B     INT01                    BRANCH AROUND DUMP ID           00340002
+IEP601   AMODE 31                       MAY EXECUTE ABOVE 16M           00350002
+IEP601   RMODE ANY                      MAY RESIDE ABOVE 16M            00360002
+         DS    0H                                                       00370002
+         DC    CL8'IEP601'              DUMP PROGRAM ID                 00380002
+         DC    CL1' '                                                   00390002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00400002
+         DC    CL1' '                                                   00410002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00420002
+         DC    CL1' '                                                   00430002
+*---------------------------------------------------------------------* 00440002
+*        CHECK TASK TYPE                                              * 00450002
+*---------------------------------------------------------------------* 00460002
+INT01    DS    0H                                                       00470002
+         EXEC  CICS,                                                   *00480002
+               ASSIGN,                                                 *00490002
+               FCI(TASKTYPE),                                          *00500002
+               RESP(RESP),                                             *00510002
+               RESP2(RESP2)                                             00520002
+         CLI   TASKTYPE,TERMINAL                                        00530002
+         BNE   XIT99                                                    00540002
+*---------------------------------------------------------------------* 00550002
+*        GET CURRENT DATE AND TIME                                    * 00560002
+*---------------------------------------------------------------------* 00570002
+         EXEC  CICS,                                                   *00580002
+               ASKTIME,                                                *00590002
+               ABSTIME(DBLWORK)                                         00600002
+         EXEC  CICS,                                                   *00610002
+               FORMATTIME,                                             *00620002
+               ABSTIME(DBLWORK),                                       *00630002
+               MMDDYY(DATE),                                           *00640002
+               TIME(TIME),                                             *00650002
+               DATESEP(=C'/'),                                         *00660002
+               TIMESEP(=C':')                                           00670002
+*---------------------------------------------------------------------* 00680002
+*        CHECK FOR TERMINAL INPUT                                     * 00690002
+*---------------------------------------------------------------------* 00700002
+         EXEC  CICS,                                                   *00710002
+               RECEIVE,                                                *00720002
+               SET(R2),                                                *00730002
+               LENGTH(HLFWORK),                                        *00740002
+               RESP(RESP),                                             *00750002
+               RESP2(RESP2)                                             00760002
+         CLC   RESP,DFHRESP(EOC)                                        00770002
+         BE    INT03                                                    00780002
+         CLC   RESP,DFHRESP(NORMAL)                                     00790002
+         BNE   ABN02                                                    00800002
+INT03    DS    0H                                                       00810002
+         XC    DBLWORK,DBLWORK          CLR FILE KEY AREA               00820002
+         CLI   EIBAID,DFHPF3            PF3 AID                         00830002
+         BE    XIT00                    ..YES, BRANCH                   00840002
+         CLI   EIBAID,DFHPF7            PF7 AID                         00850002
+         BE    BWD01                    ..YES, BRANCH                   00860002
+         CLI   EIBAID,DFHPF8            PF8 AID                         00870002
+         BE    FWD01                                                    00880002
+         CLI   EIBAID,DFHENTER          ENTER AID                       00890002
+         BNE   IPE01                    ..YES, BRANCH                   00900002
+         OC    HLFWORK,HLFWORK          ANY DATA                        00910002
+         BZ    IPE01                    ..NO, BRANCH                    00920002
+         CLC   HLFWORK,=H'4'            INITIAL TRANSACTION             00930002
+         BE    IPC01                    ..YES, BRANCH                   00940002
+*---------------------------------------------------------------------* 00950002
+*        PROCESS USER REQUEST                                         * 00960002
+*---------------------------------------------------------------------* 00970002
+         BAS   R9,MDA01                                                 00980002
+         USING IEM601,R2                                                00990002
+         OI    CMDI,C' '                FORCE UPPER CASE                01000002
+         CLI   CMDI,C'A'                ADD COMMAND                     01010002
+         BE    ADD01                    ..YES, BRANCH                   01020002
+         CLI   CMDI,C'C'                COPY COMMAND                    01030002
+         BE    CPY01                    ..YES, BRANCH                   01040002
+         CLI   CMDI,C'D'                DELETE COMMAND                  01050002
+         BE    DEL01                    ..YES, BRANCH                   01060002
+         CLI   CMDI,C'U'                UPDATE COMMAND                  01070002
+         BE    UPD01                    ..YES, BRANCH                   01080002
+*        B     IVC01                                                    01090002
+         DROP  R2                                                       01100002
+*---------------------------------------------------------------------* 01110002
+*        SEND INVALID COMMAND ERROR MESSAGE                           * 01120002
+*---------------------------------------------------------------------* 01130002
+IVC01    DS    0H                                                       01140002
+         LA    R1,IEM6011L                                              01150002
+         BAS   R9,GTM01                                                 01160002
+         LA    R1,SEL1L-IEM6011S(,R2)                                   01170002
+         CLC   MEM1I-SEL1L(L'MEM1I,R1),=CL8' '                          01180002
+         BE    IVC03                                                    01190002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  01200002
+IVC03    DS    0H                                                       01210002
+         BAS   R9,BMO01                                                 01220002
+         USING IEM601,R8                                                01230002
+         MVC   EMSGO,=CL78'Invalid command entered, please try again'   01240002
+         DROP  R8                                                       01250002
+         BAS   R9,SBM01                                                 01260002
+         B     XIT99                                                    01270002
+*---------------------------------------------------------------------* 01280002
+*        PROCESS COPY COMMAND                                         * 01290002
+*---------------------------------------------------------------------* 01300002
+CPY01    DS    0H                                                       01310002
+         USING IEM601,R2                                                01320002
+         LA    R1,IEM6011L                                              01330002
+         BAS   R9,GTM01                                                 01340002
+         BAS   R9,SCN01                                                 01350002
+         DROP  R2                                                       01360002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  01370002
+         BAS   R9,RDM01                                                 01380002
+         ST    R5,TOKEN                                                 01390002
+         LA    R5,L'DBLWORK(,R5)                                        01400002
+         BAS   R9,GTM03                                                 01410002
+         LA    R1,IEM6021L                                              01420002
+         BAS   R9,GTM02                                                 01430002
+         BAS   R9,BMR01                                                 01440002
+         USING IEM602,R8                                                01450002
+         MVC   UMSGO,=CL78'Enter member name to add for (C)opy process *01460002
+               request'                                                 01470002
+         DROP  R8                                                       01480002
+         BAS   R9,SBM02                                                 01490002
+         B     XIT99                                                    01500002
+*---------------------------------------------------------------------* 01510002
+*        PROCESS DELETE COMMAND                                       * 01520002
+*---------------------------------------------------------------------* 01530002
+DEL01    DS    0H                                                       01540002
+         LA    R1,IEM6011L                                              01550002
+         BAS   R9,GTM01                                                 01560002
+         BAS   R9,SCN01                                                 01570002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  01580002
+         EXEC  CICS,                                                   *01590002
+               READ,                                                   *01600002
+               UPDATE,                                                 *01610002
+               TOKEN(TOKEN),                                           *01620002
+               FILE(=CL8'HTTPMSGS'),                                   *01630002
+               LENGTH(HLFWORK),                                        *01640002
+               RIDFLD(DBLWORK),                                        *01650002
+               SET(R5),                                                *01660002
+               RESP(RESP),                                             *01670002
+               RESP2(RESP2)                                             01680002
+         CLC   RESP,DFHRESP(NORMAL)                                     01690002
+         BE    DEL07                                                    01700002
+         BAS   R9,BMO01                                                 01710002
+         USING IEM601,R8                                                01720002
+         MVC   EMSGO,=CL78'Selected member not found, retry command'    01730002
+         DROP  R8                                                       01740002
+         BAS   R9,SBM01                                                 01750002
+         B     XIT99                                                    01760002
+DEL07    DS    0H                                                       01770002
+         EXEC  CICS,                                                   *01780002
+               DELETE,                                                 *01790002
+               TOKEN(TOKEN),                                           *01800002
+               FILE(=CL8'HTTPMSGS')                                     01810002
+         XC    DBLWORK,DBLWORK                                          01820002
+         BAS   R9,BMO01                                                 01830002
+         USING IEM601,R8                                                01840002
+         MVC   EMSGO,=CL78'Selected member processed successfully'      01850002
+         DROP  R8                                                       01860002
+         BAS   R9,SBM01                                                 01870002
+         B     XIT99                                                    01880002
+*---------------------------------------------------------------------* 01890002
+*        PROCESS UPDATE COMMAND                                       * 01900002
+*---------------------------------------------------------------------* 01910002
+UPD01    DS    0H                                                       01920002
+         USING IEM601,R2                                                01930002
+         LA    R1,IEM6011L                                              01940002
+         BAS   R9,GTM01                                                 01950002
+         BAS   R9,SCN01                                                 01960002
+         DROP  R2                                                       01970002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  01980002
+         BAS   R9,RDM01                                                 01990002
+         ST    R5,TOKEN                                                 02000002
+         LA    R5,L'DBLWORK(,R5)                                        02010002
+         BAS   R9,GTM03                                                 02020002
+         LA    R1,IEM6021L                                              02030002
+         BAS   R9,GTM02                                                 02040002
+         BAS   R9,BMR01                                                 02050002
+         USING IEM602,R8                                                02060002
+         MVC   MBRO,DBLWORK                                             02070002
+         MVC   UMSGO,=CL78'Enter HTTP record changes for (U)pdate proce*02080002
+               ss request'                                              02090002
+         DROP  R8                                                       02100002
+         BAS   R9,SBM02                                                 02110002
+         B     XIT99                                                    02120002
+*---------------------------------------------------------------------* 02130002
+*        PROCESS ADD COMMAND                                          * 02140002
+*---------------------------------------------------------------------* 02150002
+ADD01    DS    0H                                                       02160002
+         LA    R1,IEM6021L                                              02170002
+         BAS   R9,GTM02                                                 02180002
+         USING IEM602,R8                                                02190002
+         MVC   UMSGO,=CL78'Enter member, HTTP command, process, and hos*02200002
+               t to ADD'                                                02210002
+         DROP  R8                                                       02220002
+         BAS   R9,SBM02                                                 02230002
+         B     XIT99                                                    02240002
+*---------------------------------------------------------------------* 02250002
+*        SEND INITIAL TERMINAL MAP                                    * 02260002
+*---------------------------------------------------------------------* 02270002
+IPC01    DS    0H                                                       02280002
+         LA    R1,IEM6011L                                              02290002
+         BAS   R9,GTM01                                                 02300002
+         BAS   R9,BMO01                                                 02310002
+         USING IEM601,R8                                                02320002
+         MVC   EMSGO,=CL78'Enter a command, select a member, or press a*02330002
+                PFKey'                                                  02340002
+         DROP  R8                                                       02350002
+         BAS   R9,SBM01                                                 02360002
+         B     XIT99                                                    02370002
+*---------------------------------------------------------------------* 02380002
+*        SEND TERMINAL INPUT ERROR MSG                                * 02390002
+*---------------------------------------------------------------------* 02400002
+IPE01    DS    0H                                                       02410002
+         LA    R1,IEM6011L                                              02420002
+         BAS   R9,GTM01                                                 02430002
+         BAS   R9,BMO01                                                 02440002
+         USING IEM601,R8                                                02450002
+         MVC   EMSGO,=CL78'Wrong 3270 PF-Key or invalid 3270 data recei*02460002
+               ved from terminal - retry'                               02470002
+         DROP  R8                                                       02480002
+         BAS   R9,SBM01                                                 02490002
+         B     XIT99                                                    02500002
+*---------------------------------------------------------------------* 02510002
+*        FORWARD SCROLL MAP MEMBER LIST DATA                          * 02520002
+*---------------------------------------------------------------------* 02530002
+FWD01    DS    0H                                                       02540002
+         BAS   R9,MDA01                                                 02550002
+         LA    R1,IEM6011L                                              02560002
+         BAS   R9,GTM01                                                 02570002
+         LA    R1,SLOTEN(,R2)                                           02580002
+         CLC   MEM1I-SEL1L(L'MEM1I,R1),=CL8' '                          02590002
+         BE    FWD03                                                    02600002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  02610002
+FWD03    DS    0H                                                       02620002
+         BAS   R9,BMO01                                                 02630002
+         USING IEM601,R8                                                02640002
+         MVC   EMSGO,=CL78'Enter a command, select a member, or press a*02650002
+                PFKey'                                                  02660002
+         DROP  R8                                                       02670002
+         BAS   R9,SBM01                                                 02680002
+         B     XIT99                                                    02690002
+*---------------------------------------------------------------------* 02700002
+*        BACKWARD SCROLL MAP MEMBER LIST DATA                         * 02710002
+*---------------------------------------------------------------------* 02720002
+BWD01    DS    0H                                                       02730002
+         BAS   R9,MDA01                                                 02740002
+         LA    R1,IEM6011L                                              02750002
+         BAS   R9,GTM01                                                 02760002
+         LA    R1,SEL1L-IEM6011S(,R2)                                   02770002
+         CLC   MEM1I-SEL1L(L'MEM1I,R1),=CL8' '                          02780002
+         BE    BWD03                                                    02790002
+         MVC   DBLWORK,MEM1I-SEL1L(R1)                                  02800002
+BWD03    DS    0H                                                       02810002
+         BAS   R9,BMB01                                                 02820002
+         BAS   R9,BMO01                                                 02830002
+         USING IEM601,R8                                                02840002
+         MVC   EMSGO,=CL78'Enter a command, select a member, or press a*02850002
+                PFKey'                                                  02860002
+         DROP  R8                                                       02870002
+         BAS   R9,SBM01                                                 02880002
+         B     XIT99                                                    02890002
+*---------------------------------------------------------------------* 02900002
+*        MAP TERMINAL INPUT DATA AREA                                 * 02910002
+*---------------------------------------------------------------------* 02920002
+MDA01    DS    0H                                                       02930002
+         EXEC  CICS,                                                   *02940002
+               RECEIVE,                                                *02950002
+               MAP('IEM6011'),                                         *02960002
+               MAPSET('IEM601'),                                       *02970002
+               FROM(0(R2)),                                            *02980002
+               LENGTH(HLFWORK),                                        *02990002
+               SET(R2),                                                *03000002
+               RESP(RESP),                                             *03010002
+               RESP2(RESP2)                                             03020002
+         CLC   RESP,DFHRESP(NORMAL)                                     03030002
+         BNE   ABN06                                                    03040002
+         BR    R9                                                       03050002
+*---------------------------------------------------------------------* 03060002
+*        SEND BMS MAP                                                 * 03070002
+*---------------------------------------------------------------------* 03080002
+SBM01    DS    0H                                                       03090002
+         EXEC  CICS,                                                   *03100002
+               SEND,                                                   *03110002
+               MAP('IEM6011'),                                         *03120002
+               MAPSET('IEM601'),                                       *03130002
+               FROM(0(R8)),                                            *03140002
+               LENGTH(FULWORK2+2),                                     *03150002
+               ERASE,                                                  *03160002
+               FREEKB,                                                 *03170002
+               RESP(RESP),                                             *03180002
+               RESP2(RESP2)                                             03190002
+         CLC   RESP,DFHRESP(NORMAL)                                     03200002
+         BNE   ABN04                                                    03210002
+         BR    R9                                                       03220002
+*---------------------------------------------------------------------* 03230002
+*        SEND BMS MAP                                                 * 03240002
+*---------------------------------------------------------------------* 03250002
+SBM02    DS    0H                                                       03260002
+         EXEC  CICS,                                                   *03270002
+               SEND,                                                   *03280002
+               MAP('IEM6021'),                                         *03290002
+               MAPSET('IEM602'),                                       *03300002
+               FROM(0(R8)),                                            *03310002
+               LENGTH(FULWORK2+2),                                     *03320002
+               ERASE,                                                  *03330002
+               FREEKB,                                                 *03340002
+               RESP(RESP),                                             *03350002
+               RESP2(RESP2)                                             03360002
+         CLC   RESP,DFHRESP(NORMAL)                                     03370002
+         BNE   ABN04                                                    03380002
+         BR    R9                                                       03390002
+*---------------------------------------------------------------------* 03400002
+*        GETMAIN BMS MAP STORAGE                                      * 03410002
+*---------------------------------------------------------------------* 03420002
+GTM01    DS    0H                                                       03430002
+         ST    R1,FULWORK2                                              03440002
+         EXEC  CICS,                                                   *03450002
+               GETMAIN,                                                *03460002
+               SET(R8),                                                *03470002
+               FLENGTH(FULWORK2),                                      *03480002
+               INITIMG(=X'00'),                                        *03490002
+               RESP(RESP),                                             *03500002
+               RESP2(RESP2)                                             03510002
+         CLC   RESP,DFHRESP(NORMAL)                                     03520002
+         BNE   ABN03                                                    03530002
+         USING IEM601,R8                                                03540002
+         MVC   DATEO,DATE                                               03550002
+         MVC   TIMEO,TIME                                               03560002
+         DROP  R8                                                       03570002
+         BR    R9                                                       03580002
+*---------------------------------------------------------------------* 03590002
+*        GETMAIN BMS MAP STORAGE                                      * 03600002
+*---------------------------------------------------------------------* 03610002
+GTM02    DS    0H                                                       03620002
+         ST    R1,FULWORK2                                              03630002
+         EXEC  CICS,                                                   *03640002
+               GETMAIN,                                                *03650002
+               SET(R8),                                                *03660002
+               FLENGTH(FULWORK2),                                      *03670002
+               INITIMG(=X'00'),                                        *03680002
+               RESP(RESP),                                             *03690002
+               RESP2(RESP2)                                             03700002
+         CLC   RESP,DFHRESP(NORMAL)                                     03710002
+         BNE   ABN03                                                    03720002
+         USING IEM601,R2                                                03730002
+         USING IEM602,R8                                                03740002
+         MVC   ACTO,CMDI                                                03750002
+         MVC   DATO,DATE                                                03760002
+         MVC   TIMO,TIME                                                03770002
+         DROP  R2                                                       03780002
+         DROP  R8                                                       03790002
+         BR    R9                                                       03800002
+*---------------------------------------------------------------------* 03810002
+*        GETMAIN TRT TABLE STORAGE                                    * 03820002
+*---------------------------------------------------------------------* 03830002
+GTM03    DS    0H                                                       03840002
+         LA    R1,256                                                   03850002
+         ST    R1,FULWORK2                                              03860002
+         EXEC  CICS,                                                   *03870002
+               GETMAIN,                                                *03880002
+               SET(R4),                                                *03890002
+               FLENGTH(FULWORK2),                                      *03900002
+               INITIMG(=X'00')                                          03910002
+         BR    R9                                                       03920002
+*---------------------------------------------------------------------* 03930002
+*        SCAN BMS MAP FOR SELECTED MEMBER                             * 03940002
+*---------------------------------------------------------------------* 03950002
+SCN01    DS    0H                                                       03960002
+         USING IEM601,R2                                                03970002
+         LA    R1,SEL1L                                                 03980002
+         LA    R3,SLOTCT                                                03990002
+         DROP  R2                                                       04000002
+SCN03    DS    0H                                                       04010002
+         CLI   SEL1I-SEL1L(R1),C'/'                                     04020002
+         BER   R9                                                       04030002
+         LA    R1,SLOTLN(,R1)                                           04040002
+         BCT   R3,SCN03                                                 04050002
+         BAS   R9,BMO01                                                 04060002
+         USING IEM601,R8                                                04070002
+         MVC   EMSGO,=CL78'No member selected (/) for the requested com*04080002
+               mand'                                                    04090002
+         DROP  R8                                                       04100002
+         BAS   R9,SBM01                                                 04110002
+         B     XIT99                                                    04120002
+*---------------------------------------------------------------------* 04130002
+*        READ HTTP MESSAGE MEMBER RECORD                              * 04140002
+*---------------------------------------------------------------------* 04150002
+RDM01    DS    0H                                                       04160002
+         EXEC  CICS,                                                   *04170002
+               READ,                                                   *04180002
+               FILE(=CL8'HTTPMSGS'),                                   *04190002
+               LENGTH(HLFWORK),                                        *04200002
+               RIDFLD(DBLWORK),                                        *04210002
+               SET(R5),                                                *04220002
+               RESP(RESP),                                             *04230002
+               RESP2(RESP2)                                             04240002
+         CLC   RESP,DFHRESP(NORMAL)                                     04250002
+         BER   R9                                                       04260002
+         BAS   R9,BMO01                                                 04270002
+         USING IEM601,R8                                                04280002
+         MVC   EMSGO,=CL78'Selected member not found, retry command'    04290002
+         DROP  R8                                                       04300002
+         BAS   R9,SBM01                                                 04310002
+         B     XIT99                                                    04320002
+*---------------------------------------------------------------------* 04330002
+*        BUILD MAP OUTPUT FORWARD                                     * 04340002
+*---------------------------------------------------------------------* 04350002
+BMO01    DS    0H                                                       04360002
+         ST    R9,FULWORK               SAVE CALLERS RETURN @           04370002
+         USING IEM601,R8                                                04380002
+         LA    R6,SEL1L                 LOAD BEGIN @ SEL/MEM SLOTS      04390002
+         LA    R7,SLOTCT                LOAD SEL/MEM SLOT COUNT         04400002
+         BAS   R9,SBR01                 START FILE BROWSE               04410002
+BMO03    DS    0H                                                       04420002
+         BAS   R9,RNX01                 READ NEXT RECORD                04430002
+         CLC   RESP,DFHRESP(ENDFILE)                                    04440002
+         BE    BMO05                                                    04450002
+         MVC   MEM1O-SEL1L(L'MEM1O,R6),0(R5)                            04460002
+         LA    R6,SLOTLN(,R6)                                           04470002
+         BCT   R7,BMO03                 ..LOOP                          04480002
+BMO05    DS    0H                                                       04490002
+         L     R9,FULWORK               RESTORE CALLERS RETURN @        04500002
+         DROP  R8                                                       04510002
+         BR    R9                                                       04520002
+*---------------------------------------------------------------------* 04530002
+*        BUILD MAP OUTPUT BACKWARD                                    * 04540002
+*---------------------------------------------------------------------* 04550002
+BMB01    DS    0H                                                       04560002
+         ST    R9,FULWORK               SAVE CALLERS RETURN @           04570002
+         LA    R7,SLOTCT                LOAD SEL/MEM SLOT COUNT         04580002
+         BAS   R9,SBR01                 START FILE BROWSE               04590002
+BMB03    DS    0H                                                       04600002
+         BAS   R9,RPV01                 READ PREV RECORD                04610002
+         CLC   RESP,DFHRESP(ENDFILE)                                    04620002
+         BE    BMB05                                                    04630002
+         BCT   R7,BMB03                 ..LOOP                          04640002
+BMB05    DS    0H                                                       04650002
+         EXEC  CICS,                                                   *04660002
+               ENDBR,                                                  *04670002
+               FILE(=CL8'HTTPMSGS')                                     04680002
+         L     R9,FULWORK               RESTORE CALLERS RETURN @        04690002
+         BR    R9                                                       04700002
+*---------------------------------------------------------------------* 04710002
+*        BUILD MAP OUTPUT WITH HTTP RECORD                            * 04720002
+*---------------------------------------------------------------------* 04730002
+BMR01    DS    0H                                                       04740002
+         USING IEM602,R8                                                04750002
+         XC    0(256,R4),0(R4)                                          04760002
+         MVI   C' '(R4),C' '                                            04770002
+         TRT   0(256,R5),0(R4)                                          04780002
+         BZ    BMR51                                                    04790002
+         SR    R1,R5                                                    04800002
+         EX    R1,MVCHCMD                                               04810002
+*MVCHCMD MVC   HCMDO(0),0(R5)                                           04820002
+         LA    R5,1(R1,R5)                                              04830002
+*                                                                       04840002
+         XC    0(256,R4),0(R4)                                          04850002
+         MVI   C'/'(R4),C'/'                                            04860002
+         TRT   0(256,R5),0(R4)                                          04870002
+         BZ    BMR52                                                    04880002
+         SR    R1,R5                                                    04890002
+         LA    R5,0(R1,R5)                                              04900002
+*                                                                       04910002
+         XC    0(256,R4),0(R4)                                          04920002
+         MVI   C' '(R4),C' '                                            04930002
+         MVI   C'?'(R4),C'?'                                            04940002
+         TRT   0(256,R5),0(R4)                                          04950002
+         BZ    BMR53                                                    04960002
+         LR    RF,R1                                                    04970002
+         SR    R1,R5                                                    04980002
+         BCTR  R1,0                                                     04990002
+         EX    R1,MVCPROS                                               05000002
+*MVCPROS MVC   PRSO(0),0(R5)                                            05010002
+         LA    R5,1(R1,R5)                                              05020002
+         CLI   0(RF),C' '                                               05030002
+         BE    BMR03                                                    05040002
+*                                                                       05050002
+         LA    R3,TPRM1L                                                05060002
+         LA    RF,PARMCT                                                05070002
+         XC    0(256,R4),0(R4)                                          05080002
+         MVI   C' '(R4),C' '                                            05090002
+         MVI   C'&&'(R4),C'&&'                                          05100002
+BMR02    DS    0H                                                       05110002
+         TRT   1(256,R5),0(R4)                                          05120002
+         BZ    BMR53                                                    05130002
+         LR    R2,R1                                                    05140002
+         SR    R1,R5                                                    05150002
+         BCTR  R1,0                                                     05160002
+         EX    R1,MVCPRM1                                               05170002
+*MVCPRM1 MVC   PRM1O-TPRM1L(0,R3),0(R5)                                 05180002
+         LA    R5,1(R1,R5)                                              05190002
+         LA    R3,PARMLN(0,R3)                                          05200002
+         CLI   0(R2),C' '                                               05210002
+         BE    BMR03                                                    05220002
+         BCT   RF,BMR02                                                 05230002
+*                                                                       05240002
+*                                                                       05250002
+BMR03    DS    0H                                                       05260002
+         LA    R5,1(,R5)                                                05270002
+         XC    0(256,R4),0(R4)                                          05280002
+         MVI   C'{'(R4),C'{'                                            05290002
+         TRT   0(256,R5),0(R4)                                          05300002
+         BZ    BMR54                                                    05310002
+         SR    R1,R5                                                    05320002
+         BCTR  R1,0                                                     05330002
+         EX    R1,MVCLVL                                                05340002
+*MVCLVL  MVC   LVLO(0),0(R5)                                            05350002
+         LA    R5,3(R1,R5)                                              05360002
+*                                                                       05370002
+         TRT   0(256,R5),0(R4)                                          05380002
+         BZ    BMR54                                                    05390002
+         SR    R1,R5                                                    05400002
+         BCTR  R1,0                                                     05410002
+         EX    R1,MVCHST                                                05420002
+*MVCHST  MVC   HOSTO(0),0(R5)                                           05430002
+         LA    R5,3(R1,R5)                                              05440002
+*                                                                       05450002
+         BR    R9                                                       05460002
+MVCHCMD  MVC   HCMDO(0),0(R5)                                           05470002
+MVCPROS  MVC   PRSO(0),0(R5)                                            05480002
+MVCPRM1  MVC   PRM1O-TPRM1L(0,R3),0(R5)                                 05490002
+MVCLVL   MVC   LVLO(0),0(R5)                                            05500002
+MVCHST   MVC   HOSTO(0),0(R5)                                           05510002
+BMR51    DS    0H                                                       05520002
+         MVC   UMSGO,=CL78'HTTP command not found in record, contact He*05530002
+               lp Desk'                                                 05540002
+         B     BMR99                                                    05550002
+BMR52    DS    0H                                                       05560002
+         MVC   UMSGO,=CL78'HTTP process not found in record, contact He*05570002
+               lp Desk'                                                 05580002
+         B     BMR99                                                    05590002
+BMR53    DS    0H                                                       05600002
+         MVC   UMSGO,=CL78'HTTP process parms or level expected, but no*05610002
+               t found - contact Help Desk'                             05620002
+         B     BMR99                                                    05630002
+BMR54    DS    0H                                                       05640002
+         MVC   UMSGO,=CL78'HTTP CR/LF expected, but not found - contact*05650002
+                Help Desk'                                              05660002
+*        B     BMR99                                                    05670002
+BMR99    DS    0H                                                       05680002
+         DROP  R8                                                       05690002
+         BAS   R9,SBM02                                                 05700002
+         B     XIT99                                                    05710002
+*---------------------------------------------------------------------* 05720002
+*        START FILE BROWSE                                            * 05730002
+*---------------------------------------------------------------------* 05740002
+SBR01    DS    0H                                                       05750002
+         EXEC  CICS,                                                   *05760002
+               STARTBR,                                                *05770002
+               FILE(=CL8'HTTPMSGS'),                                   *05780002
+               RIDFLD(DBLWORK),                                        *05790002
+               GTEQ,                                                   *05800002
+               RESP(RESP),                                             *05810002
+               RESP2(RESP2)                                             05820002
+         CLC   RESP,DFHRESP(NORMAL)                                     05830002
+         BER   R9                                                       05840002
+         OC    DBLWORK,DBLWORK                                          05850002
+         BZ    SBR03                                                    05860002
+         XC    DBLWORK,DBLWORK                                          05870002
+         B     SBR01                                                    05880002
+SBR03    DS    0H                                                       05890002
+         USING IEM601,R8                                                05900002
+         MVC   EMSGO,=CL78'File error starting to browse the HTTPMSGS f*05910002
+               ile - contact the Help Desk'                             05920002
+         DROP  R8                                                       05930002
+         BAS   R9,SBM01                                                 05940002
+         B     XIT99                                                    05950002
+*---------------------------------------------------------------------* 05960002
+*        READ NEXT RECORD                                             * 05970002
+*---------------------------------------------------------------------* 05980002
+RNX01    DS    0H                                                       05990002
+         EXEC  CICS,                                                   *06000002
+               READNEXT,                                               *06010002
+               FILE(=CL8'HTTPMSGS'),                                   *06020002
+               LENGTH(HLFWORK),                                        *06030002
+               RIDFLD(DBLWORK),                                        *06040002
+               SET(R5),                                                *06050002
+               RESP(RESP),                                             *06060002
+               RESP2(RESP2)                                             06070002
+         CLC   RESP,DFHRESP(NORMAL)                                     06080002
+         BER   R9                                                       06090002
+         CLC   RESP,DFHRESP(ENDFILE)                                    06100002
+         BER   R9                                                       06110002
+         USING IEM601,R8                                                06120002
+         MVC   EMSGO,=CL78'File error reading the next record from the *06130002
+               HTTPMSGS file - Contact the Help Desk'                   06140002
+         DROP  R8                                                       06150002
+         BAS   R9,SBM01                                                 06160002
+         B     XIT99                                                    06170002
+*---------------------------------------------------------------------* 06180002
+*        READ PREV RECORD                                             * 06190002
+*---------------------------------------------------------------------* 06200002
+RPV01    DS    0H                                                       06210002
+         EXEC  CICS,                                                   *06220002
+               READPREV,                                               *06230002
+               FILE(=CL8'HTTPMSGS'),                                   *06240002
+               LENGTH(HLFWORK),                                        *06250002
+               RIDFLD(DBLWORK),                                        *06260002
+               SET(R5),                                                *06270002
+               RESP(RESP),                                             *06280002
+               RESP2(RESP2)                                             06290002
+         CLC   RESP,DFHRESP(NORMAL)                                     06300002
+         BER   R9                                                       06310002
+         CLC   RESP,DFHRESP(ENDFILE)                                    06320002
+         BER   R9                                                       06330002
+         USING IEM601,R8                                                06340002
+         MVC   EMSGO,=CL78'File error reading the next record from the *06350002
+               HTTPMSGS file - Contact the Help Desk'                   06360002
+         DROP  R8                                                       06370002
+         BAS   R9,SBM01                                                 06380002
+         B     XIT99                                                    06390002
+*---------------------------------------------------------------------* 06400002
+*        ABNORMAL TERMINATION                                         * 06410002
+*---------------------------------------------------------------------* 06420002
+ABN01    DS    0H                       TERMNL KEYBOARD RESET ERR       06430002
+         LA    R2,MSG01                                                 06440002
+         LA    R3,L'MSG01                                               06450002
+         ICM   R4,B'1111',ABC01                                         06460002
+         B     ABN99                                                    06470002
+ABN02    DS    0H                       TERMNL KEYBOARD RESET ERR       06480002
+         LA    R2,MSG02                                                 06490002
+         LA    R3,L'MSG02                                               06500002
+         ICM   R4,B'1111',ABC02                                         06510002
+         B     ABN99                                                    06520002
+ABN03    DS    0H                       TERMNL KEYBOARD RESET ERR       06530002
+         LA    R2,MSG03                                                 06540002
+         LA    R3,L'MSG03                                               06550002
+         ICM   R4,B'1111',ABC03                                         06560002
+         B     ABN99                                                    06570002
+ABN04    DS    0H                       TERMNL KEYBOARD RESET ERR       06580002
+         LA    R2,MSG04                                                 06590002
+         LA    R3,L'MSG04                                               06600002
+         ICM   R4,B'1111',ABC04                                         06610002
+         B     ABN99                                                    06620002
+ABN05    DS    0H                       TERMNL KEYBOARD RESET ERR       06630002
+         LA    R2,MSG05                                                 06640002
+         LA    R3,L'MSG05                                               06650002
+         ICM   R4,B'1111',ABC05                                         06660002
+         B     ABN99                                                    06670002
+ABN06    DS    0H                       TERMNL KEYBOARD RESET ERR       06680002
+         LA    R2,MSG06                                                 06690002
+         LA    R3,L'MSG06                                               06700002
+         ICM   R4,B'1111',ABC06                                         06710002
+         B     ABN99                                                    06720002
+ABN99    DS    0H                                                       06730002
+         MVC   SAVRESP,RESP                                             06740002
+         MVC   SAVRESP2,RESP2                                           06750002
+         MVC   SAVFN,EIBFN                                              06760002
+         MVC   SAVRC,EIBRCODE                                           06770002
+         STH   R3,HLFWORK                                               06780002
+         EXEC  CICS,                                                   *06790002
+               WRITEQ,                                                 *06800002
+               TD,                                                     *06810002
+               QUEUE(=C'CSML'),                                        *06820002
+               FROM(0(,R2)),                                           *06830002
+               LENGTH(HLFWORK),                                        *06840002
+               RESP(RESP),                                             *06850002
+               RESP2(RESP2)                                             06860002
+         ST    R4,FULWORK                                               06870002
+         EXEC  CICS,                                                   *06880002
+               ABEND,                                                  *06890002
+               ABCODE(FULWORK),                                        *06900002
+               RESP(RESP),                                             *06910002
+               RESP2(RESP2)                                             06920002
+*---------------------------------------------------------------------* 06930002
+*        UNLOCK TERMINAL KEYBOARD                                     * 06940002
+*---------------------------------------------------------------------* 06950002
+XIT00    DS    0H                                                       06960002
+         CLI   TASKTYPE,TERMINAL                                        06970002
+         BNE   XIT99                                                    06980002
+         EXEC  CICS,                                                   *06990002
+               SEND,                                                   *07000002
+               CONTROL,                                                *07010002
+               ERASE,                                                  *07020002
+               FREEKB,                                                 *07030002
+               ALARM,                                                  *07040002
+               RESP(RESP),                                             *07050002
+               RESP2(RESP2)                                             07060002
+         CLC   RESP,DFHRESP(NORMAL)                                     07070002
+         BNE   ABN04                                                    07080002
+*---------------------------------------------------------------------* 07090002
+*        RETURN TO CICS                                               * 07100002
+*---------------------------------------------------------------------* 07110002
+XIT99    DS    0H                                                       07120002
+         EXEC  CICS,                                                   *07130002
+               RETURN                                                   07140002
+         DFHEIRET                                                       07150002
+*---------------------------------------------------------------------* 07160002
+*        CONSTANTS                                                    * 07170002
+*---------------------------------------------------------------------* 07180002
+*                                                                       07190002
+MSG01    DC    C'IEP601001  Error resetting the terminal keyboard, Aben*07200002
+               d P6KB initiated.'                                       07210002
+ABC01    EQU   *-15                                                     07220002
+*                                                                       07230002
+MSG02    DC    C'IEP601002  Error receiving terminal input, Abend P6RT *07240002
+               initiated.'                                              07250002
+ABC02    EQU   *-15                                                     07260002
+*                                                                       07270002
+MSG03    DC    C'IEP601003  Error during terminal output GETMAIN, Abend*07280002
+                P6GT initiated.'                                        07290002
+ABC03    EQU   *-15                                                     07300002
+*                                                                       07310002
+MSG04    DC    C'IEP601004  Error during terminal output, Abend P6ST in*07320002
+               itiated.'                                                07330002
+ABC04    EQU   *-15                                                     07340002
+*                                                                       07350002
+MSG05    DC    C'IEP601005  Error during initial terminal map, Abend P6*07360002
+               IT initiated.'                                           07370002
+ABC05    EQU   *-15                                                     07380002
+*                                                                       07390002
+MSG06    DC    C'IEP601006  Error during BMS input mapping, Abend P6IM *07400002
+               initiated.'                                              07410002
+ABC06    EQU   *-15                                                     07420002
+*                                                                       07430002
+*---------------------------------------------------------------------* 07440002
+*        DSECTS                                                       * 07450002
+*---------------------------------------------------------------------* 07460002
+*                                                                       07470002
+         DFHEISTG                                                       07480002
+EISEYE   DS    CL16                     EYE CATCHER                     07490002
+DBLWORK  DS    D                        DOUBLE WORD WORK                07500002
+FULWORK  DS    F                        FULL WORD WORK                  07510002
+FULWORK2 DS    F                        FULL WORD WORK2                 07520002
+TOKEN    DS    F                        FILE UPDATE TOKEN               07530002
+RESP     DS    F                        EXEC COMMAND RESPONSE           07540002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           07550002
+FAILRSP  DS    CL8                      EYE CATCHER                     07560002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     07570002
+FAILRSP2 DS    CL8                      EYE CATCHER                     07580002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     07590002
+FAILFN   DS    CL8                      EYE CATCHER                     07600002
+SAVFN    DS    H                        SAVED EXEC EIBFN                07610002
+FAILRC   DS    CL8                      EYE CATCHER                     07620002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             07630002
+HLFWORK  DS    H                        HALF WORD WORK                  07640002
+DATE     DS    CL8                      CURRENT DATE MM/DD/YY           07650002
+TIME     DS    CL8                      CURRENT TIME HH:MM:SS           07660002
+TASKTYPE DS    X                        TASK FACILITY TYPE              07670002
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY             07680002
+*                                                                       07690002
+IEM601   DSECT ,                        BMS MAPSET                      07700002
+         COPY  IEM601                   COPY BMS/MAP DSECT              07710002
+SEL1N    EQU   MEM5O+L'MEM5O                                            07720002
+SLOTLN   EQU   (SEL1N-SEL5L)            ONE SEL/MEM MAP SLOT LENGTH     07730002
+SLOTCT   EQU   (EMSGL-SEL1L)/SLOTLN     NUMBER OF SEL/MEM MAP SLOTS     07740002
+SLOTEN   EQU   SLOTLN*(SLOTCT-1)        LAST SEL/MEM MAP SLOT OFFSET    07750002
+*                                                                       07760002
+IEM602   DSECT ,                        BMS MAPSET                      07770002
+         COPY  IEM602                   COPY BMS/MAP DSECT              07780002
+PARMLN   EQU   (PRM1O+L'PRM1O-TPRM1L)   ONE PARM MAP PARM LENGTH        07790002
+PARMCT   EQU   (LVLL-TPRM1L)/PARMLN     NUMBER OF PARM MAP PARMS        07800002
+PARMEN   EQU   PARMLN*(PARMCT-1)        LAST PARM MAP PARM OFFSET       07810002
+*---------------------------------------------------------------------* 07820002
+         DFHEIEND                                                       07830002
+         END                                                            07840002
+

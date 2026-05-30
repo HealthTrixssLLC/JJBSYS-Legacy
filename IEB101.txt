@@ -1,0 +1,160 @@
+         TITLE '**  BATCH DATE/TIME FORMAT PROGRAM  **'                 00010002
+*---------------------------------------------------------------------- 00020002
+*  IEB101 CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION                 00030002
+*---------------------------------------------------------------------- 00040002
+R0       EQU   0                                                        00050002
+R1       EQU   1                                                        00060002
+R2       EQU   2                                                        00070002
+R3       EQU   3                                                        00080002
+R4       EQU   4                                                        00090002
+R5       EQU   5                                                        00100002
+R6       EQU   6                                                        00110002
+R7       EQU   7                                                        00120002
+R8       EQU   8                                                        00130002
+R9       EQU   9                                                        00140002
+RA       EQU   10                                                       00150002
+RB       EQU   11                                                       00160002
+RC       EQU   12                                                       00170002
+RD       EQU   13                                                       00180002
+RE       EQU   14                                                       00190002
+RF       EQU   15                                                       00200002
+IEB101   RSECT                                                          00210002
+         SAVE  (14,12)                  SAVE CALLERS REGS               00220002
+         LR    RC,RF                    LOAD BASE REG                   00230002
+         LR    RB,R1                    LOAD PARM REG                   00240002
+         USING IEB101,RC                USE IT                          00250002
+         B     INT00                    BRANCH AROUND DUMP ID           00260002
+IEB101   AMODE 31                       MAY EXECUTE ABOVE 16M           00270002
+IEB101   RMODE ANY                      MAY RESIDE ABOVE 16M            00280002
+         DS    0H                                                       00290002
+         DC    CL8'IEB101'              DUMP PROGRAM ID                 00300002
+         DC    CL1' '                                                   00310002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00320002
+         DC    CL1' '                                                   00330002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00340002
+         DC    CL1' '                                                   00350002
+INT00    DS    0H                                                       00360002
+*---------------------------------------------------------------------- 00370002
+*  GETMAIN SAVE AREA STORAGE                                            00380002
+*---------------------------------------------------------------------- 00390002
+         LA    R2,USERALN               LOAD STORAGE LENGTH             00400002
+         STORAGE OBTAIN,                                               *00410002
+               ADDR=(R1),                                              *00420002
+               BNDRY=DBLWD,                                            *00430002
+               COND=YES,                                               *00440002
+               LENGTH=(R2),                                            *00450002
+               LOC=ANY,                                                *00460002
+               SP=0                                                     00470002
+         LTR   RF,RF                    GETMAIN SUCCESSFUL              00480002
+         BZ    INT03                                                    00490002
+         WTO   'IEB10103 - STORAGE OBTAIN FAILED'                       00500002
+         DC    H'0'                     FORCED S/0C1 ABEND              00510002
+INT03    DS    0H                                                       00520002
+         ST    RD,4(0,R1)               STORE BWD CHAIN @               00530002
+         ST    R1,8(0,RD)               STORE FWD CHAIN @               00540002
+         LR    RD,R1                    USE NEW SA                      00550002
+         USING USERAREA,RD              USE IT                          00560002
+*---------------------------------------------------------------------- 00570002
+*  VALIDATE INPUT PARMS AND INITIALIZE STORAGE                          00580002
+*---------------------------------------------------------------------- 00590002
+         L     R2,0(,RB)                                                00600002
+         LH    R1,0(,R2)                                                00610002
+         LTR   R1,R1                                                    00620002
+         BNZ   INT05                                                    00630002
+         WTO   'IEB10101 - DATE/TIME WORKAREA NOT FOUND'                00640002
+         DC    H'0'                                                     00650002
+INT05    DS    0H                                                       00660002
+         CHI   R1,18                                                    00670002
+         BNL   INT08                                                    00680002
+         WTO   'IEB10102 - DATE/TIME WORKAREA TOO SMALL'                00690002
+         DC    H'0'                                                     00700002
+INT08    DS    0H                                                       00710002
+         LA    RA,2(,R2)                                                00720002
+         USING PARMAREA,RA                                              00730002
+*---------------------------------------------------------------------- 00740002
+*        INITIALIZE PARMS                                               00750002
+*---------------------------------------------------------------------- 00760002
+         MVC   COMDATE,=C'CCYYMMDD'                                     00770002
+         MVC   COMTIME,=C'HHMMSSthmi'                                   00780002
+         MVC   TODLIST,TIME                                             00790002
+         XC    TODAREA,TODAREA                                          00800002
+*---------------------------------------------------------------------- 00810002
+*        GET AND FORMAT DATE AND TIME AND EXIT                          00820002
+*---------------------------------------------------------------------- 00830002
+         TIME  DEC,                                                    *00840002
+               TODAREA,                                                *00850002
+               ZONE=LT,                                                *00860002
+               LINKAGE=SYSTEM,                                         *00870002
+               DATETYPE=YYYYMMDD,                                      *00880002
+               MF=(E,TODLIST)                                           00890002
+         ST    RF,FULWORK                                               00900002
+         LTR   RF,RF                                                    00910002
+         BZ    INT10                                                    00920002
+         WTO   'IEB10104 - TIME MACRO RETURN CODE NON-ZERO'             00930002
+         DC    H'0'                                                     00940002
+INT10    DS    0H                                                       00950002
+         LM    R0,R1,TODAREA            HHMMSSth miju0000               00960002
+         STM   R0,R1,DBLWORK                                            00970002
+         UNPK  WORKTIME,DBLWORK(6)                                      00980002
+         MVC   COMTIME,WORKTIME                                         00990002
+         LM    R0,R1,TODAREA+8          CCYYMMDD 00000000               01000002
+         SRDL  R0,32                                                    01010002
+         SLDL  R0,4                                                     01020002
+         LA    R1,15(,R1)                                               01030002
+         STM   R0,R1,DBLWORK            0000000C CYYMMDDF               01040002
+         UNPK  WORKDATE,DBLWORK+3(5)                                    01050002
+         MVC   COMDATE,WORKDATE+1                                       01060002
+*---------------------------------------------------------------------- 01070002
+*  FREEMAIN SAVE AREA STORAGE AND RETURN TO CALLER                      01080002
+*---------------------------------------------------------------------- 01090002
+XIT00    DS    0H                                                       01100002
+         LR    R1,RD                                                    01110002
+         L     RD,4(0,RD)               LOAD BWD CHAIN @                01120002
+         LA    R2,USERALN                                               01130002
+         STORAGE RELEASE,                                              *01140002
+               ADDR=(R1),                                              *01150002
+               LENGTH=(R2),                                            *01160002
+               SP=0                                                     01170002
+         LTR   RF,RF                    GETMAIN SUCCESSFUL              01180002
+         BZ    XIT10                                                    01190002
+         WTO   'IEB10105 - STORAGE RELEASE FAILED'                      01200002
+         DC    H'0'                     FORCED S/0C1 ABEND              01210002
+XIT10    DS    0H                                                       01220002
+         LM    RE,RC,12(RD)                                             01230002
+         SR    RF,RF                                                    01240002
+         BR    RE                                                       01250002
+*---------------------------------------------------------------------- 01260002
+*  CONSTANTS AND LITERALS                                               01270002
+*---------------------------------------------------------------------- 01280002
+TIME     TIME  LINKAGE=SYSTEM,                                         *01290002
+               MF=L                                                     01300002
+TIMELN   EQU   *-TIME                                                   01310002
+*                                                                       01320002
+         LTORG                                                          01330002
+*                                                                       01340002
+*---------------------------------------------------------------------- 01350002
+*        DSECTS                                                       * 01360002
+*---------------------------------------------------------------------- 01370002
+*                                                                       01380002
+USERAREA DSECT                                                          01390002
+SAVEAREA DS    18F                                                      01400002
+*                                                                       01410002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01420002
+TODAREA  DS    2D                       TIME WORKAREA                   01430002
+FULWORK  DS    F                        FULL WORD WORK                  01440002
+*                                                                       01450002
+TODLIST  DS    XL(TIMELN)               TIME PARMS                      01460002
+*                                                                       01470002
+WORKTIME DS    CL11                                                     01480002
+WORKDATE DS    CL9                                                      01490002
+*                                                                       01500002
+*                                                                       01510002
+USERALN  EQU   *-USERAREA                                               01520002
+*                                                                       01530002
+PARMAREA DSECT                                                          01540002
+COMDATE  DS    CL8                      RETURN DATE CCYYMMDD            01550002
+COMTIME  DS    CL10                     RETURN TIME HHMMSSthmi          01560002
+*                                                                       01570002
+PARMMIN  EQU   *-PARMAREA               MINIMUM COMMAREA LENGTH         01580002
+         END                                                            01590002
+

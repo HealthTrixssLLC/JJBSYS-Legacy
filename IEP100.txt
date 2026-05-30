@@ -1,0 +1,198 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEP100   TITLE '**  CICS/TS CALLABLE DATE/TIME SERVICE PROGRAM  **'     00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTER AND OTHER EQUATES                                     00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEP100   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEP100   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IEP100 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEP100   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEP100   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEP100'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(R9),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMPARM,R9                                               00570002
+*---------------------------------------------------------------------- 00580002
+*        INITIALIZE PARMS                                               00590002
+*---------------------------------------------------------------------- 00600002
+         MVC   COMDATE,=C'CCYYMMDD'                                     00610002
+         MVC   COMTIME,=C'HHMMSSthmi'                                   00620002
+         MVC   TODLIST,TIME                                             00630002
+         XC    TODAREA,TODAREA                                          00640002
+*---------------------------------------------------------------------- 00650002
+*        GET AND FORMAT DATE AND TIME AND EXIT                          00660002
+*---------------------------------------------------------------------- 00670002
+         TIME  DEC,                                                    *00680002
+               TODAREA,                                                *00690002
+               ZONE=LT,                                                *00700002
+               LINKAGE=SYSTEM,                                         *00710002
+               DATETYPE=YYYYMMDD,                                      *00720002
+               MF=(E,TODLIST)                                           00730002
+         ST    RF,FULWORK                                               00740002
+         LTR   RF,RF                                                    00750002
+         BNZ   ABN03                                                    00760002
+         LM    R0,R1,TODAREA            HHMMSSth miju0000               00770002
+         STM   R0,R1,DBLWORK                                            00780002
+         UNPK  WORKTIME,DBLWORK(6)                                      00790002
+         MVC   COMTIME,WORKTIME                                         00800002
+         LM    R0,R1,TODAREA+8          CCYYMMDD 00000000               00810002
+         SRDL  R0,32                                                    00820002
+         SLDL  R0,4                                                     00830002
+         LA    R1,15(,R1)                                               00840002
+         STM   R0,R1,DBLWORK            0000000C CYYMMDDF               00850002
+         UNPK  WORKDATE,DBLWORK+3(5)                                    00860002
+         MVC   COMDATE,WORKDATE+1                                       00870002
+         B     XIT00                                                    00880002
+*---------------------------------------------------------------------- 00890002
+*        VARIOUS ERROR MSGS AND ABENDS                                  00900002
+*---------------------------------------------------------------------- 00910002
+ABN01    DS    0H                                                       00920002
+         LA    R2,MSG01                                                 00930002
+         LA    R3,L'MSG01                                               00940002
+         ICM   R4,B'1111',ABC01                                         00950002
+         B     ABN99                                                    00960002
+ABN02    DS    0H                                                       00970002
+         LA    R2,MSG02                                                 00980002
+         LA    R3,L'MSG02                                               00990002
+         ICM   R4,B'1111',ABC02                                         01000002
+         B     ABN99                                                    01010002
+ABN03    DS    0H                                                       01020002
+         LA    R2,MSG03                                                 01030002
+         LA    R3,L'MSG03                                               01040002
+         ICM   R4,B'1111',ABC03                                         01050002
+         B     ABN99                                                    01060002
+ABN99    DS    0H                                                       01070002
+         MVC   SAVRESP,RESP                                             01080002
+         MVC   SAVRESP2,RESP2                                           01090002
+         MVC   SAVFN,EIBFN                                              01100002
+         MVC   SAVRC,EIBRCODE                                           01110002
+         STH   R3,HLFWRK                                                01120002
+         EXEC  CICS,                                                   *01130002
+               WRITEQ,                                                 *01140002
+               TD,                                                     *01150002
+               QUEUE(=C'CSMT'),                                        *01160002
+               FROM(0(,R2)),                                           *01170002
+               LENGTH(HLFWRK),                                         *01180002
+               RESP(RESP),                                             *01190002
+               RESP2(RESP2)                                             01200002
+         ST    R4,FULWORK                                               01210002
+         EXEC  CICS,                                                   *01220002
+               ABEND,                                                  *01230002
+               ABCODE(FULWORK),                                        *01240002
+               RESP(RESP),                                             *01250002
+               RESP2(RESP2)                                             01260002
+*---------------------------------------------------------------------- 01270002
+*        RETURN TO CICS                                                 01280002
+*---------------------------------------------------------------------- 01290002
+XIT00    DS    0H                                                       01300002
+         EXEC  CICS,                                                   *01310002
+               RETURN                                                   01320002
+         DFHEIRET                                                       01330002
+*---------------------------------------------------------------------- 01340002
+*        CONSTANTS                                                      01350002
+*---------------------------------------------------------------------- 01360002
+*                                                                       01370002
+*                                                                       01380002
+TIME     TIME  LINKAGE=SYSTEM,                                         *01390002
+               MF=L                                                     01400002
+TIMELN   EQU   *-TIME                                                   01410002
+*                                                                       01420002
+MSG01    DC    C'IEP100001  COMMAREA length passed from caller is too s*01430002
+               mall, P101 Abend initiated.'                             01440002
+ABC01    EQU   *-21                                                     01450002
+*                                                                       01460002
+MSG02    DC    C'IEP100002  COMMAREA address can not be located, P102 A*01470002
+               bend initiated.'                                         01480002
+ABC02    EQU   *-21                                                     01490002
+*                                                                       01500002
+MSG03    DC    C'IEP100003  TIME Return Code non-zero, P103 Abend initi*01510002
+               ated.'                                                   01520002
+ABC03    EQU   *-21                                                     01530002
+*                                                                       01540002
+*---------------------------------------------------------------------- 01550002
+*        CICS WORKING STORAGE DSECT                                     01560002
+*---------------------------------------------------------------------- 01570002
+         DFHEISTG                                                       01580002
+EISEYE   DS    CL16                     EYE CATCHER                     01590002
+*                                                                       01600002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01610002
+FULWORK  DS    F                        FULL WORD WORK                  01620002
+*                                                                       01630002
+RESP     DS    F                        EXEC COMMAND RESPONSE           01640002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01650002
+*                                                                       01660002
+FAILRSP  DS    CL8                      EYE CATCHER                     01670002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01680002
+FAILRSP2 DS    CL8                      EYE CATCHER                     01690002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01700002
+FAILFN   DS    CL8                      EYE CATCHER                     01710002
+SAVFN    DS    H                        SAVED EXEC EIBFN                01720002
+FAILRC   DS    CL8                      EYE CATCHER                     01730002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01740002
+*                                                                       01750002
+HLFWRK   DS    H                        HALF WORD WORK                  01760002
+*                                                                       01770002
+TODAREA  DS    2D                       TIME WORKAREA                   01780002
+*                                                                       01790002
+TODLIST  DS    XL(TIMELN)               TIME PARMS                      01800002
+*                                                                       01810002
+WORKTIME DS    CL11                                                     01820002
+WORKDATE DS    CL9                                                      01830002
+*                                                                       01840002
+         DFHEIEND                                                       01850002
+*---------------------------------------------------------------------- 01860002
+*        CLIENT'S COMMAREA PARM LIST DSECT                              01870002
+*---------------------------------------------------------------------- 01880002
+*                                                                       01890002
+COMPARM  DSECT                                                          01900002
+*                                                                       01910002
+COMDATE  DS    CL8                      RETURN DATE CCYYMMDD            01920002
+COMTIME  DS    CL10                     RETURN TIME HHMMSSthmi          01930002
+*                                                                       01940002
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         01950002
+*---------------------------------------------------------------------- 01960002
+         END                                                            01970002
+

@@ -1,0 +1,233 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEB604   TITLE '**  CICS/ESA EXCI DPL SERVER PROGRAM  **'               00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTER AND OTHER EQUATES                                     00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEB604   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEB604   DFHEIENT CODEREG=(12,11),                                     *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(10)                                              00270002
+         MVC   EISEYE,=CL16'IEB604 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEB604   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEB604   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEB604'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(R9),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMPARM,R9                                               00570002
+         XC    COMRSP(8),COMRSP         SET NORMAL RESPONSE             00580002
+         CLC   =C'PG',COMRES            PROGRAM RESOURCE REQUEST        00590002
+         L     R1,RSPNOTPG              LOAD NOT PGM SRVR REQ ERROR     00600002
+         BNE   XIT01                    ..WRONG SERVER CALLED           00610002
+         LA    R2,USRKYL+2              LOAD AREA LENGTH BEGIN @        00620002
+         OC    0(2,R2),0(R2)            RECORD AREA LENGTH PASSED       00630002
+         L     R1,RSPNOARL              LOAD NO AREA LENGTH ERROR       00640002
+         BZ    XIT01                    ..NO, REQUIRED                  00650002
+         LH    R1,0(,R2)                LOAD USER AREA LENGTH           00660002
+         ST    R1,TMPARL                SAVE USER AREA LENGTH           00670002
+         LA    R2,2(,R2)                LOAD COMMAREA PASSED            00680002
+         ST    R2,TMPARA                SAVE COMMAREA @                 00690002
+         AH    R2,TMPARL                CALC COMMAREA END @             00700002
+         SR    R2,R9                    CALC MAX LOCAL COMMAREA LEN     00710002
+         CH    R2,EIBCALEN              LOCAL COMMAREA LARGE ENOUGH     00720002
+         L     R1,RSPBADCA              LOAD COMMAREA LENGTH ERROR      00730002
+         BH    XIT01                    ..NO, RETURN ERROR              00740002
+         CLC   =C'LK',COMFUN            LINK FUNCTION                   00750002
+         BE    LNK01                    ..YES, PERFORM FUNCTION         00760002
+         L     R1,RSPNOFUN              LOAD INVALID FUNCTION ERROR     00770002
+         B     XIT01                    RETURN ERROR CODE               00780002
+*---------------------------------------------------------------------- 00790002
+*        PROCESS PROGRAM LINK REQUESTS                                  00800002
+*---------------------------------------------------------------------- 00810002
+LNK01    DS    0H                                                       00820002
+         L     R3,TMPARA                LOAD USER RECORD @              00830002
+         EXEC  CICS,                                                   *00840002
+               LINK,                                                   *00850002
+               PROGRAM(COMRSC),                                        *00860002
+               COMMAREA(0(,R3)),                                       *00870002
+               LENGTH(TMPARL+2),                                       *00880002
+               RESP(RESP),                                             *00890002
+               RESP2(RESP2)                                             00900002
+         B     XIT00                    RETURN RESP CODE                00910002
+*---------------------------------------------------------------------- 00920002
+*        VARIOUS ERROR MSGS AND ABENDS                                  00930002
+*---------------------------------------------------------------------- 00940002
+ABN01    DS    0H                                                       00950002
+         LA    R2,MSG01                                                 00960002
+         LA    R3,L'MSG01                                               00970002
+         ICM   R4,B'1111',ABC01                                         00980002
+         B     ABN99                                                    00990002
+ABN02    DS    0H                                                       01000002
+         LA    R2,MSG02                                                 01010002
+         LA    R3,L'MSG02                                               01020002
+         ICM   R4,B'1111',ABC02                                         01030002
+         B     ABN99                                                    01040002
+ABN99    DS    0H                                                       01050002
+         MVC   SAVRESP,RESP                                             01060002
+         MVC   SAVRESP2,RESP2                                           01070002
+         MVC   SAVFN,EIBFN                                              01080002
+         MVC   SAVRC,EIBRCODE                                           01090002
+         STH   R3,HLFWRK1                                               01100002
+         EXEC  CICS,                                                   *01110002
+               WRITEQ,                                                 *01120002
+               TD,                                                     *01130002
+               QUEUE(=C'CSMT'),                                        *01140002
+               FROM(0(,R2)),                                           *01150002
+               LENGTH(HLFWRK1),                                        *01160002
+               RESP(RESP),                                             *01170002
+               RESP2(RESP2)                                             01180002
+         ST    R4,FULWORK                                               01190002
+         EXEC  CICS,                                                   *01200002
+               ABEND,                                                  *01210002
+               ABCODE(FULWORK),                                        *01220002
+               RESP(RESP),                                             *01230002
+               RESP2(RESP2)                                             01240002
+*---------------------------------------------------------------------- 01250002
+*        RETURN TO CICS                                                 01260002
+*---------------------------------------------------------------------- 01270002
+XIT00    DS    0H                                                       01280002
+         MVC   COMRSP(8),RESP           SET CICS RESP CODE              01290002
+         B     XIT99                                                    01300002
+XIT01    DS    0H                                                       01310002
+         ST    R1,COMRSP                SET ERROR RETURN CODE           01320002
+XIT99    DS    0H                                                       01330002
+         EXEC  CICS,                                                   *01340002
+               RETURN                                                   01350002
+         DFHEIRET                                                       01360002
+*---------------------------------------------------------------------- 01370002
+*        CONSTANTS                                                      01380002
+*---------------------------------------------------------------------- 01390002
+RSPNOTFI DC    F'1001'                  NOT A FILE SERVER REQUEST       01400002
+RSPNOTTD DC    F'1002'                  NOT A TD SERVER REQUEST         01410002
+RSPNOTTS DC    F'1003'                  NOT A TS SERVER REQUEST         01420002
+RSPNOFUN DC    F'1004'                  INVALID FUNCTION CODE           01430002
+RSPBADCA DC    F'1005'                  COMMAREA TO SMALL               01440002
+RSPNOARL DC    F'1011'                  NO AREA LENGTH                  01450002
+RSPNOKYL DC    F'1013'                  NO KEY LENGTH                   01460002
+RSPNOVSM DC    F'1021'                  NOT VSAM                        01470002
+RSPVSORG DC    F'1022'                  NOT VSAM KSDS, ESDS, RRDS       01480002
+RSPVSKYL DC    F'1023'                  VSAM KEY LENGTH INVALID         01490002
+RSPVSREL DC    F'1024'                  VSAM RECORD LENGTH INVALID      01500002
+RSPNOOPN DC    F'1025'                  UNABLE TO OPEN FILE             01510002
+RSPNOINT DC    F'1031'                  NOT INTRA TDQ                   01520002
+RSPNOTPG DC    F'1041'                  NOT PROGRAM                     01530002
+*                                                                       01540002
+MSG01    DC    C'IEB604001  COMMAREA length passed from IEB501 EXCI Cli*01550002
+               ent too small, B621 abend initiated.'                    01560002
+ABC01    EQU   *-21                                                     01570002
+*                                                                       01580002
+MSG02    DC    C'IEB604002  COMMAREA address can not be located, B622 a*01590002
+               bend initiated.'                                         01600002
+ABC02    EQU   *-21                                                     01610002
+*                                                                       01620002
+*---------------------------------------------------------------------- 01630002
+*        CICS WORKING STORAGE DSECT                                     01640002
+*---------------------------------------------------------------------- 01650002
+         DFHEISTG                                                       01660002
+EISEYE   DS    CL16                     EYE CATCHER                     01670002
+*                                                                       01680002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01690002
+FULWORK  DS    F                        FULL WORD WORK                  01700002
+*                                                                       01710002
+RESP     DS    F                        EXEC COMMAND RESPONSE           01720002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01730002
+*                                                                       01740002
+FAILRSP  DS    CL8                      EYE CATCHER                     01750002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01760002
+FAILRSP2 DS    CL8                      EYE CATCHER                     01770002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01780002
+FAILFN   DS    CL8                      EYE CATCHER                     01790002
+SAVFN    DS    H                        SAVED EXEC EIBFN                01800002
+FAILRC   DS    CL8                      EYE CATCHER                     01810002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01820002
+*                                                                       01830002
+HLFWRK1  DS    H                        HALF WORD WORK                  01840002
+HLFWRK2  DS    H                        HALF WORD WORK                  01850002
+*                                                                       01860002
+TMPARL   DS    F                        PASSED AREA LENGTH WORK AREA    01870002
+TMPARA   DS    F                        PASSED AREA WORK AREA           01880002
+*                                                                       01890002
+RSCENABL DS    F                        TDQ ENABLE STATUS               01900002
+RSCXSDS  DS    F                        TDQ ORGANIZATION TYPE           01910002
+         DFHEIEND                                                       01920002
+*---------------------------------------------------------------------- 01930002
+*        CLIENT'S COMMAREA PARM LIST DSECT                              01940002
+*---------------------------------------------------------------------- 01950002
+*                                                                       01960002
+COMPARM  DSECT                                                          01970002
+*                                                                       01980002
+COMFUN   DS    CL2                      FUNCTION TYPE                   01990002
+*                                       ..AD = ADD                      02000002
+*                                       ..DL = DELETE                   02010002
+*                                       ..LK = LINK                     02020002
+*                                       ..RD = READ                     02030002
+*                                       ..RN = READNEXT                 02040002
+*                                       ..RP = READPREV                 02050002
+*                                       ..RQ = READQ                    02060002
+*                                       ..UP = UPDATE                   02070002
+*                                       ..WQ = WRITEQ                   02080002
+*                                                                       02090002
+COMRES   DS    CL2                      RESOURCE TYPE                   02100002
+*                                       ..FI = VSAM FILE (IEB601)       02110002
+*                                       ..TD = TD QUEUE  (IEB604)       02120002
+*                                       ..TS = TS QUEUE  (IEB603)       02130002
+*                                       ..PG = PROGRAM   (IEB604)       02140002
+*                                                                       02150002
+COMRSC   DS    CL8                      RESOURCE NAME                   02160002
+*                                                                       02170002
+COMRSP   DS    A                        RETURN CODE 1                   02180002
+COMRSP2  DS    A                        RETURN CODE 2                   02190002
+*                                       ..0 = NORMAL                    02200002
+*                                       ..n = RESP ERROR CODE           02210002
+*                                       ..n = SERVER ERROR CODE         02220002
+*                                                                       02230002
+USRKYL   DS    H                        RESOURCE KEY LENGTH             02240002
+USXKEY   EQU   *                        RESOURCE KEY @                  02250002
+*                                                                       02260002
+USXARL   DS    H                        RESOURCE AREA LENGTH            02270002
+USXARA   EQU   *                        RESOURCE AREA @                 02280002
+*                                                                       02290002
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         02300002
+*---------------------------------------------------------------------- 02310002
+         END                                                            02320002
+

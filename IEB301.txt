@@ -1,0 +1,171 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEB301   TITLE '**  CICS EXCI DPL NEWCOPY PROGRAM  **'                  00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTERS                                                      00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEB301   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEB301   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IEB301 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP'    SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN'      SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC'      SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEB301   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEB301   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEB301'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMLN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(RA),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMMPARM,RA                                              00570002
+*---------------------------------------------------------------------- 00580002
+*        INQUIRE PROGRAM                                                00590002
+*---------------------------------------------------------------------- 00600002
+         EXEC  CICS,                                                   *00610002
+               INQUIRE,                                                *00620002
+               PROGRAM(COMNCP),                                        *00630002
+               STATUS(FULWORK),                                        *00640002
+               RESP(RESP),                                             *00650002
+               RESP2(RESP2)                                             00660002
+         MVC   COMRC1,RESP                                              00670002
+         MVC   COMRC2,RESP2                                             00680002
+         CLC   RESP,DFHRESP(NORMAL)                                     00690002
+         BNE   XIT00                                                    00700002
+*---------------------------------------------------------------------- 00710002
+*        SET PROGRAM NEWCOPY PHASE-IN                                   00720002
+*---------------------------------------------------------------------- 00730002
+         EXEC  CICS,                                                   *00740002
+               SET,                                                    *00750002
+               PROGRAM(COMNCP),                                        *00760002
+               PHASEIN,                                                *00770002
+               RESP(RESP),                                             *00780002
+               RESP2(RESP2)                                             00790002
+         MVC   COMRC1,RESP                                              00800002
+         MVC   COMRC2,RESP2                                             00810002
+         B     XIT00                                                    00820002
+*---------------------------------------------------------------------- 00830002
+*        ABNORMAL TERMINATION                                           00840002
+*---------------------------------------------------------------------- 00850002
+*                                                                       00860002
+ABN01    DS    0H                                                       00870002
+         LA    R2,MSG01                                                 00880002
+         LA    R3,L'MSG01                                               00890002
+         ICM   R4,B'1111',ABC01                                         00900002
+         B     ABN99                                                    00910002
+*                                                                       00920002
+ABN02    DS    0H                                                       00930002
+         LA    R2,MSG02                                                 00940002
+         LA    R3,L'MSG02                                               00950002
+         ICM   R4,B'1111',ABC02                                         00960002
+         B     ABN99                                                    00970002
+*                                                                       00980002
+ABN99    DS    0H                                                       00990002
+         MVC   SAVRESP,RESP                                             01000002
+         MVC   SAVRESP2,RESP2                                           01010002
+         MVC   SAVFN,EIBFN                                              01020002
+         MVC   SAVRC,EIBRCODE                                           01030002
+         STH   R3,HLFWORK                                               01040002
+         EXEC  CICS,                                                   *01050002
+               WRITEQ,                                                 *01060002
+               TD,                                                     *01070002
+               QUEUE(=C'CSML'),                                        *01080002
+               FROM(0(,R2)),                                           *01090002
+               LENGTH(HLFWORK),                                        *01100002
+               RESP(RESP),                                             *01110002
+               RESP2(RESP2)                                             01120002
+         ST    R4,FULWORK                                               01130002
+         EXEC  CICS,                                                   *01140002
+               ABEND,                                                  *01150002
+               ABCODE(FULWORK),                                        *01160002
+               RESP(RESP),                                             *01170002
+               RESP2(RESP2)                                             01180002
+*---------------------------------------------------------------------- 01190002
+*        RETURN TO CICS                                                 01200002
+*---------------------------------------------------------------------- 01210002
+XIT00    DS    0H                                                       01220002
+         EXEC  CICS,                                                   *01230002
+               RETURN                                                   01240002
+         DFHEIRET                                                       01250002
+*---------------------------------------------------------------------- 01260002
+*        CONSTANTS                                                      01270002
+*---------------------------------------------------------------------- 01280002
+*                                                                       01290002
+MSG01    DC    C'IEB30101 Caller COMMAREA length too small, abend B3CL *01300002
+               initiated.'                                              01310002
+ABC01    EQU   *-15                                                     01320002
+*                                                                       01330002
+MSG02    DC    C'IEB30102 Caller COMMAREA address not found, abend B3CA*01340002
+                initiated.'                                             01350002
+ABC02    EQU   *-15                                                     01360002
+*                                                                       01370002
+*---------------------------------------------------------------------- 01380002
+*        DSECTS                                                       * 01390002
+*---------------------------------------------------------------------- 01400002
+*                                                                       01410002
+         DFHEISTG                                                       01420002
+EISEYE   DS    CL16                     EYE CATCHER                     01430002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01440002
+FULWORK  DS    F                        FULL WORD WORK                  01450002
+RESP     DS    F                        EXEC COMMAND RESPONSE           01460002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01470002
+*                                                                       01480002
+FAILRSP  DS    CL8                      EYE CATCHER                     01490002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01500002
+FAILRSP2 DS    CL8                      EYE CATCHER                     01510002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01520002
+FAILFN   DS    CL8                      EYE CATCHER                     01530002
+SAVFN    DS    H                        SAVED EXEC EIBFN                01540002
+FAILRC   DS    CL8                      EYE CATCHER                     01550002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01560002
+*                                                                       01570002
+HLFWORK  DS    H                        HALF WORD WORK AREA             01580002
+*                                                                       01590002
+         DFHEIEND                                                       01600002
+*                                                                       01610002
+COMMPARM DSECT ,                        COMMAREA                        01620002
+*                                       RETURNED TO CALLER...           01630002
+COMRC1   DS    A                         USER REQUEST RETURN CODE 1     01640002
+COMRC2   DS    A                         USER REQUEST RETURN CODE 2     01650002
+*                                       PASSED BY CALLER...             01660002
+COMNCP   DS    CL8                       USER NEWCOPY PROGRAM ID        01670002
+COMMLN   EQU   *-COMMPARM               COMMAREA LENGTH                 01680002
+*---------------------------------------------------------------------- 01690002
+         END                                                            01700002
+

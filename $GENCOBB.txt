@@ -1,0 +1,64 @@
+//TSSS013B JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//         REGION=0M TYPRUN=SCAN
+//*--------------------------------------------------------------------
+//GENCOBB  PROC CMP='IGY.SIGYCOMP',
+//             MEM=DUMMY,
+//             WORK=SYSALLDA,
+//             LOAD='',
+//             COPY='NULLFILE',
+//             COPY2='NULLFILE',
+//             COPY3='NULLFILE',
+//             SRCE='',
+//             OPTM='OPT'
+//*--------------------------------------------------------------------
+//*   PROC FOR BATCH COBOL ZOS COMPILE AND LINK
+//*--------------------------------------------------------------------
+//COB      EXEC PGM=IGYCRCTL,
+//             PARM=(DYNAM,LIB,NONUM,APOST,XREF,VBREF,OFFSET,NOLIST,
+//             'LANG(UE)',MAP,RENT,&OPTM,'RMODE(24)')
+//STEPLIB  DD  DSN=&CMP,DISP=SHR
+//SYSIN    DD  DISP=SHR,DSN=&SRCE(&MEM)
+//SYSPRINT DD  SYSOUT=*
+//SYSLIN   DD  DSN=&&LOADSET(TEMPMEM),
+//             UNIT=SYSALLDA,
+//             DISP=(MOD,PASS),
+//             SPACE=(CYL,(3,3,2)),
+//             DCB=(BLKSIZE=80,LRECL=80,RECFM=FB,DSORG=PO)
+//SYSUT1   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT2   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT3   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT4   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT5   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT6   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSUT7   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSLIB   DD  DSN=&COPY,DISP=SHR
+//         DD  DSN=&COPY2,DISP=SHR
+//         DD  DSN=&COPY3,DISP=SHR
+//         DD  DSN=APPL.PROD.COPYBOOK,DISP=SHR                          00000160
+//         DD  DSN=APPL.MISC.COPYBOOK,DISP=SHR                          00000160
+//         DD  DSN=APPL.HOLD.COPYBOOK,DISP=SHR                          00000160
+//         DD  DSN=APPL.MDAR.SOURCE,DISP=SHR
+//*--------------------------------------------------------------------
+//LKED     EXEC PGM=IEWL,
+//             PARM='LIST,XREF,LET,MAP,AMODE(31),RMODE(24)',
+//             COND=(5,LT,COB)
+//TEMPMEM  DD  DSN=&&LOADSET,DISP=(OLD,DELETE)
+//SYSLMOD  DD  DSN=&LOAD(&MEM),DISP=SHR
+//SYSLIB   DD  DSN=CEE.SCEELKED,DISP=SHR
+//CICSLIB  DD  DSN=CICSIE.TS51.RSU1311.SDFHLOAD,DISP=SHR
+//SYSUT1   DD  UNIT=&WORK,SPACE=(CYL,(1,1))
+//SYSPRINT DD  SYSOUT=*
+//*--------------------------------------------------------------------
+//         PEND
+//*--------------------------------------------------------------------
+//S1       EXEC GENCOBB,
+//             SRCE=CICSIE.TS51.PTABLES,
+//             LOAD=CICSIE.TS51.RSU1311.PROD.SYSLIB,
+//             MEM=DFH0CBDC
+//LKED.SYSLIN DD *
+ ENTRY DFHEXTRA
+ CHANGE EXITEP(BDEFCSD)
+ INCLUDE CICSLIB(DFHEXLE)
+ INCLUDE TEMPMEM(TEMPMEM)
+ NAME DFH0CBDC(R)
+

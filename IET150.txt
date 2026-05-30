@@ -1,0 +1,345 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IET150   TITLE '**  CICS/ESA TCP/IP HTTP NOTIFICATION CLIENT **'        00020002
+*---------------------------------------------------------------------* 00030002
+*        REGISTER AND OTHER EQUATES                                   * 00040002
+*---------------------------------------------------------------------* 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------* 00220002
+*  IET150   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             * 00230002
+*---------------------------------------------------------------------* 00240002
+IET150   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IET150 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT01                    BRANCH AROUND DUMP ID           00330002
+IET150   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IET150   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IET150'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+*---------------------------------------------------------------------* 00430002
+*        INITIALIZATION                                               * 00440002
+*---------------------------------------------------------------------* 00450002
+INT01    DS    0H                                                       00460002
+         MVI   HTTPRID,C' '             BLANK FILL RECORD KEY           00470002
+         MVC   HTTPRID+1(L'HTTPRID-1),HTTPRID                           00480002
+*---------------------------------------------------------------------* 00490002
+*        CHECK TASK TYPE                                              * 00500002
+*---------------------------------------------------------------------* 00510002
+         EXEC  CICS,                                                   *00520002
+               ASSIGN,                                                 *00530002
+               FCI(TASKTYPE),                                          *00540002
+               RESP(RESP),                                             *00550002
+               RESP2(RESP2)                                             00560002
+*---------------------------------------------------------------------* 00570002
+*        RETRIEVE HTTP MESSAGE KEY                                    * 00580002
+*---------------------------------------------------------------------* 00590002
+         LA    R1,L'HTTPRID                                             00600002
+         STH   R1,HLFWORK                                               00610002
+         EXEC  CICS,                                                   *00620002
+               RETRIEVE,                                               *00630002
+               INTO(HTTPRID),                                          *00640002
+               LENGTH(HLFWORK),                                        *00650002
+               RESP(RESP),                                             *00660002
+               RESP2(RESP2)                                             00670002
+         CLC   RESP,DFHRESP(NORMAL)                                     00680002
+         BNE   ABN04                                                    00690002
+*---------------------------------------------------------------------* 00700002
+*        READ HTTPMSGS RECORD                                         * 00710002
+*---------------------------------------------------------------------* 00720002
+         LA    R1,L'COMMRBF                                             00730002
+         STH   R1,COMMRLN                                               00740002
+         LA    R1,L'COMMSBF                                             00750002
+         STH   R1,COMMSLN                                               00760002
+         EXEC  CICS,                                                   *00770002
+               READ,                                                   *00780002
+               FILE('HTTPMSGS'),                                       *00790002
+               RIDFLD(HTTPRID),                                        *00800002
+               SET(R6),                                                *00810002
+               LENGTH(COMMSLN),                                        *00820002
+               RESP(RESP),                                             *00830002
+               RESP2(RESP2)                                             00840002
+         CLC   RESP,DFHRESP(NORMAL)                                     00850002
+         BNE   ABN01                                                    00860002
+         LA    R2,COMMSBF                                               00870002
+         LH    R3,COMMSLN                                               00880002
+         SH    R3,=H'8'                                                 00890002
+         STH   R3,COMMSLN                                               00900002
+         LR    R5,R3                                                    00910002
+         LA    R4,8(,R6)                                                00920002
+         MVCL  R2,R4                                                    00930002
+*---------------------------------------------------------------------* 00940002
+*        INITIALIZE COMMAREA FOR LINK                                 * 00950002
+*---------------------------------------------------------------------* 00960002
+         MVI   COMMREQ,REQHTTP          REQUEST HTTP NOTIFICATION       00970002
+         XC    COMMRSP,COMMRSP          CLR RESPONSE CODE               00980002
+         TR    COMMSBF(256),TTBL        TRANSLATE HTTP NOTIFICATION     00990002
+         TR    COMMSBF+256(256),TTBL    TRANSLATE HTTP NOTIFICATION     01000002
+*---------------------------------------------------------------------* 01010002
+*        LOG REQUEST, LINK TO TCP/IP CLIENT, LOG RESPONSE             * 01020002
+*---------------------------------------------------------------------* 01030002
+         EXEC  CICS,                                                   *01040002
+               WRITEQ,                                                 *01050002
+               TD,                                                     *01060002
+               QUEUE(=C'CSML'),                                        *01070002
+               FROM(COMMSBF),                                          *01080002
+               LENGTH(=H'128')                                          01090002
+         LA    R1,COMMLEN                                               01100002
+         STH   R1,HLFWORK                                               01110002
+         EXEC  CICS,                                                   *01120002
+               LINK,                                                   *01130002
+               PROGRAM('IET101'),                                      *01140002
+               COMMAREA(COMMHDR),                                      *01150002
+               LENGTH(HLFWORK),                                        *01160002
+               RESP(RESP),                                             *01170002
+               RESP2(RESP2)                                             01180002
+         CLC   RESP,DFHRESP(NORMAL)                                     01190002
+         BNE   ABN02                                                    01200002
+         CLI   COMMRSP,RSPNORM                                          01210002
+         BNE   ABN03                                                    01220002
+         LH    R2,COMMSLN                                               01230002
+         LA    R2,COMMSBF(R2)                                           01240002
+         LH    R1,COMMRLN                                               01250002
+         CH    R1,=H'128'                                               01260002
+         BNH   INT10                                                    01270002
+         LA    R1,128                                                   01280002
+INT10    DS    0H                                                       01290002
+         STH   R1,HLFWORK                                               01300002
+         EXEC  CICS,                                                   *01310002
+               WRITEQ,                                                 *01320002
+               TD,                                                     *01330002
+               QUEUE(=C'CSML'),                                        *01340002
+               FROM(0(,R2)),                                           *01350002
+               LENGTH(HLFWORK)                                          01360002
+         B     XIT01                                                    01370002
+*---------------------------------------------------------------------* 01380002
+*        ABNORMAL TERMINATION                                         * 01390002
+*---------------------------------------------------------------------* 01400002
+ABN01    DS    0H                                                       01410002
+         LA    R2,MSG01                                                 01420002
+         LA    R3,L'MSG01                                               01430002
+         ICM   R4,B'1111',ABC01                                         01440002
+         B     ABN99                                                    01450002
+ABN02    DS    0H                                                       01460002
+         LA    R2,MSG02                                                 01470002
+         LA    R3,L'MSG02                                               01480002
+         ICM   R4,B'1111',ABC02                                         01490002
+         B     ABN99                                                    01500002
+ABN03    DS    0H                                                       01510002
+         LA    R2,MSG03                                                 01520002
+         LA    R3,L'MSG03                                               01530002
+         ICM   R4,B'1111',ABC03                                         01540002
+         B     ABN99                                                    01550002
+ABN04    DS    0H                                                       01560002
+         LA    R2,MSG04                                                 01570002
+         LA    R3,L'MSG04                                               01580002
+         ICM   R4,B'1111',ABC04                                         01590002
+         B     ABN99                                                    01600002
+ABN99    DS    0H                                                       01610002
+         MVC   SAVRESP,RESP                                             01620002
+         MVC   SAVRESP2,RESP2                                           01630002
+         MVC   SAVFN,EIBFN                                              01640002
+         MVC   SAVRC,EIBRCODE                                           01650002
+         STH   R3,HLFWORK                                               01660002
+         EXEC  CICS,                                                   *01670002
+               WRITEQ,                                                 *01680002
+               TD,                                                     *01690002
+               QUEUE(=C'CSML'),                                        *01700002
+               FROM(0(,R2)),                                           *01710002
+               LENGTH(HLFWORK),                                        *01720002
+               RESP(RESP),                                             *01730002
+               RESP2(RESP2)                                             01740002
+         ST    R4,FULWORK                                               01750002
+         EXEC  CICS,                                                   *01760002
+               ABEND,                                                  *01770002
+               ABCODE(FULWORK),                                        *01780002
+               RESP(RESP),                                             *01790002
+               RESP2(RESP2)                                             01800002
+*---------------------------------------------------------------------* 01810002
+*        UNLOCK TERMINAL KEYBOARD                                     * 01820002
+*---------------------------------------------------------------------* 01830002
+XIT01    DS    0H                                                       01840002
+         CLI   TASKTYPE,TERMINAL                                        01850002
+         BNE   XIT99                                                    01860002
+         EXEC  CICS,                                                   *01870002
+               SEND,                                                   *01880002
+               CONTROL,                                                *01890002
+               ERASE,                                                  *01900002
+               FREEKB,                                                 *01910002
+               ALARM,                                                  *01920002
+               RESP(RESP),                                             *01930002
+               RESP2(RESP2)                                             01940002
+*---------------------------------------------------------------------* 01950002
+*        RETURN TO CICS                                               * 01960002
+*---------------------------------------------------------------------* 01970002
+XIT99    DS    0H                                                       01980002
+         EXEC  CICS,                                                   *01990002
+               RETURN                                                   02000002
+         DFHEIRET                                                       02010002
+*---------------------------------------------------------------------* 02020002
+*        CONSTANTS                                                    * 02030002
+*---------------------------------------------------------------------* 02040002
+*                                                                       02050002
+MSG01    DC    C'IET150001  Error reading HTTPMSGS file, HTTP notificat*02060002
+               ion not found, abend T50R initiated.'                    02070002
+ABC01    EQU   *-15                                                     02080002
+*                                                                       02090002
+MSG02    DC    C'IET150002  Program LINK error to TCP/IP Client IET101,*02100002
+                abend T50L initiated.'                                  02110002
+ABC02    EQU   *-15                                                     02120002
+*                                                                       02130002
+MSG03    DC    C'IET150003  Error response from TCP/IP Client IET101, a*02140002
+               bend T50E initiated.'                                    02150002
+ABC03    EQU   *-15                                                     02160002
+*                                                                       02170002
+MSG04    DC    C'IET150004  Error response from RETRIEVE DATA command, *02180002
+               abend T50S initiated.'                                   02190002
+ABC04    EQU   *-15                                                     02200002
+*                                                                       02210002
+TTBL     DS    0X                       TRANSLATE TABLE                 02220002
+         DC    256X'00'                                                 02230002
+         ORG   TTBL+C'A'                                                02240002
+         DC    C'ABCDEFGHI'                                             02250002
+         ORG   TTBL+C'a'                                                02260002
+         DC    C'abcdefghi'                                             02270002
+         ORG   TTBL+C'J'                                                02280002
+         DC    C'JKLMNOPQR'                                             02290002
+         ORG   TTBL+C'j'                                                02300002
+         DC    C'jklmnopqr'                                             02310002
+         ORG   TTBL+C'S'                                                02320002
+         DC    C'STUVWXYZ'                                              02330002
+         ORG   TTBL+C's'                                                02340002
+         DC    C'stuvwxyz'                                              02350002
+         ORG   TTBL+C'0'                                                02360002
+         DC    C'0123456789'                                            02370002
+         ORG   TTBL+C' '                                                02380002
+         DC    C' '                                                     02390002
+         ORG   TTBL+C'&&'                                               02400002
+         DC    C'&&'                                                    02410002
+         ORG   TTBL+C'?'                                                02420002
+         DC    C'?'                                                     02430002
+         ORG   TTBL+C'/'                                                02440002
+         DC    C'/'                                                     02450002
+         ORG   TTBL+C'='                                                02460002
+         DC    C'='                                                     02470002
+         ORG   TTBL+C':'                                                02480002
+         DC    C':'                                                     02490002
+         ORG   TTBL+C';'                                                02500002
+         DC    C';'                                                     02510002
+         ORG   TTBL+C'.'                                                02520002
+         DC    C'.'                                                     02530002
+         ORG   TTBL+C','                                                02540002
+         DC    C','                                                     02550002
+         ORG   TTBL+C'-'                                                02560002
+         DC    C'-'                                                     02570002
+         ORG   TTBL+C'_'                                                02580002
+         DC    C'_'                                                     02590002
+         ORG   TTBL+C'+'                                                02600002
+         DC    C'+'                                                     02610002
+         ORG   TTBL+C'*'                                                02620002
+         DC    C'*'                                                     02630002
+         ORG   TTBL+C'('                                                02640002
+         DC    C'('                                                     02650002
+         ORG   TTBL+C')'                                                02660002
+         DC    C')'                                                     02670002
+         ORG   TTBL+C'^'                                                02680002
+         DC    C'^'                                                     02690002
+         ORG   TTBL+C'%'                                                02700002
+         DC    C'%'                                                     02710002
+         ORG   TTBL+C'#'                                                02720002
+         DC    C'#'                                                     02730002
+         ORG   TTBL+C'@'                                                02740002
+         DC    C'@'                                                     02750002
+         ORG   TTBL+C'!'                                                02760002
+         DC    C'!'                                                     02770002
+         ORG   TTBL+C'\'                                                02780002
+         DC    C'\'                                                     02790002
+         ORG   TTBL+C'"'                                                02800002
+         DC    C'"'                                                     02810002
+         ORG   TTBL+C'|'                                                02820002
+         DC    C'|'                                                     02830002
+         ORG   TTBL+C'¬'                                                02840002
+         DC    C'¬'                                                     02850002
+         ORG   TTBL+C''''                                               02860002
+         DC    C''''                                                    02870002
+         ORG   TTBL+C'$'                                                02880002
+         DC    C'$'                                                     02890002
+         ORG   TTBL+C'¢'                                                02900002
+         DC    C'¢'                                                     02910002
+         ORG   TTBL+C'<'                                                02920002
+         DC    C'<'                                                     02930002
+         ORG   TTBL+C'>'                                                02940002
+         DC    C'>'                                                     02950002
+         ORG   TTBL+C'['                                                02960002
+         DC    C'['                                                     02970002
+         ORG   TTBL+C']'                                                02980002
+         DC    C']'                                                     02990002
+         ORG   TTBL+C'{'                                                03000002
+         DC    X'0D'                                                    03010002
+         ORG   TTBL+C'}'                                                03020002
+         DC    X'25'                                                    03030002
+         ORG                                                            03040002
+*                                                                       03050002
+*---------------------------------------------------------------------* 03060002
+*        DSECTS                                                       * 03070002
+*---------------------------------------------------------------------* 03080002
+*                                                                       03090002
+         DFHEISTG                                                       03100002
+EISEYE   DS    CL16                     EYE CATCHER                     03110002
+DBLWORK  DS    D                        DOUBLE WORD WORK                03120002
+FULWORK  DS    F                        FULL WORD WORK                  03130002
+RESP     DS    F                        EXEC COMMAND RESPONSE           03140002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           03150002
+FAILRSP  DS    CL8                      EYE CATCHER                     03160002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     03170002
+FAILRSP2 DS    CL8                      EYE CATCHER                     03180002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     03190002
+FAILFN   DS    CL8                      EYE CATCHER                     03200002
+SAVFN    DS    H                        SAVED EXEC EIBFN                03210002
+FAILRC   DS    CL8                      EYE CATCHER                     03220002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             03230002
+HLFWORK  DS    H                        HALF WORD WORK                  03240002
+HTTPRID  DS    CL8                      HTTPMSGS RECORD ID              03250002
+HTTPLEN  DS    H                        HTTPMSGS RECORD LENGTH          03260002
+TASKTYPE DS    X                        TASK FACILITY TYPE              03270002
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY             03280002
+*                                                                       03290002
+COMMHDR  DS    0D                       COMMAREA HEADER                 03300002
+COMMREQ  DS    CL1                      REQUEST CODE                    03310002
+REQHTTP  EQU   C'$'                     ..HTTP NOTIFICATION REQUEST     03320002
+COMMRSP  DS    CL1                      RESPONSE CODE                   03330002
+RSPNORM  EQU   C' '                     ..NORMAL RESPONSE               03340002
+COMMSLN  DS    H                        SEND BUFFER LENGTH              03350002
+COMMRLN  DS    H                        RECEIVE BUFFER LENGTH           03360002
+COMMRSV  DS    H                        ..RESERVED                      03370002
+COMMTIM  DS    12D                      TCP/IP PROCESS TIMERS           03380002
+COMMSBF  DS    CL512                    SEND BUFFER                     03390002
+COMMRBF  DS    CL512                    RECEIVE BUFFER                  03400002
+COMMLEN  EQU   *-COMMHDR                COMMAREA LENGTH                 03410002
+*---------------------------------------------------------------------* 03420002
+         DFHEIEND                                                       03430002
+         END                                                            03440002
+

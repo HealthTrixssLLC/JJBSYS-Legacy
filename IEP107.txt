@@ -1,0 +1,277 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+IEP107   TITLE '**  CICS/TS DOCTEMPLATE NEW COPY PROGRAM  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+*----------------------------------------------------------------------
+*  IEP107   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IEP107   RSECT
+IEP107   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEP107   RMODE ANY                      MAY RESIDE ABOVE 16M
+IEP107   DFHEIENT CODEREG=(12),                                        *
+               DATAREG=(13),                                           *
+               EIBREG=(11)
+         MVC   EISEYE,=CL16'IEP107 EI STORAGE'
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER
+         B     INT00                    BRANCH AROUND DUMP ID
+         DS    0H
+         DC    CL8'IEP107'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+INT00    DS    0H
+*----------------------------------------------------------------------
+*        CHECK TERMINAL/NON-TERMINAL TASK
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               FCI(TASKTYPE)
+         CLI   TASKTYPE,TERMINAL        TERMINAL ATTACHED
+         BNE   XIT00                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*        ANALYZE TERMINAL INPUT                                       *
+*            FORMAT:  TRAN,DOCTMPLT                                   *
+*----------------------------------------------------------------------
+         XC    TIOALN,TIOALN            CLR TERMNL INPUT LENGTH
+         EXEC  CICS,                                                   *
+               RECEIVE,                                                *
+               SET(R4),                                                *
+               LENGTH(TIOALN),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(EOC)        EXEC COMMAND RESPONSE EOC
+         BE    INT02                    ..YES, BRANCH
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         BNE   XIT00                    ..NO, BRANCH
+INT02    DS    0H
+         LH    R5,TIOALN                LOAD TIOA INPUT LENGTH
+         CLI   0(R4),SBA                3270 FORMATTED SCREEN INPUT
+         BNE   INT04                    ..NO, BRANCH
+         LA    R4,3(,R4)                INDEX PAST 3270 SBA
+         SH    R5,=H'3'                 IS LENGTH <= ZERO
+         BNP   XIT02                    ..NO, BRANCH
+         CH    R5,=H'13'                IS LENGTH => 8 (TRAN,TEMPLATE)
+         BL    XIT02                    ..NO, BRANCH
+         STH   R5,TIOALN                SAVE ACTUAL LENGTH
+INT04    DS    0H
+         LR    R1,R4                    LOAD @ OF TERMINAL INPUT
+INT06    DS    0H
+         OI    0(R1),C' '               FORCE UPPERCASE
+         LA    R1,1(,R1)                INDEX TO NEXT INPUT BYTE
+         BCT   R5,INT06                 ..LOOP UPPER CASE
+         MVI   TEMPLATE,C' '            BLANK TEMPLATE
+         MVC   TEMPLATE(L'TEMPLATE-1),TEMPLATE
+         LH    R5,TIOALN                LOAD ACTUAL LENGTH
+         SH    R5,=H'6'                 CALC MOVE LENGTH
+         EX    R5,MVTMPLT               SAVE TEMPLATE ID
+*MVTMPLT MVC   TEMPLATE,5(R4)           EXECUTED INSTRUCTION
+*----------------------------------------------------------------------
+*        INQUIRE, DISCARD, AND CREATE DOCTEMPLATE RESOURCE
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DOCTEMPLATE(TEMPLATE),                                  *
+               APPENDCRLF(APNDCRLF),                                   *
+               DDNAME(DDNAME),                                         *
+               MEMBER(MEMBER),                                         *
+               TYPE(TMPLTYPE),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BNE   XIT04
+         EXEC  CICS,                                                   *
+               DISCARD,                                                *
+               DOCTEMPLATE(TEMPLATE)
+         MVC   NEWTMPLT,MDLTMPLT
+         MVC   NEWTMPLT+(MDLTNAME-MDLTMPLT)(L'MDLTNAME),TEMPLATE
+         MVC   NEWTMPLT+(MDLDDN-MDLTMPLT)(L'MDLDDN),DDNAME
+         MVC   NEWTMPLT+(MDLMEMBR-MDLTMPLT)(L'MDLMEMBR),MEMBER
+         CLC   TMPLTYPE,DFHVALUE(EBCDIC)
+         BE    BYP01
+         MVC   NEWTMPLT+(MDLTYPE-MDLTMPLT)(L'MDLTYPE),=C'BINARY'
+BYP01    DS    0H
+         CLC   APNDCRLF,DFHVALUE(APPEND)
+         BE    BYP02
+         MVC   NEWTMPLT+(MDLCRLF-MDLTMPLT)(L'MDLCRLF),=C'NO '
+BYP02    DS    0H
+         EXEC  CICS,                                                   *
+               CREATE,                                                 *
+               DOCTEMPLATE(TEMPLATE),                                  *
+               ATTRIBUTES(NEWTMPLT),                                   *
+               ATTRLEN(=AL2(MDLTMPLN)),                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)
+         BE    XIT06
+         CLC   RESP,DFHRESP(INVREQ)
+         BE    XIT08
+         B     XIT10
+*----------------------------------------------------------------------
+*        RETURN TO CICS
+*----------------------------------------------------------------------
+XIT00    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+         DFHEIRET
+*
+*---------------------------------------------------------------------*
+*        TERMINAL "INVALID REQUEST"
+*---------------------------------------------------------------------*
+XIT02    DS    0H
+         LA    R3,MSG02
+         LA    R1,MSG02L
+         STH   R1,TIOALN
+         B     XIT90
+*---------------------------------------------------------------------*
+*        TERMINAL "TEMPLATE NOT FOUND"
+*---------------------------------------------------------------------*
+XIT04    DS    0H
+         LA    R3,MSG04
+         LA    R1,MSG04L
+         STH   R1,TIOALN
+         B     XIT90
+*---------------------------------------------------------------------*
+*        TERMINAL "NEW COPY COMPLETE"
+*---------------------------------------------------------------------*
+XIT06    DS    0H
+         LA    R3,MSG06
+         LA    R1,MSG06L
+         STH   R1,TIOALN
+         B     XIT90
+*---------------------------------------------------------------------*
+*        TERMINAL "PDS MEMBER NOT FOUND, INSTALL REQUIRED"
+*---------------------------------------------------------------------*
+XIT08    DS    0H
+         CLC   RESP2+2(2),=H'601'
+         BNE   XIT10
+         LA    R3,MSG08
+         LA    R1,MSG08L
+         STH   R1,TIOALN
+         B     XIT90
+*---------------------------------------------------------------------*
+*        TERMINAL "CREATE FAILED, UNKNOWN CAUSE"
+*---------------------------------------------------------------------*
+XIT10    DS    0H
+         LA    R3,MSG10
+         LA    R1,MSG10L
+         STH   R1,TIOALN
+         B     XIT90
+*---------------------------------------------------------------------*
+XIT90    DS    0H
+         EXEC  CICS,                                                   *
+               SEND,                                                   *
+               FROM(0(R3)),                                            *
+               LENGTH(TIOALN),                                         *
+               LAST,                                                   *
+               CTLCHAR(=X'C2'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         B     XIT00
+*----------------------------------------------------------------------
+*        CONSTANTS
+*----------------------------------------------------------------------
+*
+         LTORG
+*
+SBA      EQU   X'11'                    3270 SBA
+*
+MVTMPLT  MVC   TEMPLATE,5(R4)           EXECUTED INSTRUCTION
+*
+MSG02    DC    X'3C40400011C150'
+         DC    C'INVALID REQUEST'
+         DC    X'11404013'
+MSG02L   EQU   *-MSG02
+*
+MSG04    DC    X'3C40400011C150'
+         DC    C'TEMPLATE NOT FOUND'
+         DC    X'11404013'
+MSG04L   EQU   *-MSG04
+*
+MSG06    DC    X'3C40400011C150'
+         DC    C'NEW COPY COMPLETE'
+         DC    X'11404013'
+MSG06L   EQU   *-MSG06
+*
+MSG08    DC    X'3C40400011C150'
+         DC    C'PDS MEMBER NOT FOUND, CEDA INSTALL REQUIRED!'
+         DC    X'11404013'
+MSG08L   EQU   *-MSG08
+*
+MSG10    DC    X'3C40400011C150'
+         DC    C'CREATE FAILED, UNKNOWN CAUSE!'
+         DC    X'11404013'
+MSG10L   EQU   *-MSG10
+*
+MDLTMPLT DC    C'APPENDCRLF('
+MDLCRLF  DC    C'YES'
+         DC    C') TEMPLATENAME('
+MDLTNAME DC    C'        '
+         DC    C') DDNAME('
+MDLDDN   DC    C'        '
+         DC    C') MEMBERNAME('
+MDLMEMBR DC    C'        '
+         DC    C') TYPE('
+MDLTYPE  DC    C'EBCDIC'
+         DC    C')'
+MDLTMPLN EQU   *-MDLTMPLT
+*
+*----------------------------------------------------------------------
+*        CICS WORKING STORAGE DSECT
+*----------------------------------------------------------------------
+         DFHEISTG
+EISEYE   DS    CL16                     EYE CATCHER
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+*
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+*
+FAILRSP  DS    CL8                      EYE CATCHER
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILRSP2 DS    CL8                      EYE CATCHER
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE
+FAILFN   DS    CL8                      EYE CATCHER
+SAVFN    DS    H                        SAVED EXEC EIBFN
+FAILRC   DS    CL8                      EYE CATCHER
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE
+*
+TIOALN   DS    H                        TIOA LENGTH
+*
+APNDCRLF DS    F                        APPEND CRLF VALUE
+TMPLTYPE DS    F                        TEMPLATE TYPE
+TEMPLATE DS    CL8                      TEMPLATE NAME
+MEMBER   DS    CL8                      TEMPLATE MEMBER NAME
+DDNAME   DS    CL8                      TEMPLATE DDNAME
+*
+TASKTYPE DS    X                        TASK FACILITY TYPE
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY
+*
+NEWTMPLT DS    CL(MDLTMPLN)
+*
+         DFHEIEND
+*----------------------------------------------------------------------
+         END
+

@@ -1,0 +1,256 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+TCCEDIJ  TITLE '**  CICS/ESA EDI FTP WTO NOTIFY PROGRAM **'             00020002
+*---------------------------------------------------------------------* 00030002
+*        REGISTER AND OTHER EQUATES                                   * 00040002
+*---------------------------------------------------------------------* 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------* 00220002
+*  TCCEDIJ  CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             * 00230002
+*---------------------------------------------------------------------* 00240002
+TCCEDIJ  DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'TCCEDIJ EI STORAGE'                         00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT01                    BRANCH AROUND DUMP ID           00330002
+TCCEDIJ  AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+TCCEDIJ  RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'TCCEDIJ'             DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT01    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMLEN)         CHECK MINIMUM LENGTH            00480002
+         BL    ABN02                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(R9),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMMPARM,R9                                              00570002
+         MVI   COMMRSP,RSPLINK          PRESET RESPONSE                 00580002
+         LA    R1,OK                    LOAD OUTPUT MSG @               00590002
+         ST    R1,DBLWORK                                               00600002
+         LA    R1,L'OK                  LOAD OK MSG LENGTH              00610002
+         STH   R1,DBLWORK+4             STORE OK MSG LENGTH             00620002
+*---------------------------------------------------------------------- 00630002
+*        GET TASK TYPE                                                  00640002
+*---------------------------------------------------------------------- 00650002
+         EXEC  CICS,                                                   *00660002
+               ASSIGN,                                                 *00670002
+               FCI(TASKTYPE)                                            00680002
+*---------------------------------------------------------------------- 00690002
+*        GET TCP/IP VARIABLE WTO INPUT                                  00700002
+*---------------------------------------------------------------------- 00710002
+         MVC   FULWORK+2,=H'1'                                          00720002
+         EXEC  CICS,                                                   *00730002
+               READQ,                                                  *00740002
+               TS,                                                     *00750002
+               QUEUE(COMMQID),                                         *00760002
+               ITEM(FULWORK+2),                                        *00770002
+               SET(R2),                                                *00780002
+               LENGTH(HLFWORK),                                        *00790002
+               RESP(RESP),                                             *00800002
+               RESP2(RESP2)                                             00810002
+         CLC   RESP,DFHRESP(NORMAL)                                     00820002
+         BNE   ABN03                                                    00830002
+         MVC   WTOBUF,WTO01                                             00840002
+         LH    R3,HLFWORK                                               00850002
+         CH    R3,=H'8'                                                 00860002
+         BNH   INT10                                                    00870002
+         LH    R3,=H'8'                                                 00880002
+INT10    DS    0H                                                       00890002
+         BCTR  R3,0                                                     00900002
+         EX    R3,MVCVAR                                                00910002
+*MVCVAR  MVC   WTOBUF+(WTO01V1-WTO01)(0),0(R2)                          00920002
+         EXEC  CICS,                                                   *00930002
+               WRITE,                                                  *00940002
+               OPERATOR,                                               *00950002
+               TEXT(WTOBUF),                                           *00960002
+               TEXTLENGTH(=A(L'WTOBUF))                                 00970002
+         B     XIT00                    ..EXIT                          00980002
+MVCVAR   MVC   WTOBUF+(WTO01V1-WTO01)(0),0(R2)                          00990002
+*---------------------------------------------------------------------* 01000002
+*        ABNORMAL TERMINATION                                         * 01010002
+*---------------------------------------------------------------------* 01020002
+ABN01    DS    0H                                                       01030002
+         LA    R2,MSG01                                                 01040002
+         LA    R3,L'MSG01                                               01050002
+         ICM   R4,B'1111',ABC01                                         01060002
+         B     ABN99                                                    01070002
+ABN02    DS    0H                                                       01080002
+         LA    R2,MSG02                                                 01090002
+         LA    R3,L'MSG02                                               01100002
+         ICM   R4,B'1111',ABC02                                         01110002
+         B     ABN99                                                    01120002
+ABN03    DS    0H                                                       01130002
+         LA    R2,MSG03                                                 01140002
+         LA    R3,L'MSG03                                               01150002
+         ICM   R4,B'1111',ABC03                                         01160002
+         B     ABN99                                                    01170002
+ABN99    DS    0H                                                       01180002
+         MVC   SAVRESP,RESP                                             01190002
+         MVC   SAVRESP2,RESP2                                           01200002
+         MVC   SAVFN,EIBFN                                              01210002
+         MVC   SAVRC,EIBRCODE                                           01220002
+         STH   R3,HLFWORK                                               01230002
+         EXEC  CICS,                                                   *01240002
+               WRITEQ,                                                 *01250002
+               TD,                                                     *01260002
+               QUEUE(=C'CSML'),                                        *01270002
+               FROM(0(R2)),                                            *01280002
+               LENGTH(HLFWORK),                                        *01290002
+               RESP(RESP),                                             *01300002
+               RESP2(RESP2)                                             01310002
+         ST    R4,FULWORK                                               01320002
+         EXEC  CICS,                                                   *01330002
+               ABEND,                                                  *01340002
+               ABCODE(FULWORK),                                        *01350002
+               RESP(RESP),                                             *01360002
+               RESP2(RESP2)                                             01370002
+*---------------------------------------------------------------------* 01380002
+*        UNLOCK TERMINAL KEYBOARD                                     * 01390002
+*---------------------------------------------------------------------* 01400002
+ERR00    DS    0H                                                       01410002
+         MVI   COMMRSP,RSPLINK          SET NOT READY RESPONSE          01420002
+         LA    R1,NOTOK                 LOAD OUTPUT MSG @               01430002
+         ST    R1,DBLWORK                                               01440002
+         LA    R1,L'NOTOK               LOAD OK MSG LENGTH              01450002
+         STH   R1,DBLWORK+4             STORE OK MSG LENGTH             01460002
+*---------------------------------------------------------------------* 01470002
+*        UNLOCK TERMINAL KEYBOARD                                     * 01480002
+*---------------------------------------------------------------------* 01490002
+XIT00    DS    0H                                                       01500002
+         CLI   TASKTYPE,TERMINAL                                        01510002
+         BNE   XIT10                                                    01520002
+         EXEC  CICS,                                                   *01530002
+               SEND,                                                   *01540002
+               CONTROL,                                                *01550002
+               ERASE,                                                  *01560002
+               FREEKB,                                                 *01570002
+               ALARM,                                                  *01580002
+               RESP(RESP),                                             *01590002
+               RESP2(RESP2)                                             01600002
+         CLC   RESP,DFHRESP(NORMAL)                                     01610002
+         BNE   ABN01                                                    01620002
+XIT10    DS    0H                                                       01630002
+         L     R2,DBLWORK               LOAD MSG @                      01640002
+         LH    R1,DBLWORK+4             LOAD MSG LENGTH                 01650002
+         STH   R1,HLFWORK               STORE MSG LENGTH                01660002
+         MVC   FULWORK+2,=H'2'          SET TS QUEUE ITEN #2            01670002
+         EXEC  CICS,                                                   *01680002
+               WRITEQ,                                                 *01690002
+               TS,                                                     *01700002
+               QUEUE(COMMQID),                                         *01710002
+               ITEM(FULWORK+2),                                        *01720002
+               FROM(0(R2)),                                            *01730002
+               LENGTH(HLFWORK),                                        *01740002
+               MAIN                                                     01750002
+*---------------------------------------------------------------------* 01760002
+*        RETURN TO CICS                                               * 01770002
+*---------------------------------------------------------------------* 01780002
+         EXEC  CICS,                                                   *01790002
+               RETURN                                                   01800002
+         DFHEIRET                                                       01810002
+*---------------------------------------------------------------------* 01820002
+*        CONSTANTS                                                    * 01830002
+*---------------------------------------------------------------------* 01840002
+*                                                                       01850002
+MSG01    DC    C'TCCEDIJ001 Error resetting the terminal keyboard, Aben*01860002
+               d EDIK initiated.'                                       01870002
+ABC01    EQU   *-15                                                     01880002
+*                                                                       01890002
+MSG02    DC    C'TCCEDIJ002 Caller COMMAREA too small, Abend EDIC initi*01900002
+               ated.'                                                   01910002
+ABC02    EQU   *-15                                                     01920002
+*                                                                       01930002
+MSG03    DC    C'TCCEDIJ012 Error reading passed temporary storage queu*01940002
+                e, Abend EDIQ initiated.'                               01950002
+ABC03    EQU   *-15                                                     01960002
+*                                                                       01970002
+WTO01    DC    C'IEIEDIJ01 UNIX is ready to FTP file for '              01980002
+WTO01V1  DC    CL8' '                                                   01990002
+WTO01LN  EQU   *-WTO01                                                  02000002
+*                                                                       02010002
+OK       DC    C'ok '                                                   02020002
+         ORG   *-1                                                      02030002
+         DC    X'25'                    LINE FEED                       02040002
+         ORG                                                            02050002
+*                                                                       02060002
+NOTOK    DC    C'notok '                                                02070002
+         ORG   *-1                                                      02080002
+         DC    X'25'                    LINE FEED                       02090002
+         ORG                                                            02100002
+*---------------------------------------------------------------------* 02110002
+*        DSECTS                                                       * 02120002
+*---------------------------------------------------------------------* 02130002
+*                                                                       02140002
+         DFHEISTG                                                       02150002
+EISEYE   DS    CL16                     EYE CATCHER                     02160002
+DBLWORK  DS    D                        DOUBLE WORD WORK                02170002
+FULWORK  DS    F                        FULL WORD WORK                  02180002
+RESP     DS    F                        EXEC COMMAND RESPONSE           02190002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           02200002
+SYSID    DS    CL4                      SYSTEM ID                       02210002
+CONID1   DS    CL4                      REQUIRED CONNECTION ID          02220002
+CONID2   DS    CL4                      REQUIRED CONNECTION ID          02230002
+CONNID   DS    CL4                      BROWSE CONNECTION ID            02240002
+TRANSID  DS    CL4                      EDI START TRANSACTION ID        02250002
+TASK     DS    CL4                      EDI START REQ ID                02260002
+FAILRSP  DS    CL8                      EYE CATCHER                     02270002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     02280002
+FAILRSP2 DS    CL8                      EYE CATCHER                     02290002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     02300002
+FAILFN   DS    CL8                      EYE CATCHER                     02310002
+SAVFN    DS    H                        SAVED EXEC EIBFN                02320002
+FAILRC   DS    CL8                      EYE CATCHER                     02330002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             02340002
+HLFWORK  DS    H                        HALF WORD WORK                  02350002
+TASKTYPE DS    X                        TASK FACILITY TYPE              02360002
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY             02370002
+WTOBUF   DS    CL(WTO01LN)              WTO BUFFER                      02380002
+*---------------------------------------------------------------------- 02390002
+*        LINKED TO APPLICATION PROGRAM COMMAREA DSECT                   02400002
+*---------------------------------------------------------------------- 02410002
+*                                                                       02420002
+COMMPARM DSECT                                                          02430002
+*                                                                       02440002
+COMMLKID DS    CL8                      COMMAREA LINKED TO PGM ID       02450002
+COMMQID  DS    CL8                      TCP/IP I/O TS QUEUE ID          02460002
+COMMRSP  DS    X                        LINKED TO PGM RESP CODE         02470002
+RSPNONE  EQU   C'0'                     ..SEND NO TCP/IP RESP           02480002
+RSPOK    EQU   C'1'                     ..SEND 'OK' TCP/IP RESP         02490002
+RSPLINK  EQU   C'2'                     ..SEND TS QUEUE TCP/IP RESP     02500002
+COMMRSV  DS    XL7                      RESERVED                        02510002
+COMMLEN  EQU   *-COMMPARM               COMMAREA LENGTH                 02520002
+*---------------------------------------------------------------------* 02530002
+         DFHEIEND                                                       02540002
+         END                                                            02550002
+

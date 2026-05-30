@@ -1,0 +1,68 @@
+//TSSS013C JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//         REGION=0M TYPRUN=SCAN
+//*--------------------------------------------------------------------
+//DFHEITAL PROC SUFFIX=1$,           Suffix for translator module
+//         ASMBLR=ASMA90,              Assembler module name
+//         INDEX='CICSIE.TS31.RSU0701',
+//         PROGLIB='CICSIE.TS31.RSU0701.TST9.SYSLIB',
+//         DSCTLIB='CICSIE.TS31.PTABLES',
+//         OUTC='*',                   Class for print output
+//         REG=0M,                     Region size for all steps
+//         LNKPARM='LIST,XREF',        Link edit parameters
+//         WORK=SYSDA                  Unit for work datasets
+//*
+//TRN      EXEC PGM=DFHEAP&SUFFIX,
+//            REGION=&REG
+//STEPLIB  DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//         DD DSN=&INDEX..SDFHLPA,DISP=SHR
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSPUNCH DD DSN=&&SYSCIN,
+//            DISP=(,PASS),UNIT=&WORK,
+//            DCB=BLKSIZE=400,
+//            SPACE=(400,(400,100))
+//*
+//ASM      EXEC PGM=&ASMBLR,
+//            REGION=&REG,
+//            PARM=('DECK,NOOBJECT,LIST,SIZE(MAX,ABOVE)',
+//            'PROFILE(JJBSYS90)')
+//SYSLIB   DD DSN=&DSCTLIB,DISP=SHR
+//         DD DSN=&INDEX..SDFHMAC,DISP=SHR
+//         DD DSN=&INDEX..SDFHSAMP,DISP=SHR
+//         DD DSN=SYS1.MACLIB,DISP=SHR
+//         DD DSN=SYS1.MODGEN,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSUT2   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSUT3   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSPUNCH DD DSN=&&LOADSET,
+//            UNIT=&WORK,DISP=(,PASS),
+//            SPACE=(400,(100,100))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DSN=&&SYSCIN,DISP=(OLD,DELETE)
+//*
+//COPYLINK EXEC PGM=IEBGENER,COND=(0,NE,ASM)
+//SYSUT1   DD DSN=&INDEX..SDFHMAC(DFHEILIA),DISP=SHR
+//SYSUT2   DD DSN=&&COPYLINK,DISP=(NEW,PASS),
+//            DCB=(LRECL=80,BLKSIZE=400,RECFM=FB),
+//            UNIT=&WORK,SPACE=(400,(20,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DUMMY
+//*
+//LKED     EXEC PGM=IEWL,REGION=&REG,
+//            PARM='&LNKPARM',COND=(0,NE,ASM)
+//SYSLIB   DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//         DD DSN=CSF.SCSFMOD0,DISP=SHR
+//SYSLMOD  DD DSN=&PROGLIB,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,DCB=BLKSIZE=1024,
+//            SPACE=(1024,(200,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSLIN   DD DSN=&&LOADSET,DISP=(OLD,DELETE)
+//         DD DSN=&&COPYLINK,DISP=(OLD,DELETE)
+//         DD DDNAME=SYSIN
+//         PEND
+//*
+//S1       EXEC DFHEITAL
+//TRN.SYSIN  DD DISP=SHR,DSN=CICSIE.TS31.PTABLES(IED006)
+//LKED.SYSIN DD *
+   ENTRY IED006
+   NAME IED006(R)
+

@@ -1,0 +1,1103 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,NATLANG(EN),SP)
+IEP000   TITLE '**  CICS/TS ENABLE/DISABLE GLOBAL USER EXITS AND SET SY*
+               STEM PARAMETERS  **'
+*----------------------------------------------------------------------
+*        REGISTER AND OTHER EQUATES                                   *
+*----------------------------------------------------------------------
+RF       EQU   15
+RE       EQU   14
+RD       EQU   13
+RC       EQU   12
+RB       EQU   11
+RA       EQU   10
+R9       EQU   9
+R8       EQU   8
+R7       EQU   7
+R6       EQU   6
+R5       EQU   5
+R4       EQU   4
+R3       EQU   3
+R2       EQU   2
+R1       EQU   1
+R0       EQU   0
+SBA      EQU   X'11'                    3270 SBA
+*----------------------------------------------------------------------
+*  IEP000   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*----------------------------------------------------------------------
+IEP000   RSECT
+IEP000   AMODE 64                       MAY EXECUTE ABOVE 16M
+IEP000   RMODE ANY                      MAY RESIDE ABOVE 16M
+         SYSSTATE AMODE64=YES           SET AMODE=64
+IEP000   DFHEIENT STATIC=LITPOOL,                                      *
+               DATAREG=(13),                                           *
+               EIBREG=(9),                                             *
+               STATREG=(RB,RC)
+*----------------------------------------------------------------------
+*        CHECK TERMINAL/NON-TERMINAL (PLT INITIATED) TASK             *
+*----------------------------------------------------------------------
+INT01    DS    0H
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               FCI(TASKTYPE),                                          *
+               SYSID(SYSID),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLI   TASKTYPE,TERMINAL        TERMINAL ATTACHED
+         JNE   PLT01                    ..NO, BRANCH
+*----------------------------------------------------------------------
+*        ANALYZE TERMINAL INPUT                                       *
+*            FORMAT:  TRAN,ENA                                        *
+*                     TRAN,DIS                                        *
+*----------------------------------------------------------------------
+         XC    TIOALN,TIOALN            CLR TERMNL INPUT LENGTH
+         EXEC  CICS,                                                   *
+               RECEIVE,                                                *
+               SET(R4),                                                *
+               LENGTH(TIOALN),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(EOC)        EXEC COMMAND RESPONSE EOC
+         JE    INT02                    ..YES, BRANCH
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JNE   XIT01                    ..NO, BRANCH
+INT02    DS    0H
+         LH    R5,TIOALN                LOAD TIOA INPUT LENGTH
+         CLI   0(R4),SBA                3270 FORMATTED SCREEN INPUT
+         JNE   INT03                    ..NO, BRANCH
+         LA    R4,3(,R4)                INDEX PAST 3270 SBA
+         SH    R5,=H'3'                 IS LENGTH <= ZERO
+         JNP   XIT01                    ..NO, BRANCH
+         CH    R5,=H'8'                 IS LENGTH => 8 (TRAN+REQ)
+         JL    XIT01                    ..NO, BRANCH
+INT03    DS    0H
+         LR    R1,R4                    LOAD @ OF TERMINAL INPUT
+INT04    DS    0H
+         OI    0(R1),C' '               FORCE UPPERCASE
+         LA    R1,1(,R1)                INDEX TO NEXT INPUT BYTE
+         JCT   R5,INT04                 ..LOOP UPPER CASE
+         CLC   =C'PLT',5(R4)            PLTPI REQUEST
+         JE    PLT01                    ..YES, BRANCH
+         CLC   =C'ENA',5(R4)            ENABLE REQUEST
+         JE    TIO01                    ..YES, BRANCH
+         CLC   =C'DIS',5(R4)            DISABLE REQUEST
+         JNE   XIT01                    ..YES, BRANCH
+*----------------------------------------------------------------------
+*  ENTERED FOR:                                                       *
+*        TERMINAL INPUT REQUEST TO DISABLE IEX000 EXITS               *
+*----------------------------------------------------------------------
+         EXEC  CICS,                                                   *
+               DISABLE,                                                *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXITALL,                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JNE   INT07                    ..NO, BRANCH
+         LA    R3,L'WTO3016             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3016               LOAD MSG @
+         J     INT08
+INT07    DS    0H
+         LA    R3,L'WTO3017             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3017               LOAD MSG @
+INT08    DS    0H
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     XIT01                    ..EXIT
+*----------------------------------------------------------------------
+*  ENTERED FOR:                                                       *
+*        PLT NON-TERMINAL TASK IMPLIED REQUEST TO                     *
+*              SET SYSTEM PARAMETERS                                  *
+*              AND START SUPPORT TASKS                                *
+*----------------------------------------------------------------------
+PLT01    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               DUMPDS,                                                 *
+               SWITCHSTATUS(FULWORK),                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT02                         ..YES, BRANCH
+         LA    R3,L'WTO3007             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3007               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT04                    ..CONTINUE
+PLT02    DS    0H
+*----------------------------------------------------------------------
+         CLC   FULWORK,DFHVALUE(SWITCHNEXT) WILL DUMPDS AUTO SWITCH
+         JE    PLT03                    ..YES, BRANCH
+         MVC   FULWORK,DFHVALUE(SWITCHNEXT) SET DUMPDS AUTO SWITCH
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               DUMPDS,                                                 *
+               SWITCHSTATUS(FULWORK),                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT03                    ..YES, BRANCH
+         LA    R3,L'WTO3008             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3008               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT04                    ..CONTINUE
+PLT03    DS    0H
+         LA    R3,L'WTO3009             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3009               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+*----------------------------------------------------------------------
+PLT04    DS    0H
+         MVC   FULWORK,DFHVALUE(ON)     SET STATISTICS RECORDING ON
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               STATISTICS,                                             *
+               ENDOFDAY(=P'235959'),                                   *
+               INTERVAL(=P'235959'),                                   *
+               RECORDING(FULWORK),                                     *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT05                    ..YES, BRANCH
+         LA    R3,L'WTO3010             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3010               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT06                    ..CONTINUE
+PLT05    DS    0H
+         LA    R3,L'WTO3011             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3011               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT06    DS    0H
+*----------------------------------------------------------------------
+         LA    R5,DUMPTAB               LOAD DUMP TABLE @
+         LA    R4,DUMPTABL              LOAD # ENTRIES IN TABLE
+PLT07    DS    0H
+         MVC   DBLWORK(4),DFHVALUE(ADD) SET ADD ENTRY
+         MVC   DBLWORK+4(4),DFHVALUE(TRANDUMP) SET TRAN DUMP ONLY
+         MVC   FULWORK,0(R5)            SET TRAN CODE
+         MVC   FULWRK2,4(R5)            SET DUMP COUNT
+PLT08    DS    0H
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               TRANDUMPCODE(FULWORK),                                  *
+               ACTION(DBLWORK),                                        *
+               MAXIMUM(FULWRK2),                                       *
+               TRANDUMPING(DBLWORK+4),                                 *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT10                    ..YES, BRANCH
+         CLC   RESP,DFHRESP(DUPREC)     EXEC COMMAND RESPONSE DUPREC
+         JNE   PLT09                    ..NO, BRANCH
+         MVC   DBLWORK(4),DFHVALUE(RESET) SET RESET ENTRY
+         J     PLT08                    ..CONTINUE
+PLT09    DS    0H
+         LA    R3,L'WTO3012             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3012               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT11                    ..CONTINUE
+PLT10    DS    0H
+         LA    R5,8(,R5)                INDEX DUMP TABLE @
+         JCT   R4,PLT07                 ..LOOP THRU TABLE
+         LA    R3,L'WTO3013             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3013               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT11    DS    0H
+*----------------------------------------------------------------------
+         LA    R5,SDMPTABL              LOAD SYSTEM DUMP TABLE @
+         LA    R4,SDMPTLEN              LOAD # ENTRIES IN TABLE
+PLT12    DS    0H
+         MVC   FULWORK(4),DFHVALUE(ADD) SET ADD ENTRY
+         MVC   DBLWORK,0(R5)            SET SYSTEM CODE
+         MVC   IEPDUMP,8(R5)            SET DUMP/NODUMP ACTION
+PLT13    DS    0H
+         EXEC  CICS,                                                   *
+               SET,                                                    *
+               SYSDUMPCODE(DBLWORK),                                   *
+               ACTION(FULWORK),                                        *
+               MAXIMUM(=F'1'),                                         *
+               SYSDUMPING(IEPDUMP),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT15                    ..YES, BRANCH
+         CLC   RESP,DFHRESP(DUPREC)     EXEC COMMAND RESPONSE DUPREC
+         JNE   PLT14                    ..NO, BRANCH
+         MVC   FULWORK,DFHVALUE(RESET)  SET RESET ENTRY
+         J     PLT13                    ..CONTINUE
+PLT14    DS    0H
+         LA    R3,L'WTO3022             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3022               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT16                    ..CONTINUE
+PLT15    DS    0H
+         LA    R5,L'SDMPTABL(,R5)       INDEX DUMP TABLE @
+         JCT   R4,PLT12                 ..LOOP THRU TABLE
+         LA    R3,L'WTO3023             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3023               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+*----------------------------------------------------------------------
+PLT16    DS    0H
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000001),                                       *
+               TRANSID('E003'),                                        *
+               REQID('$IEP003$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT17                    ..YES, BRANCH
+         LA    R3,L'WTO3015             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3015               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT18                    ..CONTINUE
+PLT17    DS    0H
+         LA    R3,L'WTO3014             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3014               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT18    DS    0H
+*----------------------------------------------------------------------
+PLT16A   DS    0H
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000330),                                       *
+               TRANSID('E004'),                                        *
+               REQID('$IEP004$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT17A                   ..YES, BRANCH
+         LA    R3,L'WTO3036             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3036               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT18A                   ..CONTINUE
+PLT17A   DS    0H
+         LA    R3,L'WTO3035             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3035               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT18A   DS    0H
+*----------------------------------------------------------------------
+PLT16C   DS    0H
+PLT17C   DS    0H
+PLT18C   DS    0H
+*----------------------------------------------------------------------
+PLT16D   DS    0H
+PLT17D   DS    0H
+PLT18D   DS    0H
+*----------------------------------------------------------------------
+*
+*  LINK TO FEPI RESOURCE DEFINITION
+*
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'TST9'
+         JNE   PLT21
+         EXEC  CICS,                                                   *
+               LINK,                                                   *
+               PROGRAM('IEP701'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+PLT21    DS    0H
+*----------------------------------------------------------------------
+*
+*  MVS LOAD SPOOL EXIT IEFDOIXT
+*
+*----------------------------------------------------------------------
+         MVC   LOADRENT,LOADLIST
+         LOAD  ERRET=PLT35,                                            *
+               SF=(E,LOADRENT)
+         LA    R3,L'WTO3052             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3052               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT39                    ..CONTINUE
+PLT35    DS    0H
+         LA    R3,L'WTO3053             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3053               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT39    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT41
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000059),                                       *
+               TRANSID('MIST'),                                        *
+               REQID('$IEMIST$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT40                    ..YES, BRANCH
+         LA    R3,L'WTO3057             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3057               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT41                    ..CONTINUE
+PLT40    DS    0H
+         LA    R3,L'WTO3056             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3056               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT41    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT45
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(010000),                                       *
+               TRANSID('O093'),                                        *
+               REQID('$IEO093$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT43                    ..YES, BRANCH
+         LA    R3,L'WTO3065             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3065               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT45                    ..CONTINUE
+PLT43    DS    0H
+         LA    R3,L'WTO3064             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3064               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT45    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT51
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000010),                                       *
+               TRANSID('O441'),                                        *
+               REQID('$IEO441$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT50                    ..YES, BRANCH
+         LA    R3,L'WTO3055             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3055               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT51                    ..CONTINUE
+PLT50    DS    0H
+         LA    R3,L'WTO3054             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3054               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT51    DS    0H
+*----------------------------------------------------------------------
+PLT55    DS    0H
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT57
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000010),                                       *
+               TRANSID('O573'),                                        *
+               REQID('$IEO573$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT56                    ..YES, BRANCH
+         LA    R3,L'WTO3059             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3059               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT57                    ..CONTINUE
+PLT56    DS    0H
+         LA    R3,L'WTO3058             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3058               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT57    DS    0H
+*----------------------------------------------------------------------
+PLT58    DS    0H
+         CLC   SYSID,=C'PRD5'
+         JNE   PLT60
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000010),                                       *
+               TRANSID('O462'),                                        *
+               REQID('$IEO462$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT59                    ..YES, BRANCH
+         LA    R3,L'WTO3061             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3061               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT60                    ..CONTINUE
+PLT59    DS    0H
+         LA    R3,L'WTO3060             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3060               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT60    DS    0H
+*----------------------------------------------------------------------
+PLT61    DS    0H
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT63
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000010),                                       *
+               TRANSID('O562'),                                        *
+               REQID('$IEO562$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT62                    ..YES, BRANCH
+         LA    R3,L'WTO3063             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3063               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT63                    ..CONTINUE
+PLT62    DS    0H
+         LA    R3,L'WTO3062             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3062               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT63    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT68
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(023000),                                       *
+               TRANSID('O570'),                                        *
+               REQID('$IEO570$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT67                    ..YES, BRANCH
+         LA    R3,L'WTO3067             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3067               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT68                    ..CONTINUE
+PLT67    DS    0H
+         LA    R3,L'WTO3066             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3066               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT68    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT70
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000010),                                       *
+               TRANSID('O571'),                                        *
+               REQID('$IEO571$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT69                    ..YES, BRANCH
+         LA    R3,L'WTO3069             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3069               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT70                    ..CONTINUE
+PLT69    DS    0H
+         LA    R3,L'WTO3068             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3068               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT70    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD5'
+         JE    PLT71
+         CLC   SYSID,=C'IES0'
+         JE    PLT71
+         CLC   SYSID,=C'TRA1'
+         JE    PLT71
+         CLC   SYSID,=C'TST0'
+         JE    PLT71
+         CLC   SYSID,=C'TST1'
+         JE    PLT71
+         CLC   SYSID,=C'TST9'
+         JNE   PLT73
+PLT71    DS    0H
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000001),                                       *
+               TRANSID('CSKL'),                                        *
+               REQID('$IECSKL$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT72                    ..YES, BRANCH
+         LA    R3,L'WTO3071             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3071               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT73                    ..CONTINUE
+PLT72    DS    0H
+         LA    R3,L'WTO3070             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3070               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT73    DS    0H
+*----------------------------------------------------------------------
+         CLC   SYSID,=C'PRD0'
+         JNE   PLT76
+PLT74    DS    0H
+         EXEC  CICS,                                                   *
+               START,                                                  *
+               INTERVAL(000001),                                       *
+               TRANSID('PP09'),                                        *
+               REQID('$IEPP09$'),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    PLT75                    ..YES, BRANCH
+         LA    R3,L'WTO3073             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3073               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     PLT76                    ..CONTINUE
+PLT75    DS    0H
+         LA    R3,L'WTO3072             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3072               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+PLT76    DS    0H
+PLT99    DS    0H
+*----------------------------------------------------------------------
+*  ENTERED FOR:                                                       *
+*        TERMINAL TRANSACTION REQUEST  OR                             *
+*        PLT NON-TERMINAL TASK IMPLIED REQUEST TO ENABLE;             *
+*                                                                     *
+*              XALTENF EXIT                                           *
+*              XICTENF EXIT                                           *
+*              XMEOUT  EXIT                                           *
+*              XZCATT  EXIT                                           *
+*              XZCOUT  EXIT                                           *
+*              XDUREQ  EXIT Conditional                               *
+*----------------------------------------------------------------------
+TIO01    DS    0H
+NXT01    DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXIT('XZCATT'),                                         *
+               GALENGTH(96),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    TIO07                    ..NO, BRANCH
+         LA    R3,L'WTO3019             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3019               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01A                   ..NEXT EXIT ENABLE
+TIO07    DS    0H
+         LA    R3,L'WTO3018             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3018               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT01A   DS    0H
+         EXEC  CICS,                                                   *
+               EXTRACT,                                                *
+               EXIT,                                                   *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               GASET(R3),                                              *
+               GALENGTH(HLFWORK),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT01B1                  ..NO, BRANCH
+         LA    R3,L'WTO3003             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3003               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01                    ..NEXT EXIT ENABLE
+NXT01B1  DS    0H
+         MVC   0(4,R3),SYSID            SET SYSID IN GLOBAL AREA
+NXT01C   DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXIT('XMEOUT'),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT01D                   ..NO, BRANCH
+         LA    R3,L'WTO3044             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3044               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01E                   ..NEXT EXIT ENABLE
+NXT01D   DS    0H
+         LA    R3,L'WTO3043             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3043               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT01E   DS    0H
+NXT01J   DS    0H
+NXT01K   DS    0H
+         CLC   =C'PRD5',SYSID           PRD5 SYSTEM
+         JE    NXT01E1                  ..YES, BRANCH
+         CLC   =C'PRD6',SYSID           PRD6 SYSTEM
+         JE    NXT01E1                  ..YES, BRANCH
+         CLC   =C'TST9',SYSID           TST9 SYSTEM
+         JNE   NXT01G                   ..NO, BRANCH
+NXT01E1  DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXIT('XDUREQ'),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT01F                   ..NO, BRANCH
+         LA    R3,L'WTO3048             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3048               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01G                   ..NEXT EXIT ENABLE
+NXT01F   DS    0H
+         LA    R3,L'WTO3047             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3047               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT01G   DS    0H
+NXT01H   DS    0H
+NXT01I   DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXIT('XTDOUT'),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT01L                   ..NO, BRANCH
+         LA    R3,L'WTO3032             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3032               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01M                   ..NEXT EXIT ENABLE
+NXT01L   DS    0H
+         LA    R3,L'WTO3031             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3031               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT01M   DS    0H
+         CLC   =C'PRD0',SYSID
+         JE    NXT01M1
+         CLC   =C'INVT',SYSID
+         JE    NXT01M1
+         CLC   =C'IES',SYSID
+         JE    NXT01M1
+         CLC   =C'TST',SYSID
+         JE    NXT01M1
+         CLC   =C'TRA',SYSID
+         JNE   NXT01Z
+NXT01M1  DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               ENTRYNAME('IEX000'),                                    *
+               EXIT('XZCOUT'),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT01N                   ..NO, BRANCH
+         LA    R3,L'WTO3038             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3038               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT01Z                   ..NEXT EXIT ENABLE
+NXT01N   DS    0H
+         LA    R3,L'WTO3037             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3037               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT01Z   DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('IEX000'),                                      *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT02                    ..NO, BRANCH
+         LA    R3,L'WTO3006             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3006               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT02    DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('DFHXTENF'),                                    *
+               ENTRYNAME('DFHXTENF'),                                  *
+               EXIT('XALTENF'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    TIO08                    ..NO, BRANCH
+         LA    R3,L'WTO3025             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3025               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT03                    ..NO, BRANCH
+TIO08    DS    0H
+         LA    R3,L'WTO3024             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3024               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT03    DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('DFHXTENF'),                                    *
+               ENTRYNAME('DFHXTENF'),                                  *
+               EXIT('XICTENF'),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    TIO09                    ..NO, BRANCH
+         LA    R3,L'WTO3027             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3027               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+         J     NXT04                    ..NEXT EXIT ENABLE
+TIO09    DS    0H
+         LA    R3,L'WTO3026             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3026               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT04    DS    0H
+         EXEC  CICS,                                                   *
+               ENABLE,                                                 *
+               PROGRAM('DFHXTENF'),                                    *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     EXEC COMMAND RESPONSE NORMAL
+         JE    NXT05                    ..NO, BRANCH
+         LA    R3,L'WTO3028             LOAD MSG LENGTH
+         ST    R3,FULWORK               SET FOR WRITE TO OPERATOR
+         LA    R3,WTO3028               LOAD MSG @
+         JAS   R8,WTO01                 GO WRITE MSG TO OPERATOR
+NXT05    DS    0H
+         J     XIT01                    ..EXIT
+*----------------------------------------------------------------------
+*        WRITE TO OPERATOR SUBROUTINE                                 *
+*----------------------------------------------------------------------
+WTO01    DS    0H
+         EXEC  CICS,                                                   *
+               WRITE,                                                  *
+               OPERATOR,                                               *
+               TEXT(0(,R3)),                                           *
+               TEXTLENGTH(FULWORK),                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8                       RETURN TO CALLER
+*----------------------------------------------------------------------
+*        USER EXIT RETURN TO CICS/ESA                                 *
+*----------------------------------------------------------------------
+XIT01    DS    0H
+         CLI   TASKTYPE,TERMINAL        TERMINAL ATTACHED
+         JNE   XIT99                    ..NO, BRANCH
+         EXEC  CICS,                                                   *
+               SEND,                                                   *
+               CONTROL,                                                *
+               ALARM,                                                  *
+               FREEKB,                                                 *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+XIT99    DS    0H
+         DFHEIRET
+*----------------------------------------------------------------------
+*        CONSTANTS                                                    *
+*----------------------------------------------------------------------
+LITPOOL  DS    0D
+         LTORG
+*
+LOADLIST LOAD  EP=IEFDOIXT,                                            *
+               DCB=0,                                                  *
+               SF=L
+LOADLEN  EQU   *-LOADLIST
+*
+SYSDUMP     EQU   184
+NO_SYSDUMP  EQU   185
+         DS    0F                       SYSTEM DUMP TABLE
+SDMPTABL DS    0XL12
+         DC    CL8'AP0001',AL4(NO_SYSDUMP)
+         DC    CL8'AP0002',AL4(SYSDUMP)
+         DC    CL8'AP0003',AL4(SYSDUMP)
+         DC    CL8'AP0004',AL4(SYSDUMP)
+         DC    CL8'CC0001',AL4(SYSDUMP)
+         DC    CL8'CC0004',AL4(SYSDUMP)
+         DC    CL8'DM0001',AL4(SYSDUMP)
+         DC    CL8'DM0002',AL4(SYSDUMP)
+         DC    CL8'DM0003',AL4(SYSDUMP)
+         DC    CL8'DM0004',AL4(SYSDUMP)
+         DC    CL8'DM0005',AL4(SYSDUMP)
+         DC    CL8'DS0001',AL4(SYSDUMP)
+         DC    CL8'DS0002',AL4(SYSDUMP)
+         DC    CL8'DS0003',AL4(SYSDUMP)
+         DC    CL8'DS0004',AL4(SYSDUMP)
+         DC    CL8'DS0005',AL4(SYSDUMP)
+         DC    CL8'DS0006',AL4(SYSDUMP)
+         DC    CL8'DU0001',AL4(SYSDUMP)
+         DC    CL8'DU0002',AL4(SYSDUMP)
+         DC    CL8'DU0004',AL4(SYSDUMP)
+         DC    CL8'DU0006',AL4(SYSDUMP)
+         DC    CL8'FC0001',AL4(SYSDUMP)
+         DC    CL8'FC0002',AL4(SYSDUMP)
+         DC    CL8'FC0003',AL4(SYSDUMP)
+         DC    CL8'FC0004',AL4(SYSDUMP)
+         DC    CL8'FC0005',AL4(SYSDUMP)
+         DC    CL8'IR3783',AL4(NO_SYSDUMP)
+         DC    CL8'KE0001',AL4(NO_SYSDUMP)
+         DC    CL8'KE0002',AL4(SYSDUMP)
+         DC    CL8'KE0004',AL4(SYSDUMP)
+         DC    CL8'KE0005',AL4(SYSDUMP)
+         DC    CL8'KE0006',AL4(SYSDUMP)
+         DC    CL8'LD0001',AL4(NO_SYSDUMP)
+         DC    CL8'LD0002',AL4(NO_SYSDUMP)
+         DC    CL8'LD0004',AL4(SYSDUMP)
+         DC    CL8'LM0001',AL4(SYSDUMP)
+         DC    CL8'LM0002',AL4(SYSDUMP)
+         DC    CL8'LM0004',AL4(SYSDUMP)
+         DC    CL8'LM0006',AL4(SYSDUMP)
+         DC    CL8'ME0001',AL4(SYSDUMP)
+         DC    CL8'ME0002',AL4(SYSDUMP)
+         DC    CL8'ME0004',AL4(SYSDUMP)
+         DC    CL8'ME0006',AL4(SYSDUMP)
+         DC    CL8'MN0001',AL4(SYSDUMP)
+         DC    CL8'MN0002',AL4(SYSDUMP)
+         DC    CL8'MN0003',AL4(SYSDUMP)
+         DC    CL8'MN0004',AL4(SYSDUMP)
+         DC    CL8'MN0005',AL4(SYSDUMP)
+         DC    CL8'MT0001',AL4(SYSDUMP)
+         DC    CL8'PA0001',AL4(SYSDUMP)
+         DC    CL8'PA0002',AL4(SYSDUMP)
+         DC    CL8'PA0004',AL4(SYSDUMP)
+         DC    CL8'PG0001',AL4(SYSDUMP)
+         DC    CL8'PG0213',AL4(NO_SYSDUMP)
+         DC    CL8'SM0001',AL4(SYSDUMP)
+         DC    CL8'SM0002',AL4(SYSDUMP)
+         DC    CL8'SM0004',AL4(SYSDUMP)
+         DC    CL8'SM0006',AL4(SYSDUMP)
+         DC    CL8'SM0131',AL4(SYSDUMP)
+         DC    CL8'SM0133',AL4(SYSDUMP)
+         DC    CL8'SR0001',AL4(NO_SYSDUMP)
+         DC    CL8'ST0001',AL4(SYSDUMP)
+         DC    CL8'ST0002',AL4(SYSDUMP)
+         DC    CL8'ST0003',AL4(SYSDUMP)
+         DC    CL8'ST0004',AL4(SYSDUMP)
+         DC    CL8'ST0005',AL4(SYSDUMP)
+         DC    CL8'TD0001',AL4(SYSDUMP)
+         DC    CL8'TD0002',AL4(SYSDUMP)
+         DC    CL8'TD0003',AL4(SYSDUMP)
+         DC    CL8'TD0004',AL4(SYSDUMP)
+         DC    CL8'TD0005',AL4(SYSDUMP)
+         DC    CL8'TD0006',AL4(SYSDUMP)
+         DC    CL8'TI0001',AL4(SYSDUMP)
+         DC    CL8'TI0004',AL4(SYSDUMP)
+         DC    CL8'TI0005',AL4(SYSDUMP)
+         DC    CL8'TR0001',AL4(SYSDUMP)
+         DC    CL8'TR0002',AL4(SYSDUMP)
+         DC    CL8'TR0004',AL4(SYSDUMP)
+SDMPTLEN EQU   (*-SDMPTABL)/L'SDMPTABL
+*
+DUMPTAB  DS    0XL8
+         DC    C'AAL8',A(9)
+         DC    C'AAID',A(9)
+         DC    C'AEIA',A(9)
+         DC    C'AEID',A(9)
+         DC    C'AEIE',A(9)
+         DC    C'AEIG',A(9)
+         DC    C'AEIH',A(9)
+         DC    C'AEII',A(9)
+         DC    C'AEIJ',A(9)
+         DC    C'AEIK',A(9)
+         DC    C'AEIL',A(9)
+         DC    C'AEIO',A(9)
+         DC    C'AEIQ',A(9)
+         DC    C'AEIS',A(9)
+         DC    C'AEIT',A(9)
+         DC    C'AEIU',A(9)
+         DC    C'AEIV',A(9)
+         DC    C'AEIW',A(9)
+         DC    C'AEIZ',A(9)
+         DC    C'AEI0',A(9)
+         DC    C'AEI1',A(9)
+         DC    C'AEI2',A(9)
+         DC    C'AEI3',A(9)
+         DC    C'AEI4',A(9)
+         DC    C'AEI5',A(9)
+         DC    C'AEI6',A(9)
+         DC    C'AEI7',A(9)
+         DC    C'AEI8',A(9)
+         DC    C'AEYA',A(9)
+         DC    C'AEYB',A(9)
+         DC    C'AEYC',A(9)
+         DC    C'AEYE',A(9)
+         DC    C'AEYG',A(9)
+         DC    C'AEYH',A(9)
+         DC    C'AEYJ',A(9)
+         DC    C'AEYK',A(9)
+         DC    C'AEYL',A(9)
+         DC    C'AEYM',A(9)
+         DC    C'AEYN',A(9)
+         DC    C'AEYO',A(9)
+         DC    C'AEYP',A(9)
+         DC    C'AEYQ',A(9)
+         DC    C'AEYR',A(9)
+         DC    C'AEYT',A(9)
+         DC    C'AEYU',A(9)
+         DC    C'AEYV',A(9)
+         DC    C'AEYX',A(9)
+         DC    C'AEYY',A(9)
+         DC    C'AEYZ',A(9)
+         DC    C'AEY0',A(9)
+         DC    C'AEY1',A(9)
+         DC    C'AEY2',A(9)
+         DC    C'AEY3',A(9)
+         DC    C'AEY4',A(9)
+         DC    C'AEY5',A(9)
+         DC    C'AEY6',A(9)
+         DC    C'AEY7',A(9)
+         DC    C'AEY8',A(9)
+         DC    C'AEY9',A(9)
+         DC    C'AFCA',A(3)
+         DC    C'AFCG',A(3)
+         DC    C'AKCS',A(9)
+         DC    C'AKC3',A(9)
+         DC    C'AKEA',A(9)
+         DC    C'AKEB',A(9)
+         DC    C'AKEC',A(9)
+         DC    C'APCT',A(3)
+         DC    C'ASOD',A(0)
+         DC    C'ASRB',A(3)
+         DC    C'ASRD',A(3)
+         DC    C'ATCH',A(9)
+         DC    C'ATCV',A(9)
+         DC    C'ATND',A(9)
+         DC    C'ATNI',A(0)
+         DC    C'AWBA',A(0)
+         DC    C'AWBM',A(0)
+         DC    C'AZCT',A(9)
+         DC    C'AZI2',A(9)
+         DC    C'AZI4',A(9)
+         DC    C'AZI6',A(9)
+         DC    C'AZI9',A(9)
+         DC    C'AZTN',A(9)
+         DC    C'AZTS',A(9)
+         DC    C'AZVK',A(9)
+         DC    C'4039',A(0)
+*
+*  IEI User Abend Codes Begin Here
+*
+         DC    C'T303',A(9)
+         DC    C'T306',A(9)
+         DC    C'T309',A(9)
+         DC    C'T310',A(9)
+         DC    C'WBEP',A(3)
+*
+DUMPTABL EQU   (*-DUMPTAB)/L'DUMPTAB    DUMP TABLE # ENTRIES
+*
+*SFXTABLE DS    0CL6                     SYSID DLI PSB SUFFIX TABLE
+*         DC    CL4'????',CL2'??'        ????????
+*SFXLEN   EQU   (*-SFXTABLE)/L'SFXTABLE
+*
+WTO3003  DC    C'IEP00003E  Extract User Exit Failed'
+WTO3006  DC    C'IEP00006E  Start User Exit Program (IEX000) Failed'
+WTO3007  DC    C'IEP00007E  Inquire DUMPDS Failed'
+WTO3008  DC    C'IEP00008E  Set DUMPDS Failed'
+WTO3009  DC    C'IEP00009I  Set DUMPDS to SWITCHNEXT Successful'
+WTO3010  DC    C'IEP00010E  Set STATS Failed'
+WTO3011  DC    C'IEP00011I  Set STATISTICS EOD/INTERVAL Successful'
+WTO3012  DC    C'IEP00012E  Set TRANDUMP Failed'
+WTO3013  DC    C'IEP00013I  Set TRANDUMPCODE Table Successful'
+WTO3014  DC    C'IEP00014I  Schedule Terminal Scan (E003) Successful'
+WTO3015  DC    C'IEP00015E  Schedule Terminal Scan (E003) Failed'
+WTO3016  DC    C'IEP00016I  Disable All User Exits Successful'
+WTO3017  DC    C'IEP00017E  Disable All User Exits Failed'
+WTO3018  DC    C'IEP00018I  Enable User Exit (XZCATT) Successful'
+WTO3019  DC    C'IEP00019E  Enable User Exit (XZCATT) Failed'
+WTO3020  DC    C'IEP00020I  Enable User Exit (XEIIN) Successful'
+WTO3021  DC    C'IEP00021E  Enable User Exit (XEIIN) Failed'
+WTO3022  DC    C'IEP00022E  Set SYSTEMDUMP Failed'
+WTO3023  DC    C'IEP00023I  Set SYSDUMPCODE Table Successful'
+WTO3024  DC    C'IEP00024I  Enable User Exit (XALTENF) Successful'
+WTO3025  DC    C'IEP00025E  Enable User Exit (XALTENF) Failed'
+WTO3026  DC    C'IEP00026I  Enable User Exit (XICTENF) Successful'
+WTO3027  DC    C'IEP00027E  Enable User Exit (XICTENF) Failed'
+WTO3028  DC    C'IEP00028E  Start User Exit Program (DFHXTENF) Failed'
+WTO3031  DC    C'IEP00031I  Enable User Exit (XTDOUT) Successful'
+WTO3032  DC    C'IEP00032E  Enable User Exit (XTDOUT) Failed'
+WTO3033  DC    C'IEP00033I  Enable User Exit (XFCREQ) Successful'
+WTO3034  DC    C'IEP00034E  Enable User Exit (XFCREQ) Failed'
+WTO3035  DC    C'IEP00035I  Schedule CPSM Alerts (E004) Successful'
+WTO3036  DC    C'IEP00036E  Schedule CPSM Alerts (E004) Failed'
+WTO3037  DC    C'IEP00037I  Enable User Exit (XZCOUT) Successful'
+WTO3038  DC    C'IEP00038E  Enable User Exit (XZCOUT) Failed'
+WTO3043  DC    C'IEP00043I  Enable User Exit (XMEOUT) Successful'
+WTO3044  DC    C'IEP00044E  Enable User Exit (XMEOUT) Failed'
+WTO3047  DC    C'IEP00047I  Enable User Exit (XDUREQ) Successful'
+WTO3048  DC    C'IEP00048E  Enable User Exit (XDUREQ) Failed'
+WTO3049  DC    C'IEP00049E  Start User Exit Program (IEX003) Failed'
+WTO3052  DC    C'IEP00052I  MVS Load Spool Exit (IEFDOIXT) Successful'
+WTO3053  DC    C'IEP00053E  MVS Load Spool Exit (IEFDOIXT) Failed'
+WTO3054  DC    C'IEP00054I  Schedule Transaction O441 Successful'
+WTO3055  DC    C'IEP00055E  Schedule Transaction O441 Failed'
+WTO3056  DC    C'IEP00056I  Schedule Transaction MIST Successful'
+WTO3057  DC    C'IEP00057E  Schedule Transaction MIST Failed'
+WTO3058  DC    C'IEP00058I  Schedule Transaction O573 Successful'
+WTO3059  DC    C'IEP00059E  Schedule Transaction O573 Failed'
+WTO3060  DC    C'IEP00060I  Schedule Transaction O462 Successful'
+WTO3061  DC    C'IEP00061E  Schedule Transaction O462 Failed'
+WTO3062  DC    C'IEP00062I  Schedule Transaction O562 Successful'
+WTO3063  DC    C'IEP00063E  Schedule Transaction O562 Failed'
+WTO3064  DC    C'IEP00064I  Schedule Transaction O093 Successful'
+WTO3065  DC    C'IEP00065E  Schedule Transaction O093 Failed'
+WTO3066  DC    C'IEP00066I  Schedule Transaction O570 Successful'
+WTO3067  DC    C'IEP00067E  Schedule Transaction O570 Failed'
+WTO3068  DC    C'IEP00068I  Schedule Transaction O571 Successful'
+WTO3069  DC    C'IEP00069E  Schedule Transaction O571 Failed'
+WTO3070  DC    C'IEP00070I  Schedule Transaction CSKL Successful'
+WTO3071  DC    C'IEP00071E  Schedule Transaction CSKL Failed'
+WTO3072  DC    C'IEP00072I  Schedule Transaction PP09 Successful'
+WTO3073  DC    C'IEP00073E  Schedule Transaction PP09 Failed'
+*----------------------------------------------------------------------
+*        DSECTS                                                       *
+*----------------------------------------------------------------------
+         DFHAICB
+         DFHEISTG
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+FULWRK2  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+IEPDUMP  DS    F                        SYSTEMS DUMP ACTION
+CWAPTR   DS    A                        CWA @
+SYSID    DS    CL4                      SYSID
+HLFWORK  DS    H                        HALF WORD WORK
+TIOALN   DS    H                        TERMINAL I/O LENGTH
+         DS    0F
+LOADRENT DS    XL(LOADLEN)              MVS LOAD REENTRANT
+TASKTYPE DS    X                        TASK FACILITY TYPE
+TERMINAL EQU   X'01'                    ..TERMINAL FACILITY
+         DFHEIEND
+         END
+

@@ -1,0 +1,10 @@
+DFHNET   CSECT
+DFHNET   AMODE 31
+DFHNET   RMODE ANY
+         DFHSNET NAME=DFHNET,                                          *
+               ESBS=(1,10,2,10),                                       *
+               COUNT=3,                                                *
+               NEBS=200,                                               *
+               TIME=(5,MIN)
+         END
+

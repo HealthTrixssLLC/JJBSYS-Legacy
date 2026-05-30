@@ -1,0 +1,219 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010003
+IEB304   TITLE '**  CICS EXCI DPL NEWCOPY DOCTEMPLATE  **'              00020003
+*---------------------------------------------------------------------- 00030003
+*        REGISTERS                                                      00040003
+*---------------------------------------------------------------------- 00050003
+RF       EQU   15                                                       00060003
+RE       EQU   14                                                       00070003
+RD       EQU   13                                                       00080003
+RC       EQU   12                                                       00090003
+RB       EQU   11                                                       00100003
+RA       EQU   10                                                       00110003
+R9       EQU   9                                                        00120003
+R8       EQU   8                                                        00130003
+R7       EQU   7                                                        00140003
+R6       EQU   6                                                        00150003
+R5       EQU   5                                                        00160003
+R4       EQU   4                                                        00170003
+R3       EQU   3                                                        00180003
+R2       EQU   2                                                        00190003
+R1       EQU   1                                                        00200003
+R0       EQU   0                                                        00210003
+*---------------------------------------------------------------------- 00220003
+*  IEB304   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230003
+*---------------------------------------------------------------------- 00240003
+IEB304   DFHEIENT CODEREG=(12),                                        *00250003
+               DATAREG=(13),                                           *00260003
+               EIBREG=(11)                                              00270003
+         MVC   EISEYE,=CL16'IEB304 EI STORAGE'                          00280003
+         MVC   FAILRSP,=CL8'FAILRSP'    SET EYE CATCHER                 00290003
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300003
+         MVC   FAILFN,=CL8'FAILFN'      SET EYE CATCHER                 00310003
+         MVC   FAILRC,=CL8'FAILRC'      SET EYE CATCHER                 00320003
+         B     INT00                    BRANCH AROUND DUMP ID           00330003
+IEB304   AMODE 31                       MAY EXECUTE ABOVE 16M           00340003
+IEB304   RMODE ANY                      MAY RESIDE ABOVE 16M            00350003
+         DS    0H                                                       00360003
+         DC    CL8'IEB304'              DUMP PROGRAM ID                 00370003
+         DC    CL1' '                                                   00380003
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390003
+         DC    CL1' '                                                   00400003
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410003
+         DC    CL1' '                                                   00420003
+INT00    DS    0H                                                       00430003
+*---------------------------------------------------------------------- 00440003
+*        VERIFY CALLER'S PARMS                                          00450003
+*---------------------------------------------------------------------- 00460003
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470003
+         CH    R1,=AL2(COMMLN)          CHECK MINIMUM LENGTH            00480003
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490003
+         EXEC  CICS,                                                   *00500003
+               ADDRESS,                                                *00510003
+               COMMAREA(RA),                                           *00520003
+               RESP(RESP),                                             *00530003
+               RESP2(RESP2)                                             00540003
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550003
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560003
+         USING COMMPARM,RA                                              00570003
+*---------------------------------------------------------------------- 00580003
+*        INQUIRE DOCTEMPLATE                                            00590003
+*---------------------------------------------------------------------- 00600003
+         EXEC  CICS,                                                   *00610003
+               INQUIRE,                                                *00620003
+               DOCTEMPLATE(COMNCP),                                    *00630003
+               APPENDCRLF(APNDCRLF),                                   *00640003
+               DDNAME(DDNAME),                                         *00650003
+               MEMBER(MEMBER),                                         *00660003
+               TYPE(TMPLTYPE),                                         *00670003
+               RESP(RESP),                                             *00680003
+               RESP2(RESP2)                                             00690003
+         MVC   COMRC1,RESP                                              00700003
+         MVC   COMRC2,RESP2                                             00710003
+         CLC   RESP,DFHRESP(NORMAL)                                     00720003
+         BNE   XIT00                                                    00730003
+*---------------------------------------------------------------------- 00740003
+*        DISCARD OLD TEMPLATE RESOURCE                                  00750003
+*---------------------------------------------------------------------- 00760003
+         EXEC  CICS,                                                   *00770003
+               DISCARD,                                                *00780003
+               DOCTEMPLATE(COMNCP),                                    *00790003
+               RESP(RESP),                                             *00800003
+               RESP2(RESP2)                                             00810003
+         MVC   COMRC1,RESP                                              00820003
+         MVC   COMRC2,RESP2                                             00830003
+         CLC   RESP,DFHRESP(NORMAL)                                     00840003
+         BNE   XIT00                                                    00850003
+*---------------------------------------------------------------------- 00860003
+*        CREATE NEW TEMPLATE RESOURCE                                   00870003
+*---------------------------------------------------------------------- 00880003
+         MVC   NEWTMPLT,MDLTMPLT                                        00890003
+         MVC   NEWTMPLT+(MDLTNAME-MDLTMPLT)(L'MDLTNAME),COMNCP          00900003
+         MVC   NEWTMPLT+(MDLDDN-MDLTMPLT)(L'MDLDDN),DDNAME              00910003
+         MVC   NEWTMPLT+(MDLMEMBR-MDLTMPLT)(L'MDLMEMBR),MEMBER          00920003
+         CLC   TMPLTYPE,DFHVALUE(EBCDIC)                                00930003
+         BE    BYP01                                                    00940003
+         MVC   NEWTMPLT+(MDLTYPE-MDLTMPLT)(L'MDLTYPE),=C'BINARY'        00950003
+BYP01    DS    0H                                                       00960003
+         CLC   APNDCRLF,DFHVALUE(APPEND)                                00970003
+         BE    BYP02                                                    00980003
+         MVC   NEWTMPLT+(MDLCRLF-MDLTMPLT)(L'MDLCRLF),=C'NO '           00990003
+BYP02    DS    0H                                                       01000003
+         EXEC  CICS,                                                   *01010003
+               CREATE,                                                 *01020003
+               DOCTEMPLATE(COMNCP),                                    *01030003
+               ATTRIBUTES(NEWTMPLT),                                   *01040003
+               ATTRLEN(=AL2(MDLTMPLN)),                                *01050003
+               RESP(RESP),                                             *01060003
+               RESP2(RESP2)                                             01070003
+         MVC   COMRC1,RESP                                              01080003
+         MVC   COMRC2,RESP2                                             01090003
+         B     XIT00                                                    01100003
+*---------------------------------------------------------------------- 01110003
+*        ABNORMAL TERMINATION                                           01120003
+*---------------------------------------------------------------------- 01130003
+*                                                                       01140003
+ABN01    DS    0H                                                       01150003
+         LA    R2,MSG01                                                 01160003
+         LA    R3,L'MSG01                                               01170003
+         ICM   R4,B'1111',ABC01                                         01180003
+         B     ABN99                                                    01190003
+*                                                                       01200003
+ABN02    DS    0H                                                       01210003
+         LA    R2,MSG02                                                 01220003
+         LA    R3,L'MSG02                                               01230003
+         ICM   R4,B'1111',ABC02                                         01240003
+         B     ABN99                                                    01250003
+*                                                                       01260003
+ABN99    DS    0H                                                       01270003
+         MVC   SAVRESP,RESP                                             01280003
+         MVC   SAVRESP2,RESP2                                           01290003
+         MVC   SAVFN,EIBFN                                              01300003
+         MVC   SAVRC,EIBRCODE                                           01310003
+         STH   R3,HLFWORK                                               01320003
+         EXEC  CICS,                                                   *01330003
+               WRITEQ,                                                 *01340003
+               TD,                                                     *01350003
+               QUEUE(=C'CSML'),                                        *01360003
+               FROM(0(,R2)),                                           *01370003
+               LENGTH(HLFWORK),                                        *01380003
+               RESP(RESP),                                             *01390003
+               RESP2(RESP2)                                             01400003
+         ST    R4,FULWORK                                               01410003
+         EXEC  CICS,                                                   *01420003
+               ABEND,                                                  *01430003
+               ABCODE(FULWORK),                                        *01440003
+               RESP(RESP),                                             *01450003
+               RESP2(RESP2)                                             01460003
+*---------------------------------------------------------------------- 01470003
+*        RETURN TO CICS                                                 01480003
+*---------------------------------------------------------------------- 01490003
+XIT00    DS    0H                                                       01500003
+         EXEC  CICS,                                                   *01510003
+               RETURN                                                   01520003
+         DFHEIRET                                                       01530003
+*---------------------------------------------------------------------- 01540003
+*        CONSTANTS                                                      01550003
+*---------------------------------------------------------------------- 01560003
+*                                                                       01570003
+MSG01    DC    C'IEB30401 Caller COMMAREA length too small, abend B4CL *01580003
+               initiated.'                                              01590003
+ABC01    EQU   *-15                                                     01600003
+*                                                                       01610003
+MSG02    DC    C'IEB30402 Caller COMMAREA address not found, abend B4CA*01620003
+                initiated.'                                             01630003
+ABC02    EQU   *-15                                                     01640003
+*                                                                       01650003
+MDLTMPLT DC    C'APPENDCRLF('                                           01660003
+MDLCRLF  DC    C'YES'                                                   01670003
+         DC    C') TEMPLATENAME('                                       01680003
+MDLTNAME DC    C'        '                                              01690003
+         DC    C') DDNAME('                                             01700003
+MDLDDN   DC    C'        '                                              01710003
+         DC    C') MEMBERNAME('                                         01720003
+MDLMEMBR DC    C'        '                                              01730003
+         DC    C') TYPE('                                               01740003
+MDLTYPE  DC    C'EBCDIC'                                                01750003
+         DC    C')'                                                     01760003
+MDLTMPLN EQU   *-MDLTMPLT                                               01770003
+*                                                                       01780003
+*---------------------------------------------------------------------- 01790003
+*        DSECTS                                                       * 01800003
+*---------------------------------------------------------------------- 01810003
+*                                                                       01820003
+         DFHEISTG                                                       01830003
+EISEYE   DS    CL16                     EYE CATCHER                     01840003
+DBLWORK  DS    D                        DOUBLE WORD WORK                01850003
+FULWORK  DS    F                        FULL WORD WORK                  01860003
+RESP     DS    F                        EXEC COMMAND RESPONSE           01870003
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01880003
+APNDCRLF DS    F                        TEMPLATE APPEND CR/LF VALUE     01890003
+TMPLTYPE DS    F                        TEMPLATE TYPE                   01900003
+*                                                                       01910003
+FAILRSP  DS    CL8                      EYE CATCHER                     01920003
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01930003
+FAILRSP2 DS    CL8                      EYE CATCHER                     01940003
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01950003
+FAILFN   DS    CL8                      EYE CATCHER                     01960003
+SAVFN    DS    H                        SAVED EXEC EIBFN                01970003
+FAILRC   DS    CL8                      EYE CATCHER                     01980003
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01990003
+*                                                                       02000003
+HLFWORK  DS    H                        HALF WORD WORK AREA             02010003
+*                                                                       02020003
+DDNAME   DS    CL8                      TEMPLATE PDS DDNAME             02030003
+MEMBER   DS    CL8                      TEMPLATE PDS MEMBER             02040003
+*                                                                       02050003
+NEWTMPLT DS    CL(MDLTMPLN)             CREATE TEMPLATE PARMS           02060003
+*                                                                       02070003
+         DFHEIEND                                                       02080003
+*                                                                       02090003
+COMMPARM DSECT ,                        COMMAREA                        02100003
+*                                       RETURNED TO CALLER...           02110003
+COMRC1   DS    A                         USER REQUEST RETURN CODE 1     02120003
+COMRC2   DS    A                         USER REQUEST RETURN CODE 2     02130003
+*                                       PASSED BY CALLER...             02140003
+COMNCP   DS    CL8                       USER NEWCOPY TEMPLATE NAME     02150003
+COMMLN   EQU   *-COMMPARM               COMMAREA LENGTH                 02160003
+*---------------------------------------------------------------------- 02170003
+         END                                                            02180003
+

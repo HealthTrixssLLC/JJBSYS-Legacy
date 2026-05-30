@@ -1,0 +1,192 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEP501   TITLE '**  CICS EMS PROGRAM AGENT MESSAGE AUTOMATION  **'      00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTERS                                                      00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEP501   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEP501   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IEP501 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP'    SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN'      SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC'      SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEP501   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEP501   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEP501'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(RA),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMPARM,RA                                               00570002
+*---------------------------------------------------------------------- 00580002
+*        PROCESS COMMAREA                                               00590002
+*---------------------------------------------------------------------- 00600002
+         MVI   COMRC,COMRCO             SET RETURN...                   00610002
+         MVI   COMRC+1,COMRCK           ...........CODE 'OK'            00620002
+         MVI   COMDSP,COMDSPRD          SET DISPOSITION CODE 'READ'     00630002
+         OC    COMHREC,COMHREC          MSG HDR RECORD PASSED?          00640002
+         BZ    XIT00                    ..NO, EXIT                      00650002
+         ICM   R9,15,COMHREC            LOAD MSG HDR RECORD @           00660002
+         USING MHREC,R9                 USE IT                          00670002
+         MVC   WTO,MSG00                MOVE SKELETON WTO               00680002
+         MVC   WTOJCL,MHTITLE           MOVE JCL PDS MEMBER NAME        00690002
+         EXEC  CICS,                                                   *00700002
+               WRITE,                                                  *00710002
+               OPERATOR,                                               *00720002
+               TEXT(WTO),                                              *00730002
+               TEXTLENGTH(=A(L'WTO))                                    00740002
+         B     XIT00                                                    00750002
+*---------------------------------------------------------------------- 00760002
+*        ABNORMAL TERMINATION                                           00770002
+*---------------------------------------------------------------------- 00780002
+ABN01    DS    0H                                                       00790002
+         LA    R2,MSG01                                                 00800002
+         LA    R3,L'MSG01                                               00810002
+         ICM   R4,B'1111',ABC01                                         00820002
+         B     ABN99                                                    00830002
+ABN02    DS    0H                                                       00840002
+         LA    R2,MSG02                                                 00850002
+         LA    R3,L'MSG02                                               00860002
+         ICM   R4,B'1111',ABC02                                         00870002
+         B     ABN99                                                    00880002
+ABN99    DS    0H                                                       00890002
+         MVC   SAVRESP,RESP                                             00900002
+         MVC   SAVRESP2,RESP2                                           00910002
+         MVC   SAVFN,EIBFN                                              00920002
+         MVC   SAVRC,EIBRCODE                                           00930002
+         STH   R3,HLFWORK                                               00940002
+         EXEC  CICS,                                                   *00950002
+               WRITEQ,                                                 *00960002
+               TD,                                                     *00970002
+               QUEUE(=C'CSMT'),                                        *00980002
+               FROM(0(,R2)),                                           *00990002
+               LENGTH(HLFWORK),                                        *01000002
+               RESP(RESP),                                             *01010002
+               RESP2(RESP2)                                             01020002
+         ST    R4,FULWORK                                               01030002
+         EXEC  CICS,                                                   *01040002
+               ABEND,                                                  *01050002
+               ABCODE(FULWORK),                                        *01060002
+               RESP(RESP),                                             *01070002
+               RESP2(RESP2)                                             01080002
+*---------------------------------------------------------------------- 01090002
+*        RETURN TO CICS                                                 01100002
+*---------------------------------------------------------------------- 01110002
+XIT00    DS    0H                                                       01120002
+         EXEC  CICS,                                                   *01130002
+               RETURN                                                   01140002
+         DFHEIRET                                                       01150002
+*---------------------------------------------------------------------- 01160002
+*        CONSTANTS                                                      01170002
+*---------------------------------------------------------------------- 01180002
+*                                                                       01190002
+MSG00    DC    C'IEP50100 NETVIEW, SUBMIT EDI FTP JCL         '         01200002
+*                                                                       01210002
+MSG01    DC    C'IEP50101 COMMAREA too small, ABEND 51CL initiated.'    01220002
+ABC01    EQU   *-15                                                     01230002
+*                                                                       01240002
+MSG02    DC    C'IEP50102 Unable to address COMMAREA, ABEND 51CA initia*01250002
+               ted.'                                                    01260002
+ABC02    EQU   *-15                                                     01270002
+*                                                                       01280002
+*---------------------------------------------------------------------- 01290002
+*        DSECTS                                                       * 01300002
+*---------------------------------------------------------------------- 01310002
+*                                                                       01320002
+         DFHEISTG                                                       01330002
+EISEYE   DS    CL16                     EYE CATCHER                     01340002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01350002
+FULWORK  DS    F                        FULL WORD WORK                  01360002
+RESP     DS    F                        EXEC COMMAND RESPONSE           01370002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01380002
+*                                                                       01390002
+FAILRSP  DS    CL8                      EYE CATCHER                     01400002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01410002
+FAILRSP2 DS    CL8                      EYE CATCHER                     01420002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01430002
+FAILFN   DS    CL8                      EYE CATCHER                     01440002
+SAVFN    DS    H                        SAVED EXEC EIBFN                01450002
+FAILRC   DS    CL8                      EYE CATCHER                     01460002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01470002
+*                                                                       01480002
+HLFWORK  DS    H                        HALF WORD WORK AREA             01490002
+*                                                                       01500002
+WTO      DS    CL(L'MSG00)              NETVIEW WTO MSG                 01510002
+         ORG   *-8                                                      01520002
+WTOJCL   DS    CL8                      PDS JCL MEMBER NAME             01530002
+         ORG                                                            01540002
+*                                                                       01550002
+         DFHEIEND                                                       01560002
+*---------------------------------------------------------------------- 01570002
+*        EMS50 COMMAREA PARM LIST                                       01580002
+*---------------------------------------------------------------------- 01590002
+*                                                                       01600002
+COMPARM  DSECT ,                        COPY EMC50COM                   01610002
+*                                                                       01620002
+COMRC    DS    CL2                      EMS RETURN CODE                 01630002
+COMRCO   EQU   C'O'                     ..LETTER "O" OF "OK"            01640002
+COMRCK   EQU   C'K'                     ..LETTER "K" OF "OK"            01650002
+COMRCB   EQU   C' '                     ..BLANK                         01660002
+*                                                                       01670002
+COMDSP   DS    CL1                      EMS DISPOSITION FLAG            01680002
+COMDSPAS EQU   C'A'                     ..AS IS                         01690002
+COMDSPRD EQU   C'R'                     ..READ                          01700002
+COMDSPTR EQU   C'T'                     ..TRASH                         01710002
+COMDSPDL EQU   C'D'                     ..DELETE                        01720002
+COMDSPB  EQU   C' '                     ..BLANK                         01730002
+*                                                                       01740002
+COMUREC  DS    AL4                      USER RECORD @                   01750002
+COMHREC  DS    AL4                      MH RECORD @                     01760002
+COMDREC  DS    AL4                      MD RECORD @                     01770002
+COM3REC  DS    AL4                      3X RECORD @                     01780002
+*                                                                       01790002
+COMCMNT  DS    CL40                     COMMENT AREA                    01800002
+COMMIN   EQU   *-COMPARM                COMMAREA MINIMUM LENGTH         01810002
+*---------------------------------------------------------------------- 01820002
+*        EMS MESSAGE HEADER RECORD                                      01830002
+*---------------------------------------------------------------------- 01840002
+*                                                                       01850002
+MHREC    DSECT ,                        COPY EMFH1A                     01860002
+MHKEY    DS    CL44                     RECORD KEY                      01870002
+MHTITLE  DS    CL25                     MSG TITLE                       01880002
+*                                                                       01890002
+*---------------------------------------------------------------------- 01900002
+         END                                                            01910002
+

@@ -1,0 +1,60 @@
+//TSSS013L JOB 1,J.BAKER,
+//         CLASS=S,
+//         MSGCLASS=M,
+//         REGION=0M,
+//         NOTIFY=TSSS013
+//*        TYPRUN=SCAN
+//*
+//ASM      EXEC PGM=ASMA90,
+//         PARM=('NODECK,OBJECT,LIST(133),SIZE(MAX),RENT,GOFF')
+//SYSPRINT DD SYSOUT=*
+//SYSUT1   DD UNIT=SYSDA,
+//            DISP=(NEW,DELETE),
+//            SPACE=(CYL,(5,10))
+//SYSLIB   DD DSN=CEE.SCEEMAC,
+//            DISP=(SHR)
+//         DD DSN=SYS1.MACLIB,
+//            DISP=(SHR)
+//         DD DSN=SYS1.MODGEN,
+//            DISP=(SHR)
+//         DD DSN=CICSIE.TS32.PTABLES,
+//            DISP=(SHR)
+//SYSLIN   DD DISP=(,PASS),SPACE=(400,(100,100,1)),UNIT=SYSDA,
+//         DCB=(RECFM=FB,LRECL=80,BLKSIZE=400),DSN=&OBJ(IEL000)
+//SYSIN    DD DISP=SHR,DSN=CICSIE.TS32.PTABLES(IEL000)
+//*
+//LNK      EXEC PGM=IEWL,COND=(0,NE),
+//         PARM=('SIZE=(768K,100K),LIST,LET,XREF,MAP,DYNAM(DLL),',
+//             'CASE(MIXED)')    ,RENT
+//SYSLIB   DD DSN=CEE.SCEELKED,
+//            DISP=(SHR)
+//         DD DSN=TCPIP.SEZATCP,
+//            DISP=(SHR)
+//         DD DSN=SYS1.CSSLIB,
+//            DISP=(SHR)
+//SYSPRINT DD SYSOUT=*
+//SYSLMOD  DD DSN=TSSS013.IEI.PDSELIB,
+//            DISP=(SHR)
+//SYSDEFSD DD DSN=TSSS013.IEI.SYSDEFSD,
+//            DISP=(SHR)
+//SYSUT1   DD UNIT=SYSDA,
+//            DISP=(NEW,DELETE),
+//            SPACE=(CYL,(5,10))
+//SYSPUNCH DD DISP=(OLD,PASS),DSN=&&OBJ
+//SYSLIN   DD *
+  IMPORT CODE,'GSKSSL','gsk_environment_open'
+  IMPORT CODE,'GSKSSL','gsk_attribute_set_enum'
+  IMPORT CODE,'GSKSSL','gsk_attribute_set_buffer'
+  IMPORT CODE,'GSKSSL','gsk_attribute_set_callback'
+  IMPORT CODE,'GSKSSL','gsk_environment_init'
+  IMPORT CODE,'GSKSSL','gsk_secure_socket_open'
+  IMPORT CODE,'GSKSSL','gsk_attribute_set_numeric_value'
+  IMPORT CODE,'GSKSSL','gsk_secure_socket_init'
+  IMPORT CODE,'GSKSSL','gsk_secure_socket_write'
+  IMPORT CODE,'GSKSSL','gsk_secure_socket_read'
+  IMPORT CODE,'GSKSSL','gsk_secure_socket_close'
+  IMPORT CODE,'GSKSSL','gsk_environment_close'
+  ENTRY IEL000
+  INCLUDE SYSPUNCH(IEL000)
+  NAME IEL000(R)
+

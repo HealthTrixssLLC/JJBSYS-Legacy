@@ -1,0 +1,960 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEB601   TITLE '**  CICS/ESA EXCI FILE SERVER PROGRAM  **'              00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTER AND OTHER EQUATES                                     00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEB601   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEB601   DFHEIENT CODEREG=(12,11),                                     *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(10)                                              00270002
+         MVC   EISEYE,=CL16'IEB601 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEB601   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEB601   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEB601'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(R9),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMPARM,R9                                               00570002
+         XC    COMRSP(8),COMRSP         SET NORMAL RESPONSE             00580002
+         CLC   =C'FI',COMRES            FILE RESOURCE REQUEST           00590002
+         L     R1,RSPNOTFI              LOAD NOT FILE SRVR REQ ERROR    00600002
+         BNE   XIT01                    ..WRONG SERVER CALLED           00610002
+         OC    USRKYL,USRKYL            KEY LENGTH PASSED               00620002
+         L     R1,RSPNOKYL              LOAD NO KEY LENGTH ERROR        00630002
+         BZ    XIT01                    ..NO, REQUIRED                  00640002
+         LA    R2,USRKYL+2              LOAD USER KEY LENGTH BEGIN @    00650002
+         AH    R2,USRKYL                CALC RECORD AREA LENGTH @       00660002
+         OC    0(2,R2),0(R2)            RECORD AREA LENGTH PASSED       00670002
+         L     R1,RSPNOARL              LOAD NO AREA LENGTH ERROR       00680002
+         BZ    XIT01                    ..NO, REQUIRED                  00690002
+         LH    R1,0(,R2)                LOAD USER AREA LENGTH           00700002
+         ST    R1,TMPARL                SAVE USER AREA LENGTH           00710002
+         LA    R2,2(,R2)                LOAD RECORD AREA PASSED         00720002
+         ST    R2,TMPARA                SAVE USER AREA @                00730002
+         AH    R2,TMPARL                CALC COMMAREA END @             00740002
+         SR    R2,R9                    CALC MAX COMMAREA LEN           00750002
+         CH    R2,EIBCALEN              COMMAREA LARGE ENOUGH           00760002
+         L     R1,RSPBADCA              LOAD COMMAREA LENGTH ERROR      00770002
+         BH    XIT01                    ..NO, RETURN ERROR              00780002
+*---------------------------------------------------------------------- 00790002
+*        PROCESS LOCAL FILES                                            00800002
+*---------------------------------------------------------------------- 00810002
+         EXEC  CICS,                                                   *00820002
+               INQUIRE,                                                *00830002
+               FILE(COMRSC),                                           *00840002
+               ACCESSMETHOD(RSCDSORG),                                 *00850002
+               KEYLENGTH(RSCKEYL),                                     *00860002
+               ENABLESTATUS(RSCENABL),                                 *00870002
+               OPENSTATUS(RSCOPEN),                                    *00880002
+               RECORDFORMAT(RSCRECFM),                                 *00890002
+               RECORDSIZE(RSCLRECL),                                   *00900002
+               TYPE(RSCXSDS),                                          *00910002
+               REMOTESYSTEM(RSCSYSID),                                 *00920002
+               RESP(RESP),                                             *00930002
+               RESP2(RESP2)                                             00940002
+         CLC   RESP,DFHRESP(NORMAL)     FILE RESOURCE FOUND             00950002
+         BNE   XIT00                    ..NO RETURN RESP CODE           00960002
+         CLC   RSCDSORG,DFHVALUE(REMOTE) REMOTE FILE                    00970002
+         BE    INT15                    ..YES, BRANCH                   00980002
+         LA    R1,19                    SET NOTOPEN RESP                00990002
+         CLC   RSCENABL,DFHVALUE(ENABLED) FILE ENABLED                  01000002
+         BNE   XIT01                    ..NO, RETURN ERROR              01010002
+         CLC   RSCOPEN,DFHVALUE(OPEN)   FILE OPEN                       01020002
+         BE    INT20                    ..YES, BRANCH                   01030002
+         EXEC  CICS,                                                   *01040002
+               SET,                                                    *01050002
+               FILE(COMRSC),                                           *01060002
+               OPEN,                                                   *01070002
+               RESP(RESP),                                             *01080002
+               RESP2(RESP2)                                             01090002
+         CLC   RESP,DFHRESP(NORMAL)     FILE OPENED                     01100002
+         BNE   XIT00                    ..NO, RETURN RESP CODE          01110002
+         EXEC  CICS,                                                   *01120002
+               INQUIRE,                                                *01130002
+               FILE(COMRSC),                                           *01140002
+               ACCESSMETHOD(RSCDSORG),                                 *01150002
+               KEYLENGTH(RSCKEYL),                                     *01160002
+               ENABLESTATUS(RSCENABL),                                 *01170002
+               OPENSTATUS(RSCOPEN),                                    *01180002
+               RECORDFORMAT(RSCRECFM),                                 *01190002
+               RECORDSIZE(RSCLRECL),                                   *01200002
+               TYPE(RSCXSDS),                                          *01210002
+               REMOTESYSTEM(RSCSYSID),                                 *01220002
+               RESP(RESP),                                             *01230002
+               RESP2(RESP2)                                             01240002
+         B     INT20                    ..CONTINUE                      01250002
+*---------------------------------------------------------------------- 01260002
+*        PROCESS REMOTE FILES                                           01270002
+*---------------------------------------------------------------------- 01280002
+INT15    DS    0H                                                       01290002
+         EXEC  CICS,                                                   *01300002
+               GETMAIN,                                                *01310002
+               SET(R7),                                                *01320002
+               FLENGTH(=A(RFSLN)),                                     *01330002
+               INITIMG(=AL1(0))                                         01340002
+         USING RFSPARM,R7                                               01350002
+         MVC   RFSFILE,COMRSC                                           01360002
+         EXEC  CICS,                                                   *01370002
+               LINK,                                                   *01380002
+               PROGRAM('IEB611'),                                      *01390002
+               COMMAREA(0(,R7)),                                       *01400002
+               LENGTH(=AL2(RFSLN)),                                    *01410002
+               SYSID(RSCSYSID)                                          01420002
+         MVC   RSCDSORG,RFSDSORG        SET REMOTE DSORG                01430002
+         MVC   RSCKEYL,RFSKEYL          SET REMOTE KEY LEN              01440002
+         MVC   RSCENABL,RFSENABL        SET REMOTE ENABLE STATUS        01450002
+         MVC   RSCOPEN,RFSOPEN          SET REMOTE OPEN STATUS          01460002
+         MVC   RSCRECFM,RFSRECFM        SET REMOTE RECFM                01470002
+         MVC   RSCLRECL,RFSLRECL        SET REMOTE LRECL                01480002
+         MVC   RSCXSDS,RFSXSDS          SET REMOTE VSAM TYPE            01490002
+         EXEC  CICS,                                                   *01500002
+               FREEMAIN,                                               *01510002
+               DATAPOINTER(R7)                                          01520002
+*---------------------------------------------------------------------- 01530002
+*        PROCESS CLIENT'S REQUEST                                       01540002
+*---------------------------------------------------------------------- 01550002
+INT20    DS    0H                                                       01560002
+         CLC   RSCDSORG,DFHVALUE(VSAM)  VSAM FILE                       01570002
+         L     R1,RSPNOVSM              LOAD NOT VSAM ERROR             01580002
+         BNE   XIT01                    ..NO REQUIRED                   01590002
+         CLC   =C'RD',COMFUN            READ FUNCTION                   01600002
+         BE    RED01                    ..YES, PERFORM FUNCTION         01610002
+         CLC   =C'RN',COMFUN            READNEXT FUNCTION               01620002
+         BE    RDN01                    ..YES, PERFORM FUNCTION         01630002
+         CLC   =C'RP',COMFUN            READPREV FUNCTION               01640002
+         BE    RPV01                    ..YES, PERFORM FUNCTION         01650002
+         CLC   =C'UP',COMFUN            UPDATE FUNCTION                 01660002
+         BE    UPD01                    ..YES, PERFORM FUNCTION         01670002
+         CLC   =C'DL',COMFUN            DELETE FUNCTION                 01680002
+         BE    DEL01                    ..YES, PERFORM FUNCTION         01690002
+         CLC   =C'AD',COMFUN            ADD FUNCTION                    01700002
+         BE    ADD01                    ..YES, PERFORM FUNCTION         01710002
+         L     R1,RSPNOFUN              LOAD INVALID FUNCTION ERROR     01720002
+         B     XIT01                    RETURN ERROR CODE               01730002
+*                                                                       01740002
+OCKEY    OC    USRKYL+2(0),USRKYL+2     EXECUTED INSTRUCTION            01750002
+*---------------------------------------------------------------------- 01760002
+*        PROCESS READ REQUESTS                                          01770002
+*---------------------------------------------------------------------- 01780002
+RED01    DS    0H                                                       01790002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              01800002
+         BE    RED02                    ..YES READNEXT KSDS             01810002
+         CLC   RSCXSDS,DFHVALUE(ESDS)   VSAM ESDS DATA SET              01820002
+         BE    RED03                    ..YES READNEXT KSDS             01830002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              01840002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    01850002
+         BNE   XIT01                    RETURN ERROR CODE               01860002
+* RRDS                                                                  01870002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            01880002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      01890002
+         BNE   XIT01                    RETURN ERROR CODE               01900002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    01910002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   01920002
+         BL    XIT01                    RETURN ERROR CODE               01930002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 01940002
+         L     R3,TMPARA                LOAD USER RECORD @              01950002
+         EXEC  CICS,                                                   *01960002
+               READ,                                                   *01970002
+               FILE(COMRSC),                                           *01980002
+               INTO(0(,R3)),                                           *01990002
+               RIDFLD(0(,R2)),                                         *02000002
+               LENGTH(TMPARL+2),                                       *02010002
+               RRN,                                                    *02020002
+               RESP(RESP),                                             *02030002
+               RESP2(RESP2)                                             02040002
+         B     XIT00                    RETURN RESP CODE                02050002
+* KSDS                                                                  02060002
+RED02    DS    0H                                                       02070002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 02080002
+         L     R3,TMPARA                LOAD USER RECORD @              02090002
+         MVC   HLFWRK2,USRKYL           SAVE KEY LENGTH                 02100002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    02110002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   02120002
+         BL    XIT01                    RETURN ERROR CODE               02130002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH LE RECORD KEY LENGTH 02140002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      02150002
+         BH    XIT01                    ..KEY ERROR                     02160002
+         BE    RED02A                   FULL KEY                        02170002
+         EXEC  CICS,                                                   *02180002
+               READ,                                                   *02190002
+               FILE(COMRSC),                                           *02200002
+               INTO(0(,R3)),                                           *02210002
+               KEYLENGTH(HLFWRK2),                                     *02220002
+               RIDFLD(0(,R2)),                                         *02230002
+               LENGTH(TMPARL+2),                                       *02240002
+               GENERIC,                                                *02250002
+               GTEQ,                                                   *02260002
+               RESP(RESP),                                             *02270002
+               RESP2(RESP2)                                             02280002
+         B     XIT00                    RETURN RESP CODE                02290002
+RED02A   DS    0H                                                       02300002
+         EXEC  CICS,                                                   *02310002
+               READ,                                                   *02320002
+               FILE(COMRSC),                                           *02330002
+               INTO(0(,R3)),                                           *02340002
+               RIDFLD(0(,R2)),                                         *02350002
+               LENGTH(TMPARL+2),                                       *02360002
+               RESP(RESP),                                             *02370002
+               RESP2(RESP2)                                             02380002
+         B     XIT00                    RETURN RESP CODE                02390002
+* ESDS                                                                  02400002
+RED03    DS    0H                                                       02410002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            02420002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      02430002
+         BNE   XIT01                    RETURN ERROR CODE               02440002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    02450002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   02460002
+         BL    XIT01                    RETURN ERROR CODE               02470002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 02480002
+         L     R3,TMPARA                LOAD USER RECORD @              02490002
+         EXEC  CICS,                                                   *02500002
+               READ,                                                   *02510002
+               FILE(COMRSC),                                           *02520002
+               INTO(0(,R3)),                                           *02530002
+               RIDFLD(0(,R2)),                                         *02540002
+               LENGTH(TMPARL+2),                                       *02550002
+               RBA,                                                    *02560002
+               RESP(RESP),                                             *02570002
+               RESP2(RESP2)                                             02580002
+         B     XIT00                    RETURN RESP CODE                02590002
+*---------------------------------------------------------------------- 02600002
+*        PROCESS READNEXT REQUESTS                                      02610002
+*---------------------------------------------------------------------- 02620002
+RDN01    DS    0H                                                       02630002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              02640002
+         BE    RDN02                    ..YES READNEXT KSDS             02650002
+         CLC   RSCXSDS,DFHVALUE(ESDS)   VSAM ESDS DATA SET              02660002
+         BE    RDN03                    ..YES READNEXT KSDS             02670002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              02680002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    02690002
+         BNE   XIT01                    RETURN ERROR CODE               02700002
+* RRDS                                                                  02710002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            02720002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      02730002
+         BNE   XIT01                    RETURN ERROR CODE               02740002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    02750002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   02760002
+         BL    XIT01                    RETURN ERROR CODE               02770002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 02780002
+         L     R3,TMPARA                LOAD USER RECORD @              02790002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                02800002
+         BAS   R8,SBRRN                 PERFORM RRN START BROWSE        02810002
+         EXEC  CICS,                                                   *02820002
+               READNEXT,                                               *02830002
+               FILE(COMRSC),                                           *02840002
+               INTO(0(,R3)),                                           *02850002
+               RIDFLD(0(,R2)),                                         *02860002
+               LENGTH(TMPARL+2),                                       *02870002
+               RRN,                                                    *02880002
+               RESP(RESP),                                             *02890002
+               RESP2(RESP2)                                             02900002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    02910002
+         BNE   XIT00                    ..NO RETURN RESP CODE           02920002
+         EXEC  CICS,                                                   *02930002
+               READNEXT,                                               *02940002
+               FILE(COMRSC),                                           *02950002
+               SET(R3),                                                *02960002
+               RIDFLD(0(,R2)),                                         *02970002
+               LENGTH(TMPARL+2),                                       *02980002
+               RRN,                                                    *02990002
+               RESP(RESP),                                             *03000002
+               RESP2(RESP2)                                             03010002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    03020002
+         BNE   XIT00                    ..NO RETURN RESP CODE           03030002
+         BAS   R8,EBR01                 PERFORM END BROWSE              03040002
+         B     XIT00                    RETURN RESP CODE                03050002
+* KSDS                                                                  03060002
+RDN02    DS    0H                                                       03070002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    03080002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   03090002
+         BL    XIT01                    RETURN ERROR CODE               03100002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH LE RECORD KEY LENGTH 03110002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      03120002
+         BL    XIT01                    RETURN ERROR CODE               03130002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 03140002
+         L     R3,TMPARA                LOAD USER RECORD @              03150002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                03160002
+         MVC   HLFWRK2,USRKYL           SAVE KEY LENGTH                 03170002
+         BAS   R8,SBKEY                 PERFORM KEY START BROWSE        03180002
+         EXEC  CICS,                                                   *03190002
+               READNEXT,                                               *03200002
+               FILE(COMRSC),                                           *03210002
+               INTO(0(,R3)),                                           *03220002
+               KEYLENGTH(HLFWRK2),                                     *03230002
+               RIDFLD(0(,R2)),                                         *03240002
+               LENGTH(TMPARL+2),                                       *03250002
+               RESP(RESP),                                             *03260002
+               RESP2(RESP2)                                             03270002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    03280002
+         BNE   XIT00                    ..NO RETURN RESP CODE           03290002
+         EXEC  CICS,                                                   *03300002
+               READNEXT,                                               *03310002
+               FILE(COMRSC),                                           *03320002
+               SET(R3),                                                *03330002
+               KEYLENGTH(HLFWRK2),                                     *03340002
+               RIDFLD(0(,R2)),                                         *03350002
+               LENGTH(HLFWRK1),                                        *03360002
+               RESP(RESP),                                             *03370002
+               RESP2(RESP2)                                             03380002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    03390002
+         BNE   XIT00                    ..NO RETURN RESP CODE           03400002
+         BAS   R8,EBR01                 PERFORM END BROWSE              03410002
+         B     XIT00                    RETURN RESP CODE                03420002
+* ESDS                                                                  03430002
+RDN03    DS    0H                                                       03440002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            03450002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      03460002
+         BNE   XIT01                    RETURN ERROR CODE               03470002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    03480002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   03490002
+         BL    XIT01                    RETURN ERROR CODE               03500002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 03510002
+         L     R3,TMPARA                LOAD USER RECORD @              03520002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                03530002
+         BAS   R8,SBRBA                 PERFORM RBA START BROWSE        03540002
+         EXEC  CICS,                                                   *03550002
+               READNEXT,                                               *03560002
+               FILE(COMRSC),                                           *03570002
+               INTO(0(,R3)),                                           *03580002
+               RIDFLD(0(,R2)),                                         *03590002
+               LENGTH(TMPARL+2),                                       *03600002
+               RBA,                                                    *03610002
+               RESP(RESP),                                             *03620002
+               RESP2(RESP2)                                             03630002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    03640002
+         BNE   XIT00                    ..NO RETURN RESP CODE           03650002
+         EXEC  CICS,                                                   *03660002
+               READNEXT,                                               *03670002
+               FILE(COMRSC),                                           *03680002
+               SET(R3),                                                *03690002
+               RIDFLD(0(,R2)),                                         *03700002
+               LENGTH(HLFWRK1),                                        *03710002
+               RBA,                                                    *03720002
+               RESP(RESP),                                             *03730002
+               RESP2(RESP2)                                             03740002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    03750002
+         BNE   XIT00                    ..NO RETURN RESP CODE           03760002
+         BAS   R8,EBR01                 PERFORM END BROWSE              03770002
+         B     XIT00                    RETURN RESP CODE                03780002
+*---------------------------------------------------------------------- 03790002
+*        PROCESS READPREV REQUESTS                                      03800002
+*---------------------------------------------------------------------- 03810002
+RPV01    DS    0H                                                       03820002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              03830002
+         BE    RPV02                    ..YES READNEXT KSDS             03840002
+         CLC   RSCXSDS,DFHVALUE(ESDS)   VSAM ESDS DATA SET              03850002
+         BE    RPV03                    ..YES READNEXT KSDS             03860002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              03870002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    03880002
+         BNE   XIT01                    RETURN ERROR CODE               03890002
+* RRDS                                                                  03900002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            03910002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      03920002
+         BNE   XIT01                    RETURN ERROR CODE               03930002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    03940002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   03950002
+         BL    XIT01                    RETURN ERROR CODE               03960002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 03970002
+         L     R3,TMPARA                LOAD USER RECORD @              03980002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                03990002
+         BAS   R8,SBRRN                 PERFORM RRN START BROWSE        04000002
+         EXEC  CICS,                                                   *04010002
+               READPREV,                                               *04020002
+               FILE(COMRSC),                                           *04030002
+               INTO(0(,R3)),                                           *04040002
+               RIDFLD(0(,R2)),                                         *04050002
+               LENGTH(TMPARL+2),                                       *04060002
+               RRN,                                                    *04070002
+               RESP(RESP),                                             *04080002
+               RESP2(RESP2)                                             04090002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04100002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04110002
+         EXEC  CICS,                                                   *04120002
+               READPREV,                                               *04130002
+               FILE(COMRSC),                                           *04140002
+               SET(R3),                                                *04150002
+               RIDFLD(0(,R2)),                                         *04160002
+               LENGTH(HLFWRK1),                                        *04170002
+               RRN,                                                    *04180002
+               RESP(RESP),                                             *04190002
+               RESP2(RESP2)                                             04200002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04210002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04220002
+         BAS   R8,EBR01                 PERFORM END BROWSE              04230002
+         B     XIT00                    RETURN RESP CODE                04240002
+* KSDS                                                                  04250002
+RPV02    DS    0H                                                       04260002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 04270002
+         L     R3,TMPARA                LOAD USER RECORD @              04280002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                04290002
+         MVC   HLFWRK2,USRKYL           SAVE KEY LENGTH                 04300002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    04310002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   04320002
+         BL    XIT01                    RETURN ERROR CODE               04330002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH LE RECORD KEY LENGTH 04340002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      04350002
+         BL    XIT01                    RETURN ERROR CODE               04360002
+         BAS   R8,SBKEYP                PERFORM KEY START BROWSE PREV   04370002
+         EXEC  CICS,                                                   *04380002
+               READPREV,                                               *04390002
+               FILE(COMRSC),                                           *04400002
+               INTO(0(,R3)),                                           *04410002
+               KEYLENGTH(HLFWRK2),                                     *04420002
+               RIDFLD(0(,R2)),                                         *04430002
+               LENGTH(TMPARL+2),                                       *04440002
+               RESP(RESP),                                             *04450002
+               RESP2(RESP2)                                             04460002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04470002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04480002
+         EXEC  CICS,                                                   *04490002
+               READPREV,                                               *04500002
+               FILE(COMRSC),                                           *04510002
+               SET(R3),                                                *04520002
+               KEYLENGTH(HLFWRK2),                                     *04530002
+               RIDFLD(0(,R2)),                                         *04540002
+               LENGTH(HLFWRK1),                                        *04550002
+               RESP(RESP),                                             *04560002
+               RESP2(RESP2)                                             04570002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04580002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04590002
+         BAS   R8,EBR01                 PERFORM END BROWSE              04600002
+         B     XIT00                    RETURN RESP CODE                04610002
+* ESDS                                                                  04620002
+RPV03    DS    0H                                                       04630002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            04640002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      04650002
+         BNE   XIT01                    RETURN ERROR CODE               04660002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GE RECORD LENGTH    04670002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   04680002
+         BL    XIT01                    RETURN ERROR CODE               04690002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 04700002
+         L     R3,TMPARA                LOAD USER RECORD @              04710002
+         MVC   HLFWRK1,TMPARL+2         SAVE AREA LENGTH                04720002
+         BAS   R8,SBRBA                 PERFORM RBA START BROWSE        04730002
+         EXEC  CICS,                                                   *04740002
+               READPREV,                                               *04750002
+               FILE(COMRSC),                                           *04760002
+               INTO(0(,R3)),                                           *04770002
+               RIDFLD(0(,R2)),                                         *04780002
+               LENGTH(TMPARL+2),                                       *04790002
+               RBA,                                                    *04800002
+               RESP(RESP),                                             *04810002
+               RESP2(RESP2)                                             04820002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04830002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04840002
+         EXEC  CICS,                                                   *04850002
+               READPREV,                                               *04860002
+               FILE(COMRSC),                                           *04870002
+               SET(R3),                                                *04880002
+               RIDFLD(0(,R2)),                                         *04890002
+               LENGTH(HLFWRK1),                                        *04900002
+               RBA,                                                    *04910002
+               RESP(RESP),                                             *04920002
+               RESP2(RESP2)                                             04930002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    04940002
+         BNE   XIT00                    ..NO RETURN RESP CODE           04950002
+         BAS   R8,EBR01                 PERFORM END BROWSE              04960002
+         B     XIT00                    RETURN RESP CODE                04970002
+*---------------------------------------------------------------------- 04980002
+*        PROCESS UPDATE REQUESTS                                        04990002
+*---------------------------------------------------------------------- 05000002
+UPD01    DS    0H                                                       05010002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              05020002
+         BE    UPD05                    ..YES READNEXT KSDS             05030002
+         CLC   RSCXSDS,DFHVALUE(ESDS)   VSAM ESDS DATA SET              05040002
+         BE    UPD10                    ..YES READNEXT KSDS             05050002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              05060002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    05070002
+         BNE   XIT01                    RETURN ERROR CODE               05080002
+* RRDS                                                                  05090002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            05100002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      05110002
+         BNE   XIT01                    RETURN ERROR CODE               05120002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    05130002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   05140002
+         BH    XIT01                    RETURN ERROR CODE               05150002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 05160002
+         EXEC  CICS,                                                   *05170002
+               READ,                                                   *05180002
+               UPDATE,                                                 *05190002
+               FILE(COMRSC),                                           *05200002
+               SET(R3),                                                *05210002
+               RIDFLD(0(,R2)),                                         *05220002
+               LENGTH(HLFWRK1),                                        *05230002
+               RRN,                                                    *05240002
+               RESP(RESP),                                             *05250002
+               RESP2(RESP2)                                             05260002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    05270002
+         BNE   XIT00                    ..NO RETURN RESP CODE           05280002
+         L     R3,TMPARA                LOAD USER RECORD @              05290002
+         BAS   R8,REW01                 PERFORM RECORD REWRITE          05300002
+         B     XIT00                    RETURN RESP CODE                05310002
+* KSDS                                                                  05320002
+UPD05    DS    0H                                                       05330002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    05340002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   05350002
+         BH    XIT01                    RETURN ERROR CODE               05360002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH EQ RECORD KEY LENGTH 05370002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      05380002
+         BNE   XIT01                    ..KEY ERROR                     05390002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 05400002
+         EXEC  CICS,                                                   *05410002
+               READ,                                                   *05420002
+               UPDATE,                                                 *05430002
+               FILE(COMRSC),                                           *05440002
+               SET(R3),                                                *05450002
+               RIDFLD(0(,R2)),                                         *05460002
+               LENGTH(HLFWRK1),                                        *05470002
+               RESP(RESP),                                             *05480002
+               RESP2(RESP2)                                             05490002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    05500002
+         BNE   XIT00                    ..NO RETURN RESP CODE           05510002
+         L     R3,TMPARA                LOAD USER RECORD @              05520002
+         BAS   R8,REW01                 PERFORM RECORD REWRITE          05530002
+         B     XIT00                    RETURN RESP CODE                05540002
+* ESDS                                                                  05550002
+UPD10    DS    0H                                                       05560002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            05570002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      05580002
+         BNE   XIT01                    RETURN ERROR CODE               05590002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    05600002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   05610002
+         BH    XIT01                    RETURN ERROR CODE               05620002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 05630002
+         EXEC  CICS,                                                   *05640002
+               READ,                                                   *05650002
+               UPDATE,                                                 *05660002
+               FILE(COMRSC),                                           *05670002
+               SET(R3),                                                *05680002
+               RIDFLD(0(,R2)),                                         *05690002
+               LENGTH(HLFWRK1),                                        *05700002
+               RBA,                                                    *05710002
+               RESP(RESP),                                             *05720002
+               RESP2(RESP2)                                             05730002
+         L     R3,TMPARA                LOAD USER RECORD @              05740002
+         BAS   R8,REW01                 PERFORM RECORD REWRITE          05750002
+         B     XIT00                    RETURN RESP CODE                05760002
+*---------------------------------------------------------------------- 05770002
+*        PROCESS DELETE REQUESTS                                        05780002
+*---------------------------------------------------------------------- 05790002
+DEL01    DS    0H                                                       05800002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              05810002
+         BE    DEL05                    ..YES READNEXT KSDS             05820002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              05830002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    05840002
+         BNE   XIT01                    RETURN ERROR CODE               05850002
+* RRDS                                                                  05860002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            05870002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      05880002
+         BNE   XIT01                    RETURN ERROR CODE               05890002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 05900002
+         EXEC  CICS,                                                   *05910002
+               READ,                                                   *05920002
+               UPDATE,                                                 *05930002
+               FILE(COMRSC),                                           *05940002
+               SET(R3),                                                *05950002
+               RIDFLD(0(,R2)),                                         *05960002
+               LENGTH(TMPARL+2),                                       *05970002
+               RRN,                                                    *05980002
+               RESP(RESP),                                             *05990002
+               RESP2(RESP2)                                             06000002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    06010002
+         BNE   XIT00                    ..NO RETURN RESP CODE           06020002
+         EXEC  CICS,                                                   *06030002
+               DELETE,                                                 *06040002
+               FILE(COMRSC),                                           *06050002
+               RRN,                                                    *06060002
+               RESP(RESP),                                             *06070002
+               RESP2(RESP2)                                             06080002
+         B     XIT00                    RETURN RESP CODE                06090002
+* KSDS                                                                  06100002
+DEL05    DS    0H                                                       06110002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH EQ RECORD KEY LENGTH 06120002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      06130002
+         BNE   XIT01                    ..KEY ERROR                     06140002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 06150002
+         EXEC  CICS,                                                   *06160002
+               READ,                                                   *06170002
+               UPDATE,                                                 *06180002
+               FILE(COMRSC),                                           *06190002
+               SET(R3),                                                *06200002
+               RIDFLD(0(,R2)),                                         *06210002
+               LENGTH(TMPARL+2),                                       *06220002
+               RESP(RESP),                                             *06230002
+               RESP2(RESP2)                                             06240002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    06250002
+         BNE   XIT00                    ..NO RETURN RESP CODE           06260002
+         EXEC  CICS,                                                   *06270002
+               DELETE,                                                 *06280002
+               FILE(COMRSC),                                           *06290002
+               RESP(RESP),                                             *06300002
+               RESP2(RESP2)                                             06310002
+         B     XIT00                    RETURN RESP CODE                06320002
+*---------------------------------------------------------------------- 06330002
+*        PROCESS ADD REQUESTS                                           06340002
+*---------------------------------------------------------------------- 06350002
+ADD01    DS    0H                                                       06360002
+         CLC   RSCXSDS,DFHVALUE(KSDS)   VSAM KSDS DATA SET              06370002
+         BE    ADD05                    ..YES READNEXT KSDS             06380002
+         CLC   RSCXSDS,DFHVALUE(ESDS)   VSAM ESDS DATA SET              06390002
+         BE    ADD10                    ..YES READNEXT KSDS             06400002
+         CLC   RSCXSDS,DFHVALUE(RRDS)   VSAM RRDS DATA SET              06410002
+         L     R1,RSPVSORG              LOAD VSAM ORGANIZATION ERROR    06420002
+         BNE   XIT01                    RETURN ERROR CODE               06430002
+* RRDS                                                                  06440002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            06450002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      06460002
+         BNE   XIT01                    RETURN ERROR CODE               06470002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    06480002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   06490002
+         BH    XIT01                    RETURN ERROR CODE               06500002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 06510002
+         L     R3,TMPARA                LOAD USER RECORD @              06520002
+         EXEC  CICS,                                                   *06530002
+               WRITE,                                                  *06540002
+               FILE(COMRSC),                                           *06550002
+               FROM(0(R3)),                                            *06560002
+               RIDFLD(0(,R2)),                                         *06570002
+               LENGTH(TMPARL+2),                                       *06580002
+               RRN,                                                    *06590002
+               RESP(RESP),                                             *06600002
+               RESP2(RESP2)                                             06610002
+         B     XIT00                    RETURN RESP CODE                06620002
+* KSDS                                                                  06630002
+ADD05    DS    0H                                                       06640002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    06650002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   06660002
+         BH    XIT01                    RETURN ERROR CODE               06670002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH EQ RECORD KEY LENGTH 06680002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      06690002
+         BNE   XIT01                    ..KEY ERROR                     06700002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 06710002
+         L     R3,TMPARA                LOAD USER RECORD @              06720002
+         EXEC  CICS,                                                   *06730002
+               WRITE,                                                  *06740002
+               FILE(COMRSC),                                           *06750002
+               FROM(0(R3)),                                            *06760002
+               RIDFLD(0(,R2)),                                         *06770002
+               LENGTH(TMPARL+2),                                       *06780002
+               RESP(RESP),                                             *06790002
+               RESP2(RESP2)                                             06800002
+         B     XIT00                    RETURN RESP CODE                06810002
+* ESDS                                                                  06820002
+ADD10    DS    0H                                                       06830002
+         CLC   =H'4',USRKYL             KEY LENGTH MUST BE 4            06840002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      06850002
+         BNE   XIT01                    RETURN ERROR CODE               06860002
+         CLC   TMPARL+2(2),RSCLRECL+2   AREA LENGTH GT RECORD LENGTH    06870002
+         L     R1,RSPVSREL              LOAD VSAM RECORD LENGTH ERROR   06880002
+         BH    XIT01                    RETURN ERROR CODE               06890002
+         LA    R2,USRKYL+2              LOAD USER KEY @                 06900002
+         L     R3,TMPARA                LOAD USER RECORD @              06910002
+         EXEC  CICS,                                                   *06920002
+               WRITE,                                                  *06930002
+               FILE(COMRSC),                                           *06940002
+               FROM(0(R3)),                                            *06950002
+               RIDFLD(0(,R2)),                                         *06960002
+               LENGTH(TMPARL+2),                                       *06970002
+               RBA,                                                    *06980002
+               RESP(RESP),                                             *06990002
+               RESP2(RESP2)                                             07000002
+         B     XIT00                    RETURN RESP CODE                07010002
+*---------------------------------------------------------------------- 07020002
+*        SUBROUTINE - START BROWSE KEY                                  07030002
+*---------------------------------------------------------------------- 07040002
+SBKEY    DS    0H                                                       07050002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH EQ RECORD KEY LENGTH 07060002
+         BE    SBKEY10                                                  07070002
+         EXEC  CICS,                                                   *07080002
+               STARTBR,                                                *07090002
+               FILE(COMRSC),                                           *07100002
+               KEYLENGTH(HLFWRK2),                                     *07110002
+               RIDFLD(0(,R2)),                                         *07120002
+               GENERIC,                                                *07130002
+               GTEQ,                                                   *07140002
+               RESP(RESP),                                             *07150002
+               RESP2(RESP2)                                             07160002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    07170002
+         BNE   XIT00                    ..NO RETURN RESP CODE           07180002
+         BR    R8                                                       07190002
+SBKEY10  DS    0H                                                       07200002
+         EXEC  CICS,                                                   *07210002
+               STARTBR,                                                *07220002
+               FILE(COMRSC),                                           *07230002
+               KEYLENGTH(HLFWRK2),                                     *07240002
+               RIDFLD(0(,R2)),                                         *07250002
+               GTEQ,                                                   *07260002
+               RESP(RESP),                                             *07270002
+               RESP2(RESP2)                                             07280002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    07290002
+         BNE   XIT00                    ..NO RETURN RESP CODE           07300002
+         BR    R8                                                       07310002
+*---------------------------------------------------------------------- 07320002
+*        SUBROUTINE - START BROWSE KEY READPREV                         07330002
+*---------------------------------------------------------------------- 07340002
+SBKEYP   DS    0H                                                       07350002
+         CLC   USRKYL,RSCKEYL+2         KEY LENGTH EQ RECORD KEY LENGTH 07360002
+         L     R1,RSPVSKYL              LOAD VSAM KEY LENGTH ERROR      07370002
+         BNE   XIT01                    RETURN ERROR CODE               07380002
+         EXEC  CICS,                                                   *07390002
+               STARTBR,                                                *07400002
+               FILE(COMRSC),                                           *07410002
+               KEYLENGTH(HLFWRK2),                                     *07420002
+               RIDFLD(0(,R2)),                                         *07430002
+               RESP(RESP),                                             *07440002
+               RESP2(RESP2)                                             07450002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    07460002
+         BNE   XIT00                    ..NO RETURN RESP CODE           07470002
+         BR    R8                                                       07480002
+*---------------------------------------------------------------------- 07490002
+*        SUBROUTINE - START BROWSE RBA                                  07500002
+*---------------------------------------------------------------------- 07510002
+SBRBA    DS    0H                                                       07520002
+         EXEC  CICS,                                                   *07530002
+               STARTBR,                                                *07540002
+               FILE(COMRSC),                                           *07550002
+               RIDFLD(0(,R2)),                                         *07560002
+               RBA,                                                    *07570002
+               RESP(RESP),                                             *07580002
+               RESP2(RESP2)                                             07590002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    07600002
+         BNE   XIT00                    ..NO RETURN RESP CODE           07610002
+         BR    R8                                                       07620002
+*---------------------------------------------------------------------- 07630002
+*        SUBROUTINE - START BROWSE RRN                                  07640002
+*---------------------------------------------------------------------- 07650002
+SBRRN    DS    0H                                                       07660002
+         EXEC  CICS,                                                   *07670002
+               STARTBR,                                                *07680002
+               FILE(COMRSC),                                           *07690002
+               RIDFLD(0(,R2)),                                         *07700002
+               RRN,                                                    *07710002
+               RESP(RESP),                                             *07720002
+               RESP2(RESP2)                                             07730002
+         CLC   RESP,DFHRESP(NORMAL)     RECORD FOUND                    07740002
+         BNE   XIT00                    ..NO RETURN RESP CODE           07750002
+         BR    R8                                                       07760002
+*---------------------------------------------------------------------- 07770002
+*        SUBROUTINE - GENERIC END BROWSE                                07780002
+*---------------------------------------------------------------------- 07790002
+EBR01    DS    0H                                                       07800002
+         EXEC  CICS,                                                   *07810002
+               ENDBR,                                                  *07820002
+               FILE(COMRSC),                                           *07830002
+               RESP(RESP),                                             *07840002
+               RESP2(RESP2)                                             07850002
+         BR    R8                                                       07860002
+*---------------------------------------------------------------------- 07870002
+*        SUBROUTINE - REWRITE RECORD                                    07880002
+*---------------------------------------------------------------------- 07890002
+REW01    DS    0H                                                       07900002
+         EXEC  CICS,                                                   *07910002
+               REWRITE,                                                *07920002
+               FILE(COMRSC),                                           *07930002
+               FROM(0(R3)),                                            *07940002
+               LENGTH(TMPARL+2),                                       *07950002
+               RESP(RESP),                                             *07960002
+               RESP2(RESP2)                                             07970002
+         BR    R8                                                       07980002
+*---------------------------------------------------------------------- 07990002
+*        VARIOUS ERROR MSGS AND ABENDS                                  08000002
+*---------------------------------------------------------------------- 08010002
+ABN01    DS    0H                                                       08020002
+         LA    R2,MSG01                                                 08030002
+         LA    R3,L'MSG01                                               08040002
+         ICM   R4,B'1111',ABC01                                         08050002
+         B     ABN99                                                    08060002
+ABN02    DS    0H                                                       08070002
+         LA    R2,MSG02                                                 08080002
+         LA    R3,L'MSG02                                               08090002
+         ICM   R4,B'1111',ABC02                                         08100002
+         B     ABN99                                                    08110002
+ABN99    DS    0H                                                       08120002
+         MVC   SAVRESP,RESP                                             08130002
+         MVC   SAVRESP2,RESP2                                           08140002
+         MVC   SAVFN,EIBFN                                              08150002
+         MVC   SAVRC,EIBRCODE                                           08160002
+         STH   R3,HLFWRK1                                               08170002
+         EXEC  CICS,                                                   *08180002
+               WRITEQ,                                                 *08190002
+               TD,                                                     *08200002
+               QUEUE(=C'CSMT'),                                        *08210002
+               FROM(0(,R2)),                                           *08220002
+               LENGTH(HLFWRK1),                                        *08230002
+               RESP(RESP),                                             *08240002
+               RESP2(RESP2)                                             08250002
+         ST    R4,FULWORK                                               08260002
+         EXEC  CICS,                                                   *08270002
+               ABEND,                                                  *08280002
+               ABCODE(FULWORK),                                        *08290002
+               RESP(RESP),                                             *08300002
+               RESP2(RESP2)                                             08310002
+*---------------------------------------------------------------------- 08320002
+*        RETURN TO CICS                                                 08330002
+*---------------------------------------------------------------------- 08340002
+XIT00    DS    0H                                                       08350002
+         MVC   COMRSP(8),RESP           SET CICS RESP CODE              08360002
+         B     XIT99                                                    08370002
+XIT01    DS    0H                                                       08380002
+         ST    R1,COMRSP                SET ERROR RETURN CODE           08390002
+XIT99    DS    0H                                                       08400002
+         EXEC  CICS,                                                   *08410002
+               RETURN                                                   08420002
+         DFHEIRET                                                       08430002
+*---------------------------------------------------------------------- 08440002
+*        CONSTANTS                                                      08450002
+*---------------------------------------------------------------------- 08460002
+RSPNOTFI DC    F'1001'                  NOT A FILE SERVER REQUEST       08470002
+RSPNOTTD DC    F'1002'                  NOT A TD SERVER REQUEST         08480002
+RSPNOTTS DC    F'1003'                  NOT A TS SERVER REQUEST         08490002
+RSPNOFUN DC    F'1004'                  INVALID FUNCTION CODE           08500002
+RSPBADCA DC    F'1005'                  COMMAREA TO SMALL               08510002
+RSPNOARL DC    F'1011'                  NO AREA LENGTH                  08520002
+RSPNOKYL DC    F'1013'                  NO KEY LENGTH                   08530002
+RSPNOVSM DC    F'1021'                  NOT VSAM                        08540002
+RSPVSORG DC    F'1022'                  NOT VSAM KSDS, ESDS, RRDS       08550002
+RSPVSKYL DC    F'1023'                  VSAM KEY LENGTH INVALID         08560002
+RSPVSREL DC    F'1024'                  VSAM RECORD LENGTH INVALID      08570002
+RSPNOOPN DC    F'1025'                  UNABLE TO OPEN FILE             08580002
+*                                                                       08590002
+MSG01    DC    C'IEB601001  COMMAREA length passed from IEB501 EXCI Cli*08600002
+               ent too small, B611 abend initiated.'                    08610002
+ABC01    EQU   *-21                                                     08620002
+*                                                                       08630002
+MSG02    DC    C'IEB601002  COMMAREA address can not be located, B612 a*08640002
+               bend initiated.'                                         08650002
+ABC02    EQU   *-21                                                     08660002
+*                                                                       08670002
+*---------------------------------------------------------------------- 08680002
+*        CICS WORKING STORAGE DSECT                                     08690002
+*---------------------------------------------------------------------- 08700002
+         DFHEISTG                                                       08710002
+EISEYE   DS    CL16                     EYE CATCHER                     08720002
+*                                                                       08730002
+DBLWORK  DS    D                        DOUBLE WORD WORK                08740002
+FULWORK  DS    F                        FULL WORD WORK                  08750002
+*                                                                       08760002
+RESP     DS    F                        EXEC COMMAND RESPONSE           08770002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           08780002
+*                                                                       08790002
+FAILRSP  DS    CL8                      EYE CATCHER                     08800002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     08810002
+FAILRSP2 DS    CL8                      EYE CATCHER                     08820002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     08830002
+FAILFN   DS    CL8                      EYE CATCHER                     08840002
+SAVFN    DS    H                        SAVED EXEC EIBFN                08850002
+FAILRC   DS    CL8                      EYE CATCHER                     08860002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             08870002
+*                                                                       08880002
+HLFWRK1  DS    H                        HALF WORD WORK                  08890002
+HLFWRK2  DS    H                        HALF WORD WORK                  08900002
+*                                                                       08910002
+TMPARL   DS    F                        PASSED AREA LENGTH WORK AREA    08920002
+TMPARA   DS    F                        PASSED AREA WORK AREA           08930002
+*                                                                       08940002
+RSCOPEN  DS    F                        FILE OPEN STATUS                08950002
+RSCENABL DS    F                        FILE ENABLE STATUS              08960002
+RSCKEYL  DS    F                        FILE KEY LENGTH                 08970002
+RSCRECFM DS    F                        FILE RECORD FORMAT              08980002
+RSCLRECL DS    F                        FILE RECORD LENGTH              08990002
+RSCDSORG DS    F                        FILE ORGANIZATION               09000002
+RSCXSDS  DS    F                        FILE ORGANIZATION TYPE          09010002
+RSCSYSID DS    CL4                      FILE REMOTE SYSID               09020002
+         DFHEIEND                                                       09030002
+*---------------------------------------------------------------------- 09040002
+*        CLIENT'S COMMAREA PARM LIST DSECT                              09050002
+*---------------------------------------------------------------------- 09060002
+*                                                                       09070002
+COMPARM  DSECT                                                          09080002
+*                                                                       09090002
+COMFUN   DS    CL2                      FUNCTION TYPE                   09100002
+*                                       ..AD = ADD                      09110002
+*                                       ..DL = DELETE                   09120002
+*                                       ..RD = READ                     09130002
+*                                       ..RN = READNEXT                 09140002
+*                                       ..RP = READPREV                 09150002
+*                                       ..UP = UPDATE                   09160002
+*                                                                       09170002
+COMRES   DS    CL2                      RESOURCE TYPE                   09180002
+*                                       ..FI = VSAM FILE (IEB601)       09190002
+*                                       ..TD = TD QUEUE  (IEB602)       09200002
+*                                       ..TS = TS QUEUE  (IEB601)       09210002
+*                                                                       09220002
+COMRSC   DS    CL8                      RESOURCE NAME                   09230002
+*                                                                       09240002
+COMRSP   DS    A                        RETURN CODE 1                   09250002
+COMRSP2  DS    A                        RETURN CODE 2                   09260002
+*                                       ..0 = NORMAL                    09270002
+*                                       ..n = RESP ERROR CODE           09280002
+*                                       ..n = SERVER ERROR CODE         09290002
+*                                                                       09300002
+USRKYL   DS    H                        RESOURCE KEY LENGTH             09310002
+USXKEY   EQU   *                        RESOURCE KEY @                  09320002
+*                                                                       09330002
+USXARL   DS    H                        RESOURCE AREA LENGTH            09340002
+USXARA   EQU   *                        RESOURCE AREA @                 09350002
+*                                                                       09360002
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         09370002
+*---------------------------------------------------------------------- 09380002
+*        REMOTE FILE SERVER COMMAREA DSECT                              09390002
+*---------------------------------------------------------------------- 09400002
+*                                                                       09410002
+RFSPARM  DSECT                                                          09420002
+*                                                                       09430002
+RFSFILE  DS    CL8                      FILE ID                         09440002
+*                                                                       09450002
+RFSOPEN  DS    F                        FILE OPEN STATUS                09460002
+RFSENABL DS    F                        FILE ENABLE STATUS              09470002
+RFSKEYL  DS    F                        FILE KEY LENGTH                 09480002
+RFSRECFM DS    F                        FILE RECORD FORMAT              09490002
+RFSLRECL DS    F                        FILE RECORD LENGTH              09500002
+RFSDSORG DS    F                        FILE ORGANIZATION               09510002
+RFSXSDS  DS    F                        FILE ORGANIZATION TYPE          09520002
+*                                                                       09530002
+RFSRSP   DS    A                        RETURN CODE 1                   09540002
+RFSRSP2  DS    A                        RETURN CODE 2                   09550002
+*                                                                       09560002
+RFSLN    EQU   *-RFSPARM                COMMAREA LENGTH                 09570002
+*---------------------------------------------------------------------- 09580002
+         END                                                            09590002
+

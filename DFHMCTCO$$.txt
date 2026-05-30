@@ -1,0 +1,164 @@
+//TSSS013M JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,
+//         MSGLEVEL=(1,1),REGION=0M,NOTIFY=&SYSUID TYPRUN=SCAN
+//*
+//         JCLLIB ORDER=(CICSIE.TS51.PTABLES)
+//*
+//TABLEASM EXEC $GENTABL,
+//         NAME='PROD.SYSLIB'
+//SYSUT1   DD   *
+         TITLE 'MCTCO: CICS/TS V5.1 COMMON MCT TABLE'
+*
+         DFHMCT TYPE=INITIAL,                                          *
+               SUFFIX=CO
+*
+         DFHMCT TYPE=RECORD,CLASS=PER
+*
+*----------------------------------------------------------------------
+*  TCP/IP TRUE MONTORING POINTS
+*----------------------------------------------------------------------
+*
+*
+* ENTRIES FOR IP CICS SOCKETS TASK-RELATED USER EXIT
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.01),CLASS=PERFORM,                  *
+               PERFORM=SCLOCK(1),                                      *
+               CLOCK=(1,INIT,READ,WRITE,SELECT,OTHER)
+         DFHMCT TYPE=EMP,ID=(EZA01.02),CLASS=PERFORM,                  *
+               PERFORM=PCLOCK(1)
+*
+* SOCKET FUNCTIONS READING DATA
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.03),CLASS=PERFORM,                  *
+               PERFORM=SCLOCK(2)
+         DFHMCT TYPE=EMP,ID=(EZA01.04),CLASS=PERFORM,                  *
+               PERFORM=PCLOCK(2)
+*
+* SOCKET FUNCTIONS WRITING DATA
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.05),CLASS=PERFORM,                  *
+               PERFORM=SCLOCK(3)
+         DFHMCT TYPE=EMP,ID=(EZA01.06),CLASS=PERFORM,                  *
+               PERFORM=PCLOCK(3)
+*
+* SOCKET FUNCTIONS SELECTING SOCKETS
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.07),CLASS=PERFORM,                  *
+               PERFORM=SCLOCK(4)
+         DFHMCT TYPE=EMP,ID=(EZA01.08),CLASS=PERFORM,                  *
+               PERFORM=PCLOCK(4)
+*
+* OTHER SOCKET FUNCTIONS
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.09),CLASS=PERFORM,                  *
+               PERFORM=SCLOCK(5)
+         DFHMCT TYPE=EMP,ID=(EZA01.10),CLASS=PERFORM,                  *
+               PERFORM=PCLOCK(5)
+*
+* REUSABLE SUBTASK POOL
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.11),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(6,1),                                    *
+               COUNT=(6,REUSABLE,ATTACHED,OPENAPI,TCBLIM)
+*
+* DYNAMICALLY DEFINED SUBTASKS
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.12),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(7,1)
+*
+* CICS TASK TERMINATION
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.13),CLASS=PERFORM,                  *
+               PERFORM=(MLTCNT(1,5)),                                  *
+               COUNT=(1,TINIT,TREAD,TWRITE,TSELECT,TOTHER)
+*
+* CICS TASK INTERFACE TERMINATION
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.14),CLASS=PERFORM,                  *
+               PERFORM=(MLTCNT(10,4)),                                 *
+               COUNT=(10,TREUSABL,TATTACHE,TOPENAPI,TTCBLIM)
+*
+* OPEN API
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.15),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(8,1)
+*
+* TCBLIM
+*
+         DFHMCT TYPE=EMP,ID=(EZA01.16),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(9,1)
+*
+*----------------------------------------------------------------------
+*  TCP/IP LISTENER MONTORING POINTS
+*----------------------------------------------------------------------
+*
+*
+* NUMBER OF TIMES ACCEPT COMPLETED SUCCESSFULLY
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.01),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(1,1),COUNT=(1,CONN)
+*
+* NUMBER OF CHILD SERVER TASKS STARTED
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.02),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(2,1),COUNT=(2,STARTED)
+*
+* NUMBER OF REQUESTS FOR UNDEFINED CHILD SERVER TRANSACTIONS
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.03),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(3,1),COUNT=(3,INVALID)
+*
+* NUMBER OF REQUESTS FOR DISABLED CHILD SERVER TRANSACTIONS
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.04),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(4,1),COUNT=(4,DISTRAN)
+*
+* NUMBER OF REQUESTS FOR DISABLED CHILD SERVER PROGRAMS
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.05),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(5,1),COUNT=(5,DISPROG)
+*
+* NUMBER OF GIVESOCKET FAILURES
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.06),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(6,1),COUNT=(6,GIVESOKT)
+*
+* NUMBER OF TRMS REJECTED BY THE SECURITY/USER EXIT
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.07),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(7,1),COUNT=(7,SECEXIT)
+*
+* NUMBER OF TIME CHILD SERVER TRANSACTION NOT AUTHORIZED
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.08),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(8,1),COUNT=(8,NOTAUTH)
+*
+* NUMBER OF TRMS TD QUEUE I/O ERROR
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.09),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(9,1),COUNT=(9,IOERR)
+*
+* NUMBER OF TIMES NO SPACE ON CHILD SERVER TD QUEUE
+*
+          DFHMCT TYPE=EMP,ID=(EZA02.10),CLASS=PERFORM,                 *
+               PERFORM=ADDCNT(10,1),COUNT=(10,NOSPACE)
+*
+* NUMBER OF TIMES LENGTH ERROR ON CHILD SERVER TD QUEUE
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.11),CLASS=PERFORM,                  *
+               PERFORM=ADDCNT(11,1),COUNT=(11,LENERR)
+*
+* LISTENER TERMINATION
+*
+         DFHMCT TYPE=EMP,ID=(EZA02.12),CLASS=PERFORM,                  *
+               PERFORM=(MLTCNT(12,11)),                                *
+               COUNT=(12,TCONN,TSTARTED,TINVALID,TDISTRAN,TDISPROG,    *
+               TGIVESOK,TSECEXIT,TNOTAUTH,TIOERR,TNOSPACE,TLENERR)
+*
+*----------------------------------------------------------------------
+*
+         DFHMCT TYPE=FINAL
+*
+         END   DFHMCTBA
+/*
+//
+

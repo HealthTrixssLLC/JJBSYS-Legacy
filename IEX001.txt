@@ -1,0 +1,906 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)
+***********************************************************************
+*                                                                     *
+* MODULE NAME = IEX001                                                *
+*                                                                     *
+* DESCRIPTIVE NAME = CICS/ESA (VTAM) AUTOINSTALL USER PROGRAM         *
+*                                                                     *
+*                                                                     *
+* STATUS = 6.4.0                                                      *
+*                                                                     *
+* FUNCTION = PROVIDE USER INPUT TO AUTOINSTALL PROCESSING             *
+*                                                                     *
+*            THIS MODULE IS A COMPONENT OF ZCP.                       *
+*                                                                     *
+*            It is called via a DFHPC CTYPE=LINK_URM command from     *
+*            DFHZATA(INSTALL) and DFHZATD(DELETE).                    *
+*                                                                     *
+*            INPUT TO THE MODULE IS A PARAMETER LIST ADDRESSED BY     *
+*            DFHEICAP.                                                *
+*                                                                     *
+*            The program is invoked when:                             *
+*            1) An autoinstall INSTALL is in progress                 *
+*            2) An autoinstall DELETE has just completed              *
+*            3) An autoinstall DFHZCP INSTALL has failed              *
+*            4) An BridgeFacility INSTALL is in progress              *
+*            5) An BridgeFacility DELETE is in progress               *
+*                                                                     *
+*            THE FUNCTION TO BE PERFORMED IS INDICATED VIA THE PASSED *
+*            PARAMETER LIST. THIS IS EVALUATED DURING COMMON INITIAL- *
+*            IZATION PROCESSING, AND CONTROL PASSED TO THE APPROPRIATE*
+*            ROUTINE.                                                 *
+*                                                                     *
+*  Function 1 - INSTALL                                               *
+*  --------------------                                               *
+*  The primary purpose of this function is to complete the            *
+*  SELECTED_PARMS fields.  They are used as input to an auto-         *
+*  install resource 'builder' request.                                *
+*                                                                     *
+*  The following fields may already have been supplied by MTS:        *
+*     SELECTED_MODELNAME                                              *
+*     SELECTED_PRINTER_NETNAME                                        *
+*     SELECTED_ALTPRINTER_NETNAME                                     *
+*  The following fields should be set (if not supplied by MTS):       *
+*     SELECTED_MODELNAME                                              *
+*  The following fields should be set:                                *
+*     SELECTED_TERM_ID                                                *
+*     SELECTED_RETURN_CODE                                            *
+*  The following fields may be set.                                   *
+*     SELECTED_PRINTER_ID                                             *
+*     SELECTED_ALTPRINTER_ID                                          *
+*                                                                     *
+*  The default action of this program is:                             *
+*                                                                     *
+*  - If the modelname list contains no elements, then return          *
+*  - If the first character of SELECTED_MODELNAME is blank            *
+*    (Not supplied by MTS), then copy the first modelname in          *
+*    MODELNAME_LIST into SELECTED_MODELNAME.                          *
+*  - Copy the last 4 non-blank characters of the passed Netname to    *
+*    SELECTED_TERM_ID.                                                *
+*  - Set the SELECTED_RETURN_CODE to RETURN_OK to indicate that       *
+*    a selection has been made.                                       *
+*  - Return to the calling program.                                   *
+*                                                                     *
+*  EXIT-NORMAL =                                                      *
+*       Exit is via an EXEC CICS RETURN command.                      *
+*       Status is set to zero if all processing completes normally.   *
+*                                                                     *
+*  EXIT-ERROR =                                                       *
+*       Exit is via an EXEC CICS RETURN command.                      *
+*       RETURN_CODE is non-zero on entry to this module and is        *
+*       untouched if any error occurs, hence, a non-zero return       *
+*       code is passed back to the calling program.                   *
+*                                                                     *
+*  Function 2 - autoinstall DELETE                                    *
+*  -------------------------------                                    *
+*                                                                     *
+*  This function gives the user the opportunity to perform            *
+*  processing when an autoinstall'ed terminal has been deleted.       *
+*                                                                     *
+*  The default action of this program is to establish                 *
+*  addressability to the parameter list, and RETURN.                  *
+*                                                                     *
+*  EXIT-NORMAL =                                                      *
+*       Exit is via an EXEC CICS RETURN command.                      *
+*                                                                     *
+*---------------------------------------------------------------------*
+*                                                                     *
+* ENTRY POINT = IEX001                                                *
+*                                                                     *
+*     PURPOSE = ALL FUNCTIONS                                         *
+*                                                                     *
+*     THE REQUEST TYPE IS ANALYZED, AND CONTROL PASSED TO THE         *
+*     APPROPRIATE ROUTINE.                                            *
+*                                                                     *
+*                                                                     *
+*---------------------------------------------------------------------*
+*                                                                     *
+* EXTERNAL REFERENCES = NONE                                          *
+*                                                                     *
+*     ROUTINES =                                                      *
+*         EXEC CICS RETURN - RETURN TO CALLING PROGRAM                *
+*                                                                     *
+*                                                                     *
+*     CONTROL BLOCKS =                                                *
+*         SEE FUNCTION SECTION FOR DESCRIPTION OF INPUT PARAMETERS    *
+*                                                                     *
+*---------------------------------------------------------------------*
+*                                                                     *
+***********************************************************************
+         DFHREGS ,                      EQUATE REGISTERS
+*---------------------------------------------------------------------*
+*  IEX001   RSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION             *
+*---------------------------------------------------------------------*
+IEX001   RSECT
+IEX001   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEX001   RMODE ANY                      MAY RESIDE ABOVE 16M
+IEX001   DFHEIENT CODEREG=(12,11),                                     *
+               DATAREG=(13),                                           *
+               EIBREG=(10)
+***********************************************************************
+* *                   I N I T I A L I Z A T I O N                   * *
+* *                   ---------------------------                   * *
+* *                                                                 * *
+***********************************************************************
+         EXEC  CICS,                                                   *
+               ASSIGN,                                                 *
+               SYSID(SYSIDNT),                                         *
+               USERID(USERID),                                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         MVI   MSG,C' '                 BLANK MSG AREA
+         MVC   MSG+1(L'MSG-1),MSG
+         OC    EIBCALEN,EIBCALEN        COMMAREA?
+         BZ    XIT00                    ..NO, EXIT
+         L     R9,DFHEICAP              LOAD INPUT PARM LIST @
+         USING INSTALL_EXIT_COMMAREA,R9 BASE DSECT
+         CLI   INSTALL_EXIT_FUNCTION,INSTALL_CODE INSTALL REQUEST?
+         BNE   DELPROC                  ..NO, BRANCH
+*
+         EXEC  CICS,                                                   *
+               LOAD,                                                   *
+               PROGRAM('IEIAIT'),                                      *
+               ENTRY(R3),                                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     WAS LOAD SUCCESSFUL
+         BNE   AIT99                    ..NO, BRANCH
+         L     R3,0(,R3)                LOAD TABLE BEGIN @
+         XC    FULWORK,FULWORK          CLR WORK AREA
+         L     R5,INSTALL_NETNAME_PTR   ADDRESS NETNAME
+         USING NETNAME_FIELD,R5         BASE DSECT
+         LH    R15,NETNAME_LENGTH       LOAD NETNAME LENGTH
+         CHI   R15,4
+         BL    ENT10
+         BCTR  R15,0
+         EX    R15,TRTNNM
+*TRTNNM  TRT   NETNAME(0),TRAN
+         BNZ   ENT01
+         LH    R15,NETNAME_LENGTH       LOAD NETNAME LENGTH
+         SH    R15,=H'4'
+         LA    R14,NETNAME(R15)
+         MVC   FULWORK,0(R14)
+         B     ENT10
+ENT01    DS    0H
+         SH    R1,=H'4'
+         LR    R14,R1
+         MVC   FULWORK,0(R14)
+ENT10    DS    0H
+         LH    R15,NETNAME_LENGTH       LOAD NETNAME LENGTH
+         BCTR  R15,0                    DECREMENT FOR EXECUTE
+AIT00    DS    0H
+         CLC   4(8,R3),=8X'FF'          END OF TABLE
+         BE    AIT05                    ..YES, BRANCH
+         MVC   TERMID,0(R3)             SET TTE ID
+         EX    R15,CLCNETNM
+*CLCNETNM CLC  NETNAME(0),4(R3)         EXECUTED INSTRUCTION
+         BNE   AIT10                    ..YES, BRANCH
+AIT03    DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL(TERMID),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOES THE TERMINAL EXIST
+         BNE   INIT99                   ..YES, BRANCH
+         XC    TERMID,TERMID            CLR TERMMID
+         B     AIT99                    AIT LOOKUP FAILED, CK IEIAUTO
+AIT05    DS    0H
+         MVC   TERMID,FULWORK
+         B     AIT99
+AIT10    DS    0H
+         LA    R3,12(,R3)               INDEX TO NEXT AIT ENTRY
+         B     AIT00                    ..LOOP
+*
+TRTNNM   TRT   NETNAME(0),TRAN
+CLCNETNM CLC   NETNAME(0),4(R3)         NETNAME MATCH
+*
+         DROP  R5
+AIT99    DS    0H
+*
+         L     R5,INSTALL_SELECTED_PTR  ADDRESS OUTPUT PARAMETER LIST
+         USING SELECTED_PARMS,R5        BASE DSECT
+         L     R7,INSTALL_CINIT_PTR     ADDRESS CINIT_RU
+         XC    LGMLEN,LGMLEN            SET USER DATA LENGTH ZERO
+         LR    R1,R7                    LOAD CINIT_RU @
+         LA    R1,12(,R1)               INDEX TO BIND LENGTH
+         AH    R1,0(,R1)                INDEX PAST BIND
+         LA    R1,3(,R1)                INDEX PAST SLU TYPE
+         SR    R14,R14                  CLR REG
+         IC    R14,0(,R1)               LOAD SLU NAME LENGTH
+         LA    R1,3(R14,R1)             INDEX PAST SLU NAME
+         SR    R14,R14                  CLR REG
+         IC    R14,0(,R1)               LOAD USER DATA LENGTH
+         LA    R1,1(,R1)                LOAD USER DATA @
+         STH   R14,LGMLEN               SAVE USER DATA LENGTH
+         ST    R1,LGMPTR                SAVE USER DATA @
+*
+         LH    R2,LGMLEN                LOAD LOGON MSG LEN
+         CH    R2,=H'4'                 4 BYTE TCTTEID
+         BNE   INIT00B                  ..MAYBE
+         L     R14,LGMPTR               LOAD LOGON DATA @
+         TRT   0(4,R14),TRAN            ALPHANUMERIC
+         BNZ   INIT00A2                 ..NO, BRANCH
+         MVC   FULWORK,0(R14)           SET TCTTEID
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL(FULWORK),                                      *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOES TERMINAL ALREADY EXIST
+         BE    INIT00A1                 ..YES, BRANCH
+         MVC   TERMID,FULWORK           SET TERMID
+         B     INIT99                   ..CONTINUE
+*
+INIT00A1 DS    0H
+         MVC   MSG(L'DUPER),DUPER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'DUPER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+*
+INIT00A2 DS    0H
+         MVC   MSG(L'TRMER),TRMER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'TRMER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+         DROP  R5
+*
+INIT00B  DS    0H
+         OC    TERMID,TERMID            TERMID SET
+         BNZ   INIT99                   ..YES, BRANCH
+         MVC   MSGLN,=H'9'              SET TS QUEUE ITEM LENGTH
+         MVC   ITEM,=H'1'               SET ITEM ONE IN QUEUE
+         EXEC  CICS,                                                   *
+               READQ,                                                  *
+               TS,                                                     *
+               QUEUE('IEX001'),                                        *
+               INTO(TERMLIMS),                                         *
+               ITEM(ITEM),                                             *
+               LENGTH(MSGLN),                                          *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DID WE GET THE CURRENT ID
+         BE    INIT04                   ..YES, BRANCH
+         LA    R1,SYSIDTBL              LOAD TERMID PREFIX TABLE @
+INIT01   DS    0H
+         CLC   SYSIDNT,0(R1)            IS THIS THE SYSID
+         BE    INIT03                   ..YES, BRANCH
+         LA    R1,L'SYSIDTBL(,R1)       INDEX TO NEXT ENTRY
+         CLC   =10X'FF',0(R1)            END OF TABLE
+         BNE   INIT01                   ..NO, LOOP
+INIT02   DS    0H
+         MVC   MSG(L'SYSER),SYSER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'SYSER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+INIT03   DS    0H
+         MVC   TERMBGN(L'TERMBGN+L'TERMEND),4(R1) SET TERMID LIMITS
+         MVC   TERMCUR,TERMBGN          SET CURRENT TERMID
+         MVC   MSGLN,=H'9'              SET TS QUEUE ITEM LENGTH
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               QUEUE('IEX001'),                                        *
+               FROM(TERMCUR),                                          *
+               LENGTH(MSGLN),                                          *
+               MAIN,                                                   *
+               NOSUSPEND,                                              *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     QUEUE INITIALIZED
+         BE    INIT05                   ..YES, BRANCH
+         MVC   MSG(L'TSQER),TSQER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'TSQER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+INIT04   DS    0H
+         SR    R1,R1                    CLR REG
+         ICM   R1,B'0011',TERMCUR+1     LOAD HEX QUALIFIER
+         LA    R1,1(,R1)                INDEX TERMNL SFX
+         STCM  R1,B'0011',TERMCUR+1     SAVE HEX QUALIFIER
+         CLC   TERMCUR(1),TERMEND       PREFIX LOW *+*
+         BNL   INIT04B                  NO, BRANCH *+*
+         CLM   R1,B'0011',=X'0FFF'      MAX SUFFIX RANGE *+*
+         BNH   INIT05                   ..NO, BRANCH *+*
+         B     INIT04C                  ..CONTINUE *+*
+INIT04B  DS    0H                       *+*
+         CLM   R1,B'0011',TERMEND+1     WITHIN RANGE
+         BNH   INIT05                   ..NO, BRANCH
+INIT04C  DS    0H                       *+*
+         CLC   TERMCUR(1),TERMEND       PREFIX EQUAL
+         BE    INIT04A                  ..YES, BRANCH
+         XC    TERMCUR+1(2),TERMCUR+1   SET SFX TO ZERO
+         SR    R1,R1                    CLR REG
+         IC    R1,TERMCUR               LOAD PREFIX
+         LA    R1,1(,R1)                INDEX PREFIX
+         STC   R1,TERMCUR               STORE NEW PREFIX
+         TR    TERMCUR(1),TRPFX         INSURE VALID PREFIX
+         CLC   TERMCUR(1),TERMEND       WITHIN RANGE
+         BNH   INIT05                   ..YES, BRANCH
+INIT04A  DS    0H
+         MVC   TERMCUR,TERMBGN          SET BEGIN TERMNL ID
+INIT05   DS    0H
+         MVC   TERMPFX,TERMCUR          SET TERMNL PREFIX
+         ICM   R0,B'0011',TERMCUR+1     LOAD HEX QUALIFIER
+         SRDL  R0,4                     SHIFT ONE HEX DIGIT
+         SRL   R1,4                     RT JUSTIFY
+         SRDL  R0,4                     SHIFT ONE HEX DIGIT
+         SRL   R1,4                     RT JUSTIFY
+         SRDL  R0,4                     SHIFT ONE HEX DIGIT
+         SRL   R1,12                    RT JUSTIFY
+         STCM  R1,B'0111',TERMID+1      SET TERMNL QUALIFIER
+         TR    TERMID+1(3),TRHEX        TRANSLATE HEX TO CHAR
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL(TERMID),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOES THE TERMINAL EXIST
+         BE    INIT04                   ..YES, BRANCH
+         MVC   MSGLN,=H'9'              SET TS QUEUE RECORD LENGTH
+         MVC   ITEM,=H'1'               SET ITEM ONE IN QUEUE
+         EXEC  CICS,                    WRITE TS QUEUE RECORD          *
+               WRITEQ,                                                 *
+               TS,                                                     *
+               QUEUE('IEX001'),                                        *
+               FROM(TERMCUR),                                          *
+               ITEM(ITEM),                                             *
+               LENGTH(MSGLN),                                          *
+               MAIN,                                                   *
+               NOSUSPEND,                                              *
+               REWRITE,                                                *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DID WE GET THE CURRENT ID
+         BE    INIT06                   ..YES, BRANCH
+         MVC   MSG(L'TSQER),TSQER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'TSQER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+INIT06   DS    0H
+INIT99   DS    0H
+*
+***********************************************************************
+* *               I N S T A L L   P R O C E S S I N G               * *
+* *               -----------------------------------               * *
+* *                                                                 * *
+***********************************************************************
+         L     R4,INSTALL_MODELNAME_PTR ADDRESS MODEL NAME LIST
+         USING MODELNAME_LIST,R4        BASE DSECT
+         L     R5,INSTALL_SELECTED_PTR  ADDRESS OUTPUT PARAMETER LIST
+         USING SELECTED_PARMS,R5        BASE DSECT
+         OC    MODELNAME_COUNT,MODELNAME_COUNT ANY MODELS
+         BNZ   CONT01                   ..YES, CONTINUE
+         MVC   MSG(L'NOMDL),NOMDL       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'NOMDL)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ..GO LOG ERROR
+*
+* SELECT DEFAULT MODEL FROM CINIT_RU
+*
+CONT01   DS    0H
+         MVI   DFLTMODL,C' '            BLANK MODEL NAME AREA
+         MVC   DFLTMODL+1(L'DFLTMODL-1),DFLTMODL
+         L     R7,INSTALL_CINIT_PTR     ADDRESS CINIT_RU
+         LA    R7,14(,R7)               ADDRESS BIND IMAGE
+         USING ISTDBIND,R7              BASE DSECT
+         LA    R1,DFLTMODL              LOAD DEFAULT MODEL @
+         MVC   0(2,R1),=C'LU'           SET UP AUTOINSTALL MODEL NAME
+         MVC   2(1,R1),BINLUP           GET LU TYPE FROM BIND IMAGE
+         OI    2(R1),X'F0'              MAKE IT CHARACTER SUFFIX
+         LA    R1,3(,R1)                INDEX DEFAULT MODEL NAME @
+         CLI   BINLUP,BINLUP2C          LUTYPE2
+         BE    CONT01B                  ..YES, BRANCH
+         CLI   BINLUP,BINLUP0C          LUTYPE0
+         BE    CONT01B                  ..YES, BRANCH
+         CLI   BINLUP,BINLUP1C          LUTYPE1
+         BE    CONT02                   ..YES, BRANCH
+         CLI   BINLUP,BINLUP3C          LUTYPE3
+         BE    CONT02                   ..YES, BRANCH
+         B     MODL05                   ..NO, ERROR
+CONT01B  DS    0H
+         CLI   BINPRESZ,BINPSZ3         IS IT A GENERIC MODEL
+         BNE   CONT01C                  ..NO, BRANCH
+         MVI   0(R1),C'M'               SET MODEL NAME INDICATOR
+         MVI   1(R1),C'0'               SET 3270 QUERY MODEL NAME
+         LA    R1,2(,R1)                INDEX DEFAULT MODEL NAME @
+         B     CONT02                   ..CONTINUE
+CONT01C  DS    0H
+         OC    BINSPRIR+2(2),BINSPRIR+2 ANY ALT PSERVIC
+         BZ    CONT02                   ...NO, BRANCH
+         MVI   0(R1),C'M'               SET MODEL NAME INDICATOR
+         MVI   1(R1),C'2'               SET 3270 MODEL 2 NAME
+         CLI   BINSALTR,X'18'           IS IT MODEL 2
+         BE    CONT02                   ...YES, BRANCH
+         MVI   1(R1),C'3'               SET MODEL 3 NAME
+         CLI   BINSALTR,X'20'           IS IT 3270 MODEL 3
+         BE    CONT02                   ...YES, BRANCH
+         MVI   1(R1),C'4'               SET MODEL 4 NAME
+         CLI   BINSALTR,X'2B'           IS IT 3270 MODEL 4
+         BE    CONT02                   ...YES, BRANCH
+         MVI   1(R1),C'5'               SET MODEL 5 NAME
+         CLI   BINSALTR,X'1B'           IS IT 3270 MODEL 5
+         BNE   MODL05                   ...NO, ERROR
+CONT02   DS    0H
+         DROP  R7
+         LH    R1,MODELNAME_COUNT       LOAD # OF MODEL ENTRIES PASSED
+         LA    R4,L'MODELNAME_COUNT(,R4) LOAD FIRST MODEL NAME @
+MODL00   DS    0H
+         CLC   DFLTMODL,0(R4)           IS PASSED MODEL = ONE EXPECTED
+         BE    MODL10                   ...YES, ACCEPT IT
+         LA    R4,L'MODELNAME(,R4)      INDEX TO NEXT PASSED MODEL NAME
+         BCT   R1,MODL00                ...LOOP IF ANY MORE PASSED
+MODL05   DS    0H
+         MVC   MSG(L'MDLER),MDLER       SET ERROR MSG
+         MVC   MSGLN,=AL2(L'MDLER)      SET ERROR MSG LENGTH
+         B     LOGERR01                 ...GO LOG ERROR MESSAGES
+MODL10   DS    0H
+*
+* SELECT MODEL
+*
+         MVC   SELECTED_MODELNAME,DFLTMODL SET IEI MODEL NAME
+*
+* SET TERMID
+*
+         MVC   SELECTED_TERM_ID,TERMID  MOVE FOR TERMID SELECTION
+*
+* SELECTIONS COMPLETE, RETURN
+*
+         MVI   SELECTED_RETURN_CODE,RETURN_OK INDICATE ALL OK
+         B     XIT00                    EXIT PROGRAM
+*
+         DROP  R9
+         DROP  R4
+*
+* LOG ERROR MESSAGES AND SET BAD STATUS
+*
+LOGERR01 DS    0H
+         MVI   SELECTED_RETURN_CODE,X'FF' INDICATE ERROR
+         DROP  R5
+         BAS   R8,TD01
+         L     R9,DFHEICAP              ADDRESS INPUT PARAMETER LIST
+         USING INSTALL_EXIT_COMMAREA,R9 BASE DSECT
+         L     R7,INSTALL_CINIT_PTR     ADDRESS CINIT_RU
+         L     R4,INSTALL_MODELNAME_PTR ADDRESS MODEL NAME LIST
+         USING MODELNAME_LIST,R4        BASE DSECT
+         L     R5,INSTALL_NETNAME_PTR   ADDRESS NETNAME INPUT FIELD
+         USING NETNAME_FIELD,R5         BASE DSECT
+*
+* FORMAT AND LOG CINIT_RU
+*
+         MVI   MSG,C' '                 CLR MSG AREA
+         MVC   MSG+1(L'MSG-1),MSG
+         MVC   MSGID,=C'ZATDX999I'      MOVE MSG ID
+         LH    R15,NETNAME_LENGTH       LOAD NETNAME LENGTH
+         BCTR  R15,0                    DECREMENT FOR EXECUTE
+         EX    R15,MVCNETNM             MOVE NETNAME
+*MVCNETNM MVC  MSGNETNM(0),NETNAME
+         LA    R14,MSGCINIT             LOAD BEGIN @
+         LA    R15,MSGCINIT+L'MSGCINIT  LOAD END @
+         LH    R1,0(,R7)                LOAD CINIT_RU LENGTH
+         LTR   R1,R1                    IS LENGTH ZERO
+         BNP   BINDS02                  ..YES, BRANCH
+         SH    R1,=H'2'
+BINDS01  DS    0H
+         IC    R5,0(,R7)                LOAD A BYTE OF CINIT_RU
+         SRL   R5,4                     SAVE LEFT NIBBLE
+         STC   R5,0(,R14)               STORE FOR TRANSLATE TO CHAR
+         NI    0(R14),X'0F'             INSURE ONLY A NIBBLE
+         LA    R14,1(,R14)              INDEX TO NEXT CHAR OUTPUT @
+         CLR   R14,R15                  END OF OUTPUT AREA
+         BE    BINDS02                  ...YES, GO LOG THIS MUCH
+         IC    R5,0(,R7)                LOAD SAME BYTE OF CINIT_RU
+         STC   R5,0(,R14)               SAVE RIGHT NIBBLE
+         NI    0(R14),X'0F'             INSURE ONLY A NIBBLE
+         LA    R14,1(,R14)              INDEX TO NEXT CHAR OUTPUT @
+         LA    R7,1(,R7)                INDEX TO NEXT CINIT_RU @
+         CLR   R14,R15                  END OF OUTPUT AREA
+         BE    BINDS02                  ..YES, GO LOG THIS MUCH
+         BCT   R1,BINDS01               ..LOOP IF NOT END OF CINIT_RU
+BINDS02  DS    0H
+         ST    R1,TEMPSAVE              SAVE WORK REG
+         LA    R15,MSGCINIT             LOAD BEGIN @
+         SR    R14,R15                  CALC TRANSLATED CINIT_RU LENGTH
+         BZ    BINDS03                  ..BYPASS TRANSLATE IF NONE
+         BCTR  R14,0                    DECREMENT FOR EXECUTE
+         EX    R14,TRCINIT              TRANSLATE CINIT_RU
+*TRCINIT TR    MSGCINIT(0),TRHEX
+BINDS03  DS    0H
+         AH    R14,=AL2(MSGCINIT-MSGID+1) ADD MESSAGE HEADER LENGTH
+         STH   R14,MSGLN                STORE TOTAL MESSAGE LENGTH
+         BAS   R8,TD01
+         MVI   MSG,C' '                 CLR MSG AREA
+         MVC   MSG+1(L'MSG-1),MSG
+         LA    R14,MSGCINIT             LOAD CHARACTER OUTPUT BEGIN @
+         LA    R15,MSGCINIT+L'MSGCINIT  LOAD CHARACTER OUTPUT END @
+         L     R1,TEMPSAVE              RELOAD WORK REG
+         LTR   R1,R1                    ANY CINIT_RU CHARS REMAINING
+         BP    BINDS01                  ..BRANCH IF MORE TO TRANSLATE
+*
+* LOG ALL PASSED MODEL NAMES (IF ANY)
+*
+         LH    R1,MODELNAME_COUNT       LOAD NUM MODEL ENTRIES PASSED
+         LTR   R1,R1                    ANY PASSED
+         BZ    XIT00                    ..NO, RETURN TO CALLER
+         MVI   MSG,C' '                 CLR MSG AREA
+         MVC   MSG+1(L'MSG-1),MSG
+         MVC   MSG(L'MDLST),MDLST       MOVE ERROR MESSAGE
+         LA    R4,L'MODELNAME_COUNT(,R4) LOAD FIRST MODEL NAME @
+         LA    R14,L'MSG                LOAD MESSAGE LENGTH
+         STH   R14,MSGLN                SET FOR WRITE TO LOG
+         ST    R1,TEMPSAVE              SAVE LOOP CONTROL REG
+         BAS   R8,TD01
+         L     R1,TEMPSAVE              LOAD LOOP CONTROL REG
+         MVI   MSG,C' '                 CLR MSG AREA
+         MVC   MSG+1(L'MSG-1),MSG
+MODL20   DS    0H
+         MVC   MSGCINIT(L'MODELNAME),0(R4) LOG MODEL NAME
+         ST    R1,TEMPSAVE              SAVE LOOP CONTROL REG
+         BAS   R8,TD01
+         L     R1,TEMPSAVE              LOAD LOOP CONTROL REG
+         LA    R4,L'MODELNAME(,R4)      INDEX TO NEXT PASSED MODEL NAME
+         BCT   R1,MODL20                ...LOOP IF ANY MORE PASSED
+         B     XIT00                    RETURN TO CALLER
+*
+MVCNETNM MVC   MSGNETNM(0),NETNAME      EXECUTED INSTRUCTION
+TRCINIT  TR    MSGCINIT(0),TRHEX        EXECUTED INSTRUCTION
+*
+TD01     DS    0H
+         EXEC  CICS,                                                   *
+               WRITEQ,                                                 *
+               TD,                                                     *
+               QUEUE('CSML'),                                          *
+               FROM(MSG),                                              *
+               LENGTH(MSGLN),                                          *
+               NOHANDLE
+         BR    R8
+         DROP  R9
+         DROP  R4
+         DROP  R5
+***********************************************************************
+* *                D E L E T E    P R O C E S S I N G               * *
+* *                ----------------------------------               * *
+* *                                                                 * *
+***********************************************************************
+DELPROC  DS    0H
+         USING DELETE_EXIT_COMMAREA,R9 BASE DSECT
+         CLI   DELETE_EXIT_FUNCTION,DELETE_CODE DELETE REQUEST?
+         BNE   BRINPROC                 ..NO, BRANCH
+*
+         MVC   REQID(4),=C'NEWS'        SETUP FOR TS QUEUE DELETE
+         MVC   REQID+4(4),DELETE_TERM_ID ...
+         BAS   R8,TSD01                 GO DELETE TS QUEUE
+*
+         MVC   REQID(4),=C'SYSD'        SETUP FOR TS QUEUE DELETE
+         MVC   REQID+4(4),DELETE_TERM_ID ...
+         BAS   R8,TSD01                 GO DELETE TS QUEUE
+*
+         EXEC  CICS,                    Xpediter terminate             *
+               START,                                                  *
+               INTERVAL(0),                                            *
+               TRANSID('XPN0'),                                        *
+               FROM(DELETE_TERM_ID),                                   *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+         B     XIT00                    ..EXIT
+         DROP  R9
+***********************************************************************
+* *       B R I D G E  I N S T A L L  P R O C E S S I N G           * *
+* *       -----------------------------------------------           * *
+* *                                                                 * *
+***********************************************************************
+BRINPROC DS    0H
+         CLI   PATH,C'/'                PATH EXTRACTED
+         BNE   BRIN00                   ..NO, Branch
+         CLI   PATH+5,C'/'              PATH EXTRACTED
+         BNE   BRIN00                   ..NO, Branch
+         CLI   PATH+8,C'/'              PATH EXTRACTED
+         BNE   BRIN00                   ..NO, Branch
+         CLC   SYSIDNT,PATH+1           PATH EXTRACTED
+         BNE   BRIN00                   ..NO, Branch
+         CLC   =C'01',PATH+6            PREFIX SUPPLIED IN URL
+         BL    BRIN00
+         CLC   =C'49',PATH+6            PREFIX SUPPLIED IN URL
+         BH    BRIN00
+         MVC   TERMID(2),PATH+6
+         B     BRIN08
+BRIN00   DS    0H
+         XC    HLFWORK,HLFWORK          CLR WORK AREA
+         USING INSTALL_BRFAC_COMMAREA,R9 BASE DSECT
+         CLI   INSTALL_BRFAC_EXIT_FUNCTION,INSTALL_LINK_BRFAC
+         BE    BRIN01                   ..YES, BRANCH
+         CLI   INSTALL_BRFAC_EXIT_FUNCTION,INSTALL_START_BRFAC
+         BNE   BRDLPROC                 ..NO, BRANCH
+         L     R5,INSTALL_BRFAC_SELECTED_PTR
+         USING INSTALL_BRFAC_SELECTED_PARMS,R5 SELECTED DSECT
+BRIN01   DS    0H
+         MVC   TERMID(2),=C'99'         SET DEFAULT PREFIX
+         CLC   =C'TMK',USERID           TMK USERID
+         BNE   BRIN02                   ..NO, BRANCH
+         MVC   TERMID(2),=C'98'         SET PREFIX
+         B     BRIN08                   ..CONTINUE
+*
+BRIN02   DS    0H
+         CLC   =C'SAL',USERID           SAL USERID
+         BNE   BRIN04                   ..NO, BRANCH
+         MVC   TERMID(2),=C'98'         SET PREFIX
+         B     BRIN08                   ..CONTINUE
+*
+BRIN04   DS    0H
+         CLC   =C'LSR',USERID           SAL USERID
+         BNE   BRIN06                   ..NO, BRANCH
+         MVC   TERMID(2),=C'98'         SET PREFIX
+         B     BRIN08                   ..CONTINUE
+*
+BRIN06   DS    0H
+         CLC   =C'01',USERID+2          RANGE CHECK BRANCH #
+         BL    BRIN08                   ..USE DEFAULT
+         CLC   =C'49',USERID+2          RANGE CHECK BRANCH #
+         BH    BRIN08                   ..USE DEFAULT
+         MVC   TERMID(2),USERID+2       SET BRANCH AS TERMID PREFIX
+*
+BRIN08   DS    0H
+         MVC   TERMID+2(2),HLFWORK
+         TR    TERMID+2(2),TRCHAR
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TERMINAL(TERMID),                                       *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     DOES THE TERMINAL EXIST
+         BE    BRIN14                   ..YES, BRANCH
+*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               BRFACILITY,                                             *
+               START,                                                  *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+BRIN10   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               BRFACILITY(DBLWORK),                                    *
+               NEXT,                                                   *
+               TERMID(FULWORK),                                        *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(END)        NEXT BROWSE END
+         BE    BRIN20                   ..YES, BRANCH
+         CLC   RESP,DFHRESP(NORMAL)     NEXT BROWSE OK
+         BNE   BRIN12                   ..NO, BRANCH
+         CLC   TERMID,FULWORK           DOES BRFACILITY TERMID EXIST
+         BNE   BRIN10                   ..NO, BRANCH
+*
+BRIN12   DS    0H
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               BRFACILITY,                                             *
+               END,                                                    *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+*
+BRIN14   DS    0H
+         IC    R1,HLFWORK+1
+         LA    R1,1(,R1)
+         CLM   R1,B'0001',=X'35'
+         BH    BRIN16
+         STC   R1,HLFWORK+1
+         B     BRIN08
+*
+BRIN16   DS    0H
+         MVI   HLFWORK+1,0
+         IC    R1,HLFWORK
+         LA    R1,1(,R1)
+         CLM   R1,B'0001',=X'35'
+         BH    BRIN18
+         STC   R1,HLFWORK
+         B     BRIN08
+*
+BRIN18   DS    0H
+         MVI   HLFWORK,0
+         B     BRIN08
+*
+BRIN20   DS    0H
+         MVC   SELECTED_BRFAC_TERMID,TERMID
+         MVC   SELECTED_BRFAC_NETNAME(4),SYSIDNT
+         MVC   SELECTED_BRFAC_NETNAME+4(4),TERMID
+         MVI   SELECTED_BRFAC_RETURN_CODE,RETURN_OK
+*
+         B     XIT00
+         DROP  R9
+         DROP  R5
+***********************************************************************
+* *        B R I D G E  D E L E T E  P R O C E S S I N G            * *
+* *        ---------------------------------------------            * *
+* *                                                                 * *
+***********************************************************************
+BRDLPROC DS    0H
+         USING DELETE_BRFAC_COMMAREA,R9 BASE DSECT
+         CLI   DELETE_BRFAC_EXIT_FUNCTION,DELETE_LINK_BRFAC
+         BE    BRDL00                   ..YES, BRANCH
+         CLI   DELETE_BRFAC_EXIT_FUNCTION,DELETE_START_BRFAC
+         BNE   APPCPROC                 ..NO, BRANCH
+BRDL00   DS    0H
+         B     XIT00
+         DROP  R9
+***********************************************************************
+* *           A P P C   I N S T A L L   P R O C E S S I N G         * *
+* *           ---------------------------------------------         * *
+* *                                                                 * *
+***********************************************************************
+APPCPROC DS    0H
+         USING INSTALL_APPC_COMMAREA,R9 BASE DSECT
+         CLI   INSTALL_APPC_EXIT_FUNCTION,INSTALL_APPC_PS_CINIT
+         BE    APPC10                   ..YES, BRANCH
+         CLI   INSTALL_APPC_EXIT_FUNCTION,INSTALL_APPC_PS_BIND
+         BE    APPC10                   ..YES, BRANCH
+         CLI   INSTALL_APPC_EXIT_FUNCTION,INSTALL_APPC_SS_BIND
+         BE    APPC10                   ..YES, BRANCH
+         B     RMOTPROC                 ..NO, ERROR, EXIT
+APPC10   DS    0H
+         L     R5,INSTALL_APPC_SELECTED_PTR ADDRESS RETURN FIELDS
+         USING SELECTED_PARMS,R5        BASE DSECT
+         MVI   SELECTED_RETURN_CODE,X'FF' SET FAIL APPC AUTOINSTALL
+         B     XIT00                    ..EXIT
+         DROP  R9
+         DROP  R5
+***********************************************************************
+* *   R E M O T E   S H I P   I N S T A L L   P R O C E S S I N G   * *
+* *   -----------------------------------------------------------   * *
+* *                                                                 * *
+***********************************************************************
+RMOTPROC DS    0H
+         USING INSTALL_SHIPPED_COMMAREA,R9 BASE DSECT
+         CLI   INSTALL_SHIPPED_EXIT_FUNCTION,INSTALL_SHIPPED_TERM
+         BE    RMOT10                   ..YES, BRANCH
+         CLI   INSTALL_SHIPPED_EXIT_FUNCTION,INSTALL_SHIPPED_RSE
+         BNE   RDELPROC                 ..YES, BRANCH
+RMOT10   DS    0H
+         L     R4,INSTALL_SHIPPED_SELECTED_PTR ADDRESS OUTPUT
+         USING INSTALL_SHIPPED_SELECTED_PARMS,R4 BASE DSECT
+         MVI   SELECTED_SHIPPED_RETURN_CODE,RETURN_OK INDICATE ALL OK
+         B     XIT00                    ..EXIT
+         DROP  R9
+         DROP  R4
+***********************************************************************
+* *   R E M O T E   S H I P   D E L E T E   P R O C E S S I N G     * *
+* *   ---------------------------------------------------------     * *
+* *                                                                 * *
+***********************************************************************
+RDELPROC DS    0H
+         USING DELETE_SHIPPED_COMMAREA,R9 BASE DSECT
+         CLI   DELETE_SHIPPED_EXIT_FUNCTION,DELETE_SHIPPED_TERM
+         BE    RDEL10                   ..YES, BRANCH
+         CLI   DELETE_SHIPPED_EXIT_FUNCTION,DELETE_SHIPPED_RSE
+         BNE   XIT00                    ..EXIT
+RDEL10   DS    0H
+         B     XIT00                    ..EXIT
+         DROP  R9
+***********************************************************************
+*
+* RETURN TO CICS
+*
+***********************************************************************
+XIT00    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+***********************************************************************
+*
+* PERFORM TS QUEUE DELETE
+*
+***********************************************************************
+TSD01    DS    0H
+         EXEC  CICS,                                                   *
+               DELETEQ,                                                *
+               TS,                                                     *
+               QUEUE(REQID),                                           *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         BR    R8                       EXIT
+***********************************************************************
+* *                     C O N S T A N T S                           * *
+* *                     ------------------                          * *
+* *                                                                 * *
+***********************************************************************
+*
+SYSIDTBL DS    0CL10
+         DC    CL4'PRD0',C'Y',X'000',C'Z',X'FFF'
+*        DC    CL4'PRD1',C'X',X'000',C'X',X'FFF'
+*        DC    CL4'PRD2',C'W',X'000',C'W',X'FFF'
+*        DC    CL4'PRD3',C'V',X'000',C'V',X'FFF'
+*        DC    CL4'PRD4',C'U',X'000',C'U',X'FFF'
+         DC    CL4'PRD5',C'T',X'000',C'T',X'FFF'
+         DC    CL4'PRD6',C'S',X'000',C'S',X'FFF'
+*        DC    CL4'TST0',C'A',X'000',C'A',X'0FF'
+         DC    CL4'TST1',C'A',X'100',C'A',X'1FF'
+*        DC    CL4'TST2',C'A',X'200',C'A',X'2FF'
+*        DC    CL4'TST3',C'A',X'300',C'A',X'3FF'
+         DC    CL4'TST9',C'A',X'900',C'A',X'9FF'
+         DC    CL4'TRA1',C'B',X'000',C'B',X'3FF'
+         DC    CL4'INV1',C'B',X'400',C'B',X'7FF'
+         DC    10X'FF'
+*
+TRCHAR   DC    C'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+*
+TRHEX    DC    C'0123456789ABCDEF'
+*
+TRPFX    DC    256C' '
+         ORG   TRPFX+C'A'
+         DC    C'ABCDEFGHIJ'
+         ORG   TRPFX+C'J'
+         DC    C'JKLMNOPQRS'
+         ORG   TRPFX+C'S'
+         DC    C'STUVWXYZ0'
+         ORG   TRPFX+C'0'
+         DC    C'0123456789'
+         ORG
+*
+TRAN     DC    256X'FF'
+         ORG   TRAN+C'A'
+         DC    9X'00'
+         ORG   TRAN+C'J'
+         DC    9X'00'
+         ORG   TRAN+C'S'
+         DC    8X'00'
+         ORG   TRAN+C'0'
+         DC    10X'00'
+         ORG
+*
+NOMDL    DC   C'IEX001001I No model entries passed in parameter list'
+MDLER    DC   C'IEX001002I Unknown model name passed in parameter list'
+MDLST    DC   C'IEX001003I These model names were found in parm list:'
+TSQER    DC   C'IEX001004I Temporary Storage error during initialize'
+SYSER    DC   C'IEX001005I SYSID not found in table'
+DUPER    DC   C'IEX001006I Duplicate TCTTEID requested via logon data'
+TRMER    DC   C'IEX001007I Invalid TCTTEID requested via logon data'
+*
+         LTORG
+*
+         DFHEISTG
+*
+DBLWORK  DS    D                   DOUBLE WORD WORK AREA
+FULWORK  DS    F                   FULL WORD WORK AREA
+*
+TEMPSAVE DS    F                   REG SAVE
+*
+RESP     DS    F                   EXEC COMMAND RESPONSE
+RESP2    DS    F                   EXEC COMMAND RESPONSE
+*
+PATHLEN  DS    F                   URL PATH Length
+PATH     DS    CL256               URL WEB EXTRACT PATH
+*
+LGMPTR   DS    A                   LOGON MSG @
+LGMLEN   DS    H                   LOGON MSG LENGTH
+*
+HLFWORK  DS    H                   HALF WORD WORK AREA
+ITEM     DS    H                   TEMP STORAGE QUEUE ITEM #
+*
+DFLTMODL DS    CL8                 DEFAULT MODEL CINIT_RU
+         ORG   DFLTMODL
+REQID    DS    CL8                 EMS ICE REQUEST ID
+*
+SYSIDNT  DS    CL4                 SYSID
+USERID   DS    CL8                 USERID
+*
+TERMID   DS    0CL4                ASSIGNED TERMINAL ID
+TERMPFX  DS    CL1                 ..TERM ID ALPHA PREFIX
+TERMSFX  DS    CL3                 ..TERM ID NUMERIC SUFFIX
+*
+TERMLIMS DS    0CL9                TERMNL ID RANGE LIMITS
+TERMCUR  DS    CL3                 CURRENT TERMINAL ID
+TERMBGN  DS    CL3                 FIRST VALID TERMINAL ID
+TERMEND  DS    CL3                 LAST VALID TERMINAL ID
+*
+MSGLN    DS    H                   ERROR MSG LENGTH
+MSG      DS    CL121               ERROR MSG AREA
+         ORG   MSG                 REDEFINE MSG AREA
+MSGID    DS    CL9                 MSG ID
+         DS    CL1
+MSGNETNM DS    CL8                 NODE NETNAME
+         DS    CL1
+MSGCINIT DS    CL100               CINIT_RU
+         ORG   ,
+         DFHEIEND
+*
+         COPY  DFHTCUDS            COPY COMMAREA DSECT
+*
+         ISTDBIND ,                DEFINE BIND
+*
+         END
+

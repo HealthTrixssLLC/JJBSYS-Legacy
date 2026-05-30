@@ -1,0 +1,46 @@
+//TSSS013V JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,
+//         MSGLEVEL=(1,1),REGION=0M,NOTIFY=&SYSUID TYPRUN=SCAN
+//*
+//         JCLLIB ORDER=(CICSIE.TS51.PTABLES)
+//*
+//TABLEASM EXEC $GENTABL,
+//         NAME='PROD.SYSLIB'
+//SYSUT1   DD   *
+         TITLE 'CNV: CICS/TS V5.1 ASCII/EBCDIC CONVERSION TABLE'
+*
+         DFHCNV TYPE=INITIAL
+*
+         DFHCNV TYPE=ENTRY,                                            *
+               CLINTCP=8859-1,                                         *
+               RNAME=DFHWBHH,                                          *
+               RTYPE=PC,                                               *
+               SRVERCP=037,                                            *
+               USREXIT=NO
+         DFHCNV TYPE=SELECT,OPTION=DEFAULT
+         DFHCNV TYPE=FIELD,OFFSET=0,DATATYP=CHARACTER,DATALEN=32767,   *
+               LAST=YES
+*
+         DFHCNV TYPE=ENTRY,                                            *
+               CLINTCP=8859-1,                                         *
+               RNAME=DFHWBUD,                                          *
+               RTYPE=PC,                                               *
+               SRVERCP=037,                                            *
+               USREXIT=NO
+*              CLINTCP=932,     WAS 437
+*              SRVERCP=931,     UAS USR
+         DFHCNV TYPE=SELECT,OPTION=DEFAULT
+         DFHCNV TYPE=FIELD,OFFSET=0,DATATYP=CHARACTER,DATALEN=32767,   *
+               LAST=YES
+*
+         DFHCNV TYPE=ENTRY,RTYPE=PC,RNAME=EYUENU1,USREXIT=NO,          *
+               CLINTCP=8859-1,SRVERCP=037
+         DFHCNV TYPE=SELECT,OPTION=DEFAULT
+         DFHCNV TYPE=FIELD,OFFSET=0,DATATYP=CHARACTER,DATALEN=32767,   *
+               LAST=YES
+*
+         DFHCNV TYPE=FINAL
+*
+         END   DFHCNVBA
+/*
+//
+

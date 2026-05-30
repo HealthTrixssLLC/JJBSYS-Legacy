@@ -1,0 +1,728 @@
+*ASM XOPTS(NOPROLOG NOEPILOG SP)                                        00010002
+IEW900   TITLE '** CICS/TS IEI Web Signon Program **'                   00020002
+*********************************************************************** 00030002
+*                                                                     * 00040002
+* MODULE NAME = IEW900                                                * 00050002
+*                                                                     * 00060002
+* DESCRIPTIVE NAME = CICS/TS Web Interface IEI Signon Program         * 00070002
+*                                                                     * 00080002
+* STATUS = 5.3.0                                                      * 00090002
+*                                                                     * 00100002
+* FUNCTION = Validate a userid/password pair.                         * 00110002
+*                                                                     * 00120002
+*---------------------------------------------------------------------* 00130002
+*                                                                     * 00140002
+* ENTRY POINT = IEW900                                                * 00150002
+*                                                                     * 00160002
+*     PURPOSE = IEI Web Interface signon program                      * 00170002
+*                                                                     * 00180002
+*     LINKAGE =                                                       * 00190002
+*         This entry point is called by the CICS Web Business Logic   * 00200002
+*         Interface program DFHWBBLI via EXEC CICS LINK.              * 00210002
+*                                                                     * 00220002
+*     INPUT =                                                         * 00230002
+*         Input information is passed in the commarea.                * 00240002
+*         The first 256 bytes contain parameters for communication    * 00250002
+*         with the Converter program IEW101.                          * 00260002
+*         The remainder of the commarea contains HTTP information     * 00270002
+*         received from the Web client.                               * 00280002
+*                                                                     * 00290002
+*         Input parameter:                                            * 00300002
+*           INTOKEN - the eight-character token representing the      * 00310002
+*                     current conversation in the state manager.      * 00320002
+*                                                                     * 00330002
+*     OUTPUT =                                                        * 00340002
+*         Output information is returned in the COMMAREA received     * 00350002
+*         as input.  The first 256 bytes contain parameters for       * 00360002
+*         communication with IEW101. The remainder is HTTP            * 00370002
+*         information to be returned to the client.                   * 00380002
+*                                                                     * 00390002
+*         Output parameter:                                           * 00400002
+*           OUTUSER - the userid supplied by the client and           * 00410002
+*                     authenticated by this program.                  * 00420002
+*                                                                     * 00430002
+*     EXIT-NORMAL = Exit is via a DFHEIRET macro.                     * 00440002
+*                                                                     * 00450002
+*********************************************************************** 00460002
+         LCLC  &ALTNAME                                                 00470002
+&ALTNAME SETC  'IEIWBSN'            Alternate Program Name for IEW900   00480002
+*                                                                       00490002
+IEW900   RSECT ,                                                        00500002
+IEW900   RMODE ANY                                                      00510002
+IEW900   AMODE 31                                                       00520002
+*                                                                       00530002
+         DFHREGS ,                                                      00540002
+*                                                                       00550002
+         DFHEIENT DATAREG=13,                                          *00560002
+               CODEREG=12,                                             *00570002
+               EIBREG=11                                                00580002
+         B     INT00                                                    00590002
+         DS    0H                                                       00600002
+         DC    CL8'IEW900'              DUMP PROGRAM ID                 00610002
+         DC    CL1' '                                                   00620002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00630002
+         DC    CL1' '                                                   00640002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00650002
+         DC    CL1' '                                                   00660002
+INT00    DS    0H                                                       00670002
+         L     R10,DFHEICAP       Load COMMAREA address                 00680002
+         USING OUTCOMMA,R10       Address commarea output fields        00690002
+         LA    R0,HTTPHDRS        Address start of HTTP headers         00700002
+         ST    R0,RECDPTR         This is the first logical record      00710002
+         XC    RECDLEN,RECDLEN    Initialize its length to zero         00720002
+*---------------------------------------------------------------------- 00730002
+*  Read through the logical records in the HTTP header until            00740002
+*  a "Content-length" record is found (case-insensitive), which         00750002
+*  indicates the presence of forms data with METHOD=POST.               00760002
+*---------------------------------------------------------------------- 00770002
+READHDRS DS    0H                 Read through the headers              00780002
+         BAL   R14,GETRECD        Read a logical record                 00790002
+         BZ    NOFORMS            If end-of-file, no forms data         00800002
+         CH    R0,=Y(16)          Is record at least 16 characters?     00810002
+         BL    READHDRS           No, read the next                     00820002
+         MVC   KEYWORD,0(R1)      Copy first 16 characters              00830002
+         OC    KEYWORD,BLANKS     Uppercase the keyword                 00840002
+         CLC   KEYWORD,=CL16'CONTENT-LENGTH:'  Is it content length?    00850002
+         BNE   READHDRS           No, read the next                     00860002
+*                                 "Content-length" was found.           00870002
+*                                 Calculate its value.                  00880002
+         SH    R0,=Y(16)          Count characters left in record       00890002
+         LA    R1,16(,R1)         Address first of them                 00900002
+         SR    R15,R15            Zero accumulator                      00910002
+GETCLEN  DS    0H                 Get content length value              00920002
+         CLI   0(R1),C'0'         Is character numeric?                 00930002
+         BL    GCL002             No, skip over it                      00940002
+         IC    R14,0(,R1)         Yes, insert in register               00950002
+         N     R14,=X'0000000F'   Isolate numeric value                 00960002
+         MH    R15,=H'10'         Multiply accumulator by 10            00970002
+         AR    R15,R14            Add into accumulator                  00980002
+GCL002   LA    R1,1(,R1)          Point to next character               00990002
+         BCT   R0,GETCLEN         Count through remaining characters    01000002
+         STH   R15,CONTLEN        Save Content-length value             01010002
+*---------------------------------------------------------------------- 01020002
+*  Continue reading until a null record is found, which delimits        01030002
+*  HTTP headers and is followed by the forms data itself                01040002
+*  (namely, the query string).                                          01050002
+*---------------------------------------------------------------------- 01060002
+READEOD  DS    0H                 Read through to end-of-file           01070002
+         BAL   R14,GETRECD        Read a logical record                 01080002
+         BNZ   READEOD            If not a null record, repeat          01090002
+         SR    R0,R0              Zero insert register                  01100002
+         ICM   R0,3,CONTLEN       Is content length zero?               01110002
+         BZ    NOFORMS            Yes, no forms data                    01120002
+         LA    R1,2(,R1)          Step over CRLF to query string        01130002
+         BAL   R14,INITSCAN       Initialize the scan pointers          01140002
+*                                 Search the query string for the       01150002
+*                                 requested function.                   01160002
+         LA    R1,FUNCTION_KEY    Search for function keyword           01170002
+         BAL   R14,GETFIELD       Extract the function name             01180002
+         LA    R14,FUNCTION       Point to receiving field              01190002
+         MVCL  R14,R0             Copy the function name                01200002
+         L     R4,=A(RECTIFY)     Get address of translate table        01210002
+         CLC   FUNCTION,=CL8'signon'  Is it a SIGNON request?           01220002
+         BE    SIGNON                 Yes, go validate password         01230002
+         CLC   FUNCTION,=CL8'newpass' Is it a NEW PASSWORD request?     01240002
+         BE    NEWPASS                Yes, go change password           01250002
+*                                 An unrecognizable query string has    01260002
+*                                 been detected.                        01270002
+*                                 Display it for diagnostic purposes.   01280002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              01290002
+         MVC   OUTRC,=C'500 IE'   Set "Implementation error" response   01300002
+         LA    R14,OUTHTML        Address commarea HTML area            01310002
+         LM    R15,R1,=A(FAIL_S,FAIL_P,FAIL_S) Address short message    01320002
+         MVCL  R14,R0             Copy the short error message          01330002
+         MVC   OUTHTML+FAIL_S(16),=C'<p>Query string='                  01340002
+         LM    R0,R1,RECDPTR      Address & length of query string      01350002
+         LA    R14,OUTHTML+FAIL_S+16 Address of output                  01360002
+         LR    R15,R1             Output length = input length          01370002
+         MVCL  R14,R0             Copy the query string                 01380002
+         MVC   0(14,R14),=C'</body></html>'  Terminate the HTML         01390002
+         LA    R14,14(,R14)       Address end of text                   01400002
+         LA    R0,OUTLEN          Address start of text                 01410002
+         SR    R14,R0             Calculate length of text              01420002
+         ST    R14,OUTLEN         Save length at start of commarea      01430002
+         B     EXIT               Get out to issue message              01440002
+*---------------------------------------------------------------------- 01450002
+*  If no forms data was present in the HTTP headers, the user           01460002
+*  has to be prompted for userid/password information by displaying     01470002
+*  the signon panel.                                                    01480002
+*---------------------------------------------------------------------- 01490002
+NOFORMS  DS    0H                                                       01500002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              01510002
+         LA    R14,OUTHTML        Address commarea HTML area            01520002
+         LM    R15,R1,=A(INIT_L,INIT_P,INIT_L) Address initial panel    01530002
+         MVCL  R14,R0             Copy the signon panel HTML            01540002
+         MVC   INIT_T-INIT_P+OUTHTML,INTOKEN Refresh connect token      01550002
+         LA    R0,OUTLEN          Address start of text                 01560002
+         SR    R14,R0             Total length of data                  01570002
+         ST    R14,OUTLEN         Save at start of commarea             01580002
+         B     EXIT               Exit                                  01590002
+*---------------------------------------------------------------------- 01600002
+*  The user had been prompted for a signon, and he has just responded   01610002
+*  with his userid and password.                                        01620002
+*---------------------------------------------------------------------- 01630002
+SIGNON   DS    0H                                                       01640002
+         LA    R1,USERID_KEY      Search for userid keyword             01650002
+         BAL   R14,GETFIELD       Extract the userid                    01660002
+         LA    R14,USERID         Point to receiving field              01670002
+         MVCL  R14,R0             Copy the userid                       01680002
+         TR    USERID,0(R4)       Uppercase the userid                  01690002
+         LA    R1,PASSWORD_KEY    Search for password keyword           01700002
+         BAL   R14,GETFIELD       Extract the password                  01710002
+         LA    R14,PASSWORD       Point to receiving field              01720002
+         MVCL  R14,R0             Copy the password                     01730002
+         TR    PASSWORD,0(R4)     Uppercase the password                01740002
+         EXEC  CICS,                                                   *01750002
+               VERIFY,                                                 *01760002
+               PASSWORD(PASSWORD),                                     *01770002
+               USERID(USERID),                                         *01780002
+               NOHANDLE                                                 01790002
+         MVC   PASSWORD,BLANKS    Blank password as soon as possible    01800002
+         ICM   R15,15,EIBRESP     Load and test response                01810002
+         BZ    SUCCESS            Successful                            01820002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              01830002
+         LA    R14,OUTHTML        Address commarea HTML area            01840002
+         LM    R15,R1,=A(RETRY_L,RETRY_P,RETRY_L) Address retry panel   01850002
+         MVCL  R14,R0             Copy the signon panel HTML            01860002
+         LA    R0,OUTLEN          Address start of text                 01870002
+         SR    R14,R0             Total length of data                  01880002
+         ST    R14,OUTLEN         Save at start of commarea             01890002
+         CLC   EIBRESP,DFHRESP(NOTAUTH) Is is a NOTAUTH response?       01900002
+         BNE   CHKINVR            No, check for invalid request         01910002
+         CLC   EIBRESP2,=A(2)     Invalid password supplied?            01920002
+         BE    RETRY              Yes, try again                        01930002
+         CLC   EIBRESP2,=A(3)     Expired password supplied?            01940002
+         BE    EXPIRED            Yes, ask for a new one                01950002
+         CLC   EIBRESP2,=A(19)    Userid is revoked?                    01960002
+         BE    REVOKED            Yes, say userid is bad                01970002
+         B     FAILURE            No, unexpected error                  01980002
+CHKINVR  DS    0H                 Invalid request diagnosed?            01990002
+         CLC   EIBRESP,DFHRESP(INVREQ) Is is an INVREQ response?        02000002
+         BNE   CHKUSER            No, check for USERIDERR               02010002
+         CLC   EIBRESP2,=A(32)    Userid has imbedded blanks, etc       02020002
+         BE    INVUSER            Yes, say userid is bad                02030002
+         B     FAILURE            No, unexpected error                  02040002
+CHKUSER  DS    0H                 Check for invalid userid              02050002
+         CLC   EIBRESP,DFHRESP(USERIDERR) Is it a USERIDERR response?   02060002
+         BNE   FAILURE            No, unexpected error                  02070002
+REVOKED  DS    0H                 Userid exists, but is revoked         02080002
+INVUSER  DS    0H                 The userid has syntax error           02090002
+         MVC   RETRY_M-RETRY_P+OUTHTML(L'USNOGOOD),USNOGOOD             02100002
+*                                 Output an explanatory message         02110002
+         MVC   RETRY_M+25-RETRY_P+OUTHTML(8),USERID Add userid          02120002
+         MVC   USERID,BLANKS      Blank out the invalid userid          02130002
+*---------------------------------------------------------------------- 02140002
+*  Invalid signon data was entered.  Ask the user to re-enter it.       02150002
+*---------------------------------------------------------------------- 02160002
+RETRY    DS    0H                                                       02170002
+         MVC   RETRY_U-RETRY_P+OUTHTML,USERID  Refresh userid           02180002
+         MVC   RETRY_T-RETRY_P+OUTHTML,INTOKEN Refresh connect token    02190002
+         B     EXIT               Exit                                  02200002
+*---------------------------------------------------------------------- 02210002
+*  The password entered has expired.  Ask the user for a new one.       02220002
+*---------------------------------------------------------------------- 02230002
+EXPIRED  DS    0H                 Password is expired                   02240002
+         BAL   R2,REQNEWPW        Set up new password panel             02250002
+         MVC   0(L'PWEXPIRE,R1),PWEXPIRE Add expired password message   02260002
+         B     EXIT               Exit                                  02270002
+*---------------------------------------------------------------------- 02280002
+*  In a previous signon request, the user's password was found          02290002
+*  to be expired, and he has just replied with a pair of new ones.      02300002
+*---------------------------------------------------------------------- 02310002
+NEWPASS  DS    0H                                                       02320002
+         LA    R1,USERID_KEY      Search for userid keyword             02330002
+         BAL   R14,GETFIELD       Extract the userid                    02340002
+         LA    R14,USERID         Point to receiving field              02350002
+         MVCL  R14,R0             Copy the userid                       02360002
+         TR    USERID,0(R4)       Uppercase the userid                  02370002
+         LA    R1,PASSWORD_KEY    Search for password keyword           02380002
+         BAL   R14,GETFIELD       Extract the password                  02390002
+         LA    R14,PASSWORD       Point to receiving field              02400002
+         MVCL  R14,R0             Copy the password                     02410002
+         TR    PASSWORD,0(R4)     Uppercase the password                02420002
+         LA    R1,NEWPASS1_KEY    Search for new-password-1 keyword     02430002
+         BAL   R14,GETFIELD       Extract the new-password-1            02440002
+         LA    R14,NEWPASS1       Point to receiving field              02450002
+         MVCL  R14,R0             Copy the new-password-1               02460002
+         TR    NEWPASS1,0(R4)     Uppercase the new-password-1          02470002
+         LA    R1,NEWPASS2_KEY    Search for new-password-2 keyword     02480002
+         BAL   R14,GETFIELD       Extract the new-password-2            02490002
+         LA    R14,NEWPASS2       Point to receiving field              02500002
+         MVCL  R14,R0             Copy the new-password-2               02510002
+         TR    NEWPASS2,0(R4)     Uppercase the new-password-2          02520002
+         CLC   NEWPASS2,NEWPASS1  Are both new passwords the same       02530002
+         BE    CHANGEPW           Yes, go change password               02540002
+         MVC   PASSWORD,BLANKS    Blank current password                02550002
+         MVC   NEWPASS1(16),BLANKS Blank both new passwords             02560002
+         BAL   R2,REQNEWPW        Set up new password panel             02570002
+         MVC   0(L'PWNMATCH,R1),PWNMATCH Add match failed message       02580002
+         B     EXIT               Exit                                  02590002
+*---------------------------------------------------------------------- 02600002
+*  Change the user's password                                           02610002
+*---------------------------------------------------------------------- 02620002
+CHANGEPW DS    0H                 Change the password                   02630002
+         EXEC  CICS,                                                   *02640002
+               CHANGE,                                                 *02650002
+               PASSWORD(PASSWORD),                                     *02660002
+               NEWPASSWORD(NEWPASS1),                                  *02670002
+               USERID(USERID),                                         *02680002
+               NOHANDLE                                                 02690002
+         MVC   PASSWORD,BLANKS    Blank current password                02700002
+         MVC   NEWPASS1(16),BLANKS Blank both new passwords             02710002
+         ICM   R15,15,EIBRESP     Load and test response                02720002
+         BZ    SUCCESS            Yes, acknowledge success              02730002
+         CLC   EIBRESP,DFHRESP(NOTAUTH)  Is it a NOTAUTH response       02740002
+         BNE   CHKUSER            No, check for invalid userid          02750002
+         CLC   EIBRESP2,=A(2)     Old password is invalid?              02760002
+         BE    REQPRVPW           Yes, how did this happen              02770002
+         CLC   EIBRESP2,=A(4)     New password is invalid?              02780002
+         BNE   FAILURE            No, something worse                   02790002
+         BAL   R2,REQNEWPW        Set up new password panel again       02800002
+         MVC   0(L'PWNOGOOD,R1),PWNOGOOD Add password quality message   02810002
+         B     EXIT               Exit                                  02820002
+REQPRVPW DS    0H                 Request previous password             02830002
+         BAL   R2,REQNEWPW        Set up new password panel aga         02840002
+         MVC   0(L'PWPRVBAD,R1),PWPRVBAD Add password quality m         02850002
+         B     EXIT               Exit                                  02860002
+REQNEWPW DS    0H                 Request new password                  02870002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              02880002
+         LA    R14,OUTHTML        Address commarea HTML area            02890002
+         LM    R15,R1,=A(NEWPS_L,NEWPS_P,NEWPS_L) Address newpswd panel 02900002
+         MVCL  R14,R0             Copy the signon panel HTML            02910002
+         MVC   NEWPS_U-NEWPS_P+OUTHTML,USERID  Refresh userid           02920002
+         MVC   NEWPS_T-NEWPS_P+OUTHTML,INTOKEN Refresh connect token    02930002
+         LA    R0,OUTLEN          Address start of text                 02940002
+         SR    R14,R0             Total length of data                  02950002
+         ST    R14,OUTLEN         Save at start of commarea             02960002
+         LA    R1,NEWPS_M-NEWPS_P+OUTHTML Address variable message area 02970002
+         BR    R2                 Return                                02980002
+*---------------------------------------------------------------------- 02990002
+*  A failure has occurred in a CICS API function.                       03000002
+*  Output a failure panel showing CICS API diagnostics.                 03010002
+*---------------------------------------------------------------------- 03020002
+FAILURE  DS    0H                                                       03030002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              03040002
+         MVC   OUTRC,=C'500 IE'   Set "Implementation error" response   03050002
+         LA    R14,OUTHTML        Address commarea HTML area            03060002
+         LM    R15,R1,=A(FAIL_L,FAIL_P,FAIL_L) Address failure panel    03070002
+         MVCL  R14,R0             Copy the failure panel HTML           03080002
+         LA    R0,OUTLEN          Address start of text                 03090002
+         SR    R14,R0             Total length of data                  03100002
+         ST    R14,OUTLEN         Save at start of commarea             03110002
+         UNPK  WORKAREA(5),EIBFN(3) Spread hex digits                   03120002
+         TR    WORKAREA(4),HEXCONV  Translate to printable form         03130002
+         MVC   FAILFN-FAIL_P+OUTHTML,WORKAREA  Copy translated EIBFN    03140002
+         L     R15,EIBRESP        Get command response                  03150002
+         CVD   R15,WORKAREA       Convert to decimal                    03160002
+         OI    WORKAREA+7,X'0F'   Correct decimal sign                  03170002
+         UNPK  FAILRESP-FAIL_P+OUTHTML,WORKAREA Unpack decimal value    03180002
+         L     R0,EIBRESP2        Get command subresponse               03190002
+         CVD   R0,WORKAREA        Convert to decimal                    03200002
+         OI    WORKAREA+7,X'0F'   Correct decimal sign                  03210002
+         UNPK  FAILRSP2-FAIL_P+OUTHTML,WORKAREA Unpack decimal value    03220002
+         B     EXIT               Exit                                  03230002
+*---------------------------------------------------------------------- 03240002
+*  The signon process has been successful.                              03250002
+*  Display a panel indicating this.                                     03260002
+*---------------------------------------------------------------------- 03270002
+SUCCESS  DS    0H                 Userid successfully validated         03280002
+         MVC   OUTUSER,USERID     Send validated userid back            03290002
+         MVC   OUTHTTP,HTTPRESP   Initialize HTTP response              03300002
+         LA    R14,OUTHTML        Address commarea HTML area            03310002
+         LM    R15,R1,=A(FINAL_L,FINAL_P,FINAL_L) Address final panel   03320002
+         MVCL  R14,R0             Copy the final panel HTML             03330002
+         LA    R0,OUTLEN          Address start of text                 03340002
+         SR    R14,R0             Total length of data                  03350002
+         ST    R14,OUTLEN         Save at start of commarea             03360002
+EXIT     DS    0H                 Exit                                  03370002
+         DFHEIRET ,               Return                                03380002
+         DROP  R10                                                      03390002
+*---------------------------------------------------------------------- 03400002
+*  Set up scan pointers for efficient scanning of the query string.     03410002
+*                                                                       03420002
+*  Input: R1 = address of query string                                  03430002
+*         R0 = length of query string                                   03440002
+*---------------------------------------------------------------------- 03450002
+INITSCAN DS    0H                 Initialize scan pointers              03460002
+         MVI   KEYWORD,C' '       Put blank into keyword                03470002
+         MVC   KEYWORD+1(BLANKLEN-1),KEYWORD  Blank out all receivers   03480002
+         ST    R1,RECDPTR         Save address as record pointer        03490002
+         ST    R0,RECDLEN         Save length as record length          03500002
+         LR    R5,R1              Scan pointer to start of string       03510002
+         LA    R6,1               Set increment for BXH scans           03520002
+         LR    R7,R0              Copy length of string                 03530002
+         AR    R7,R5              Add starting address                  03540002
+         BCTR  R7,0               Point to last character in string     03550002
+         STM   R5,R7,KEYWPTRS     Save scan register values             03560002
+         BR    R14                Return                                03570002
+*---------------------------------------------------------------------- 03580002
+*  Search the query string for a specific keyword.                      03590002
+*                                                                       03600002
+*  The keyword list is in the form                                      03610002
+*  keyword1=value1&keyword2=value2& ... &keywordn=valuen                03620002
+*                                                                       03630002
+*  See http://www.w3.org/hypertext/WWW/Protocols/HTTP/Request.html      03640002
+*                                                                       03650002
+*  The search is case sensitive. The keywords should be just as         03660002
+*  generated from the forms data, so they should not have been          03670002
+*  uppercased.                                                          03680002
+*                                                                       03690002
+*  Input:  R1 points to the following structure:                        03700002
+*             AL1 - maximum length of operand                           03710002
+*             AL1 - actual length of keyword                            03720002
+*             CLn - keyword sought, including delimiting equals sign    03730002
+*                                                                       03740002
+*  Output: R0  - points to the operand found, or zero if not found      03750002
+*          R1  - contains length of operand found in the low-order      03760002
+*                three bytes, and a blank pad character in the          03770002
+*                high-order byte                                        03780002
+*          R15 - Contains the maximum field length                      03790002
+*                                                                       03800002
+* (These values are intended for use in a subsequent MVCL instruction)  03810002
+*---------------------------------------------------------------------- 03820002
+GETFIELD DS    0H                                                       03830002
+         MVC   FIELDLEN,MAXFLEN(R1)  Save maximum field length          03840002
+         SR    R15,R15            Zero the insert register              03850002
+         IC    R15,KEYLEN(,R1)    Insert required length of keyword     03860002
+         MVC   KEYWORD,BLANKS     Blank out keyword name                03870002
+         EX    R15,COPYKEYW       Copy keyword and length               03880002
+         BCTR  R15,0              Decrement for later EXECUTEd compare  03890002
+         SR    R0,R0              Zero address of operand found         03900002
+         SR    R1,R1              Zero its length                       03910002
+         LM    R5,R7,KEYWPTRS     Load BXH scan registers               03920002
+         B     GF002              Go check first keyword                03930002
+GF001    BXH   R5,R6,NOTFOUND     Bump scan pointer                     03940002
+         CLI   0(R5),C'&&'        Found delimiting ampersand?           03950002
+         BNE   GF001              No, loop further                      03960002
+         BXH   R5,R6,NOTFOUND     Bump over ampersand                   03970002
+GF002    EX    R15,CHKYWORD       Is this requested keyword?            03980002
+         BNE   GF001              No, scan to next ampersand            03990002
+         LA    R5,0(R15,R5)       Yes, set scan to end of keyword       04000002
+         LA    R0,1(,R5)          Point to keyword operand              04010002
+*                                                                       04020002
+* Scan forward to find length of keyword operand.                       04030002
+* Scan until next ampersand or the end of the query string.             04040002
+*                                                                       04050002
+GF003    BXH   R5,R6,GF004        Step scan register                    04060002
+         CLI   0(R5),C'&&'        Is it the terminating ampersand?      04070002
+         BNE   GF003              No, scan further                      04080002
+GF004    LR    R1,R5              Save address reached in scan          04090002
+         SR    R1,R0              Calculate operand length              04100002
+NOTFOUND ICM   R1,8,BLANKS        Insert a padding character            04110002
+         IC    R15,FIELDLEN       Load maximum receiver length          04120002
+         BR    R14                Return                                04130002
+*---------------------------------------------------------------------- 04140002
+*  Read the next logical record in the HTTP header.                     04150002
+*  Each logical record is delimited by a CRLF pair of characters.       04160002
+*  Its address is returned in R1 and its length in R0.                  04170002
+*  The condition code is set to zero if the record length is            04180002
+*  zero, implying a null record that delimits the header string.        04190002
+*---------------------------------------------------------------------- 04200002
+GETRECD  DS    0H                                                       04210002
+         L     R5,RECDPTR         Address previous logical record       04220002
+         A     R5,RECDLEN         Add previous record length            04230002
+         ST    R5,RECDPTR         Save as current logical record        04240002
+GR001    DS    0H                                                       04250002
+         LH    R6,EIBCALEN        Get total commarea length             04260002
+         LA    R6,0(R6,R10)       Point to end of commarea              04270002
+         SR    R6,R5              Calculate length left                 04280002
+         LA    R0,256             Set maximum TRT length                04290002
+         CR    R6,R0              Is length left greater than max?      04300002
+         BNH   GR002              No, use actual length left            04310002
+         LR    R6,R0              Yes, substitute maximum length        04320002
+GR002    DS    0H                                                       04330002
+         LA    R1,0(R6,R5)        Point to end of translate range       04340002
+         BCTR  R6,0               Decrement for EXECUTE                 04350002
+         L     R4,=A(DELIMITR)    Address delimiter translate table     04360002
+         EX    R6,SRCHEOR         Search for end-of-record (CRLF)       04370002
+         BZ    GR003              If not found, search next section     04380002
+         CLC   0(2,R1),=AL2(CRLF) Confirm it is a CRLF pair             04390002
+         BE    GR004              Yes, end of logical record            04400002
+         LA    R5,1(,R1)          No, step over solo CR character       04410002
+         B     GR001              Continue scan                         04420002
+GR003    DS    0H                                                       04430002
+         LR    R5,R1              Step over record segment              04440002
+         B     GR001              Continue scan                         04450002
+GR004    DS    0H                                                       04460002
+         LA    R6,2(,R1)          Address end of record                 04470002
+         S     R6,RECDPTR         Subtract start of record              04480002
+         ST    R6,RECDLEN         Save logical record length            04490002
+         LR    R1,R5              Copy actual record address            04500002
+         LR    R0,R6              Copy actual record length             04510002
+         SH    R0,=H'2'           Subtract len of CRLF and set CC       04520002
+         BR    R14                Return                                04530002
+*                                                                       04540002
+*  Instructions executed remotely with an EXECUTE instruction           04550002
+*                                                                       04560002
+COPYKEYW MVC   KEYWORDL(0),KEYLEN(R1) Copy keyword length and name      04570002
+CHKYWORD CLC   0(0,R5),KEYWORD    Compare to keyword sought             04580002
+TRANASCI TR    0(0,R5),0(R4)      Translate to EBCDIC                   04590002
+SRCHEOR  TRT   0(0,R5),0(R4)      Search for CRLF delimiter             04600002
+*                                                                       04610002
+*  Possible keywords in forms data                                      04620002
+*                                                                       04630002
+FUNCTION_KEY DC AL1(L'FUNCTION),AL1(9),C'function='                     04640002
+USERID_KEY   DC AL1(L'USERID),AL1(7),C'userid='                         04650002
+PASSWORD_KEY DC AL1(L'PASSWORD),AL1(9),C'password='                     04660002
+NEWPASS1_KEY DC AL1(L'NEWPASS1),AL1(9),C'newpass1='                     04670002
+NEWPASS2_KEY DC AL1(L'NEWPASS2),AL1(9),C'newpass2='                     04680002
+*                                                                       04690002
+MAXFLEN  EQU   0                  Offset to maximum field length        04700002
+KEYLEN   EQU   1                  Offset to actual keyword length       04710002
+KEYNAME  EQU   2                  Offset to keyword name                04720002
+*                                                                       04730002
+*  Literals and miscellaneous constants                                 04740002
+*                                                                       04750002
+         LTORG ,                  Literals                              04760002
+         DC    0D'0'              Align following to double-word        04770002
+BLANKS   DC    CL16' '            Used for blanking fields              04780002
+HEXCONV  EQU   *-C'0'             Partial translate table for bin/hex   04790002
+         DC    C'0123456789ABCDEF' Hexadecimal digits                   04800002
+PWEXPIRE DC    C'Your password has expired.'                            04810002
+PWNOGOOD DC    C'The new password you provided is not permitted.'       04820002
+PWPRVBAD DC    C'The previous password is incorrect.'                   04830002
+PWNMATCH DC    C'The two new passwords you provided do not match.'      04840002
+USNOGOOD DC    C'The userid you provided (********) is not usable.'     04850002
+*                                                                       04860002
+*  HTTP response header                                                 04870002
+*                                                                       04880002
+HTTPRESP DC    CL9'HTTP/1.0'      Protocol level 1.0                    04890002
+         DC    C'200 OK'          Response code                         04900002
+         DC    AL2(CRLF)                                                04910002
+         DC    C'Content-Type: text/html'                               04920002
+         DC    AL2(CRLF,CRLF)     End of header section                 04930002
+         DC    C'<!doctype html public "-//IETF//DTD HTML 2.0//EN">'    04940002
+         DC    AL2(CRLF)                                                04950002
+HTTP_LEN EQU   *-HTTPRESP                                               04960002
+*                                                                       04970002
+*  Initial signon panel                                                 04980002
+*                                                                       04990002
+INIT_P   DC    C'<html><head>'                                          05000002
+         DC    C'<title>'                                               05010002
+         DC    C'IEI CICS Signon'                                       05020002
+         DC    C'</title></head>'                                       05030002
+         DC    AL2(CRLF)                                                05040002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05050002
+         DC    C'<p><div align="center">'                               05060002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05070002
+         DC    C'<h2>'                                                  05080002
+         DC    C'IEI CICS Signon'                                       05090002
+         DC    C'</h2></div></p><hr>',AL2(CRLF)                         05100002
+         DC    C'<form action="&ALTNAME.?'                              05110002
+INIT_T   DC    CL8' ',C'" method="POST">',AL2(CRLF)                     05120002
+         DC    C'<input type="hidden" name="function" value="signon">'  05130002
+         DC    AL2(CRLF),C'<center><p>'                                 05140002
+         DC    C'Please type your userid and password, then'            05150002
+         DC    C' select the Signon button.'                            05160002
+         DC    AL2(CRLF),C'<p>'                                         05170002
+         DC    C'Userid '                                               05180002
+         DC    C'<input type="text" name="userid" size="8" value="">'   05190002
+         DC    AL2(CRLF),C'Password '                                   05200002
+         DC    C'<input type="password"'                                05210002
+         DC    C' name="password" size="8" value="">'                   05220002
+         DC    AL2(CRLF),C'<p>'                                         05230002
+         DC    C'<input type="submit" name="submit" value="Signon">'    05240002
+         DC    AL2(CRLF)                                                05250002
+         DC    C'<input type="reset"></center>'                         05260002
+         DC    AL2(CRLF)                                                05270002
+         DC    C'</body></html>'                                        05280002
+INIT_L   EQU   *-INIT_P                                                 05290002
+*                                                                       05300002
+*  Successful signon panel                                              05310002
+*  (Note that this panel may be overlaid by IEW101.)                    05320002
+*                                                                       05330002
+FINAL_P  DC    C'<html><head>'                                          05340002
+         DC    C'<title>'                                               05350002
+         DC    C'IEI CICS Signon Successful'                            05360002
+         DC    C'</title></head>'                                       05370002
+         DC    AL2(CRLF)                                                05380002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05390002
+         DC    C'<p><div align="center">'                               05400002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05410002
+         DC    C'<h2>'                                                  05420002
+         DC    C'IEI CICS Signon Successful'                            05430002
+         DC    C'</h2></div></p><hr>',AL2(CRLF)                         05440002
+         DC    C'<center><p>Signon to IEI CICS Successful'              05450002
+         DC    AL2(CRLF),C'</center></body></html>'                     05460002
+FINAL_L  EQU   *-FINAL_P                                                05470002
+*                                                                       05480002
+*  Retry panel                                                          05490002
+*                                                                       05500002
+RETRY_P  DC    C'<html><head>'                                          05510002
+         DC    C'<title>'                                               05520002
+         DC    C'IEI CICS Signon Unsuccessful'                          05530002
+         DC    C'</title></head>'                                       05540002
+         DC    AL2(CRLF)                                                05550002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05560002
+         DC    C'<p><div align="center">'                               05570002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05580002
+         DC    C'<h2>'                                                  05590002
+         DC    C'IEI CICS Signon Unsuccessful'                          05600002
+         DC    C'</h2></div></p><hr>',AL2(CRLF)                         05610002
+         DC    C'<form action="&ALTNAME.?'                              05620002
+RETRY_T  DC    CL8' ',C'" method="POST">',AL2(CRLF)                     05630002
+         DC    C'<input type="hidden" name="function" value="signon">'  05640002
+         DC    AL2(CRLF),C'<center><p>'                                 05650002
+         DC    C'Your signon attempt failed.'                           05660002
+         DC    AL2(CRLF),C'<p>'                                         05670002
+RETRY_M  DC    CL(L'USNOGOOD)' '      Space for a variable message      05680002
+         DC    AL2(CRLF),C'<p>'                                         05690002
+         DC    C'Please type your userid and password again,'           05700002
+         DC    C' then select the Retry button.'                        05710002
+         DC    AL2(CRLF),C'<p>Userid '                                  05720002
+         DC    C'<input type="text" name="userid" value="'              05730002
+RETRY_U  DC    CL8' '                                                   05740002
+         DC    C'" size="8">'                                           05750002
+         DC    AL2(CRLF)                                                05760002
+         DC    C'Password <input type="password"'                       05770002
+         DC    C' name="password" value="" size="8">'                   05780002
+         DC    AL2(CRLF),C'<p>'                                         05790002
+         DC    C'<input type="submit" name="submit" value="Retry">'     05800002
+         DC    AL2(CRLF)                                                05810002
+         DC    C'<input type="reset">'                                  05820002
+         DC    C'</p></center></body></html>'                           05830002
+RETRY_L  EQU   *-RETRY_P                                                05840002
+*                                                                       05850002
+*  New password panel                                                   05860002
+*                                                                       05870002
+NEWPS_P  DC    C'<html><head>'                                          05880002
+         DC    C'<title>'                                               05890002
+         DC    C'IEI CICS New Password Required'                        05900002
+         DC    C'</title></head>'                                       05910002
+         DC    AL2(CRLF)                                                05920002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05930002
+         DC    C'<p><div align="center">'                               05940002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05950002
+         DC    C'<h2>'                                                  05960002
+         DC    C'IEI CICS New Password Required'                        05970002
+         DC    C'</h2></div></p><hr>',AL2(CRLF)                         05980002
+         DC    C'<form action="&ALTNAME.?'                              05990002
+NEWPS_T  DC    CL8' ',C'" method="POST">',AL2(CRLF)                     06000002
+         DC    C'<input type="hidden" name="function" value="newpass">' 06010002
+         DC    AL2(CRLF),C'<center><p>'                                 06020002
+NEWPS_M  DC    CL(L'PWNMATCH)' '  Space for a variable message          06030002
+         DC    AL2(CRLF),C'<p>'                                         06040002
+         DC    C'Please type your userid, your previous password,'      06050002
+         DC    C' and two identical versions of your new password,'     06060002
+         DC    AL2(CRLF)                                                06070002
+         DC    C'then select the Retry button.'                         06080002
+         DC    AL2(CRLF),C'<p>Userid '                                  06090002
+         DC    C'<input type="text" name="userid" value="'              06100002
+NEWPS_U  DC    CL8' '                                                   06110002
+         DC    C'" size="8">'                                           06120002
+         DC    AL2(CRLF)                                                06130002
+         DC    C'Previous password <input type="password"'              06140002
+         DC    C' name="password" value="" size="8">'                   06150002
+         DC    AL2(CRLF)                                                06160002
+         DC    C'<p>New passwords '                                     06170002
+         DC    C'<input type="password"'                                06180002
+         DC    C' name="newpass1" value="" size="8">',AL2(CRLF)         06190002
+         DC    C'<input type="password"'                                06200002
+         DC    C' name="newpass2" value="" size="8">',AL2(CRLF)         06210002
+         DC    C'<p>'                                                   06220002
+         DC    C'<input type="submit" name="submit" value="Retry">'     06230002
+         DC    AL2(CRLF)                                                06240002
+         DC    C'<input type="reset">'                                  06250002
+         DC    C'</center></body></html>'                               06260002
+NEWPS_L  EQU   *-NEWPS_P                                                06270002
+*                                                                       06280002
+*  This panel is displayed if an unexpected CICS API error occurs.      06290002
+*                                                                       06300002
+FAIL_P   DC    C'<html><head>'                                          06310002
+         DC    C'<title>'                                               06320002
+         DC    C'IEI CICS Signon Implementation Error'                  06330002
+         DC    C'</title></head>'                                       06340002
+         DC    AL2(CRLF)                                                06350002
+         DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  06360002
+         DC    C'<p><div align="center">'                               06370002
+         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       06380002
+         DC    C'<h2>'                                                  06390002
+         DC    C'IEI CICS Signon Implementation Error'                  06400002
+         DC    C'</h2></div></p><hr>',AL2(CRLF)                         06410002
+         DC    C'An implementation error occurred.',AL2(CRLF)           06420002
+FAIL_S   EQU   *-FAIL_P           Length of short message               06430002
+         DC    C'<p>EIBFN='                                             06440002
+FAILFN   DC    C'xxxx'                                                  06450002
+         DC    C' EIBRESP='                                             06460002
+FAILRESP DC    C'0000'                                                  06470002
+         DC    C' EIBRESP2='                                            06480002
+FAILRSP2 DC    C'0000'                                                  06490002
+         DC    AL2(CRLF)                                                06500002
+         DC    C'</body></html>'                                        06510002
+FAIL_L   EQU   *-FAIL_P                                                 06520002
+*                                                                       06530002
+* The following translate table is used to set any invalid characters   06540002
+* to period ("."), to uppercase any lowercase characters, and to        06550002
+* replace any plus signs ("+") inserted by the browser with the         06560002
+* original blank characters.                                            06570002
+*                                                                       06580002
+RECTIFY  DC    0D'0'              Translate table on dword boundary     06590002
+TT       DC    256C'.'            Initialize to periods                 06600002
+         ORG   TT+C'+'            Plus sign                             06610002
+         DC    C' '               ...translates to blank                06620002
+         ORG   TT+C' '            Blank                                 06630002
+         DC    C' '               ...translates to itself               06640002
+         ORG   TT+C'$'            Currency sign                         06650002
+         DC    C'$'               ...translates to itself               06660002
+         ORG   TT+C'#'            Number sign                           06670002
+         DC    C'#'               ...translates to itself               06680002
+         ORG   TT+C'@'            Commercial at sign                    06690002
+         DC    C'@'               ...translates to itself               06700002
+         ORG   TT+C'a'            Lowercase a-i                         06710002
+         DC    C'ABCDEFGHI'       ...translate to uppercase             06720002
+         ORG   TT+C'j'            Lowercase j-r                         06730002
+         DC    C'JKLMNOPQR'       ...translate to uppercase             06740002
+         ORG   TT+C's'            Lowercase s-z                         06750002
+         DC    C'STUVWXYZ'        ...translate to uppercase             06760002
+         ORG   TT+C'A'            Uppercase A-I                         06770002
+         DC    C'ABCDEFGHI'       ...translate to themselves            06780002
+         ORG   TT+C'J'            Uppercase J-R                         06790002
+         DC    C'JKLMNOPQR'       ...translate to themselves            06800002
+         ORG   TT+C'S'            Uppercase S-Z                         06810002
+         DC    C'STUVWXYZ'        ...translate to themselves            06820002
+         ORG   TT+C'0'            Numerics 0-9                          06830002
+         DC    C'0123456789'      ...translate to themselves            06840002
+         ORG   ,                  To end of table                       06850002
+*                                                                       06860002
+CARRIAGE EQU   X'0D'                                                    06870002
+LINEFEED EQU   X'25'                                                    06880002
+CRLF     EQU   CARRIAGE*256+LINEFEED                                    06890002
+DELIMITR DC    XL256'00'          Translate table for record delimiter  06900002
+         ORG   DELIMITR+CARRIAGE  Carriage return character             06910002
+         DC    AL1(CARRIAGE)      ...translates to itself               06920002
+         ORG   ,                  To end of table                       06930002
+*                                                                       06940002
+*  Mapping DSECT for the commarea used for output                       06950002
+*                                                                       06960002
+OUTCOMMA DSECT ,                  Output commarea                       06970002
+OUTUSER  DS    CL8                Userid to return to IEW101            06980002
+INTOKEN  DS    CL8                Token set by IEW101                   06990002
+         ORG   OUTCOMMA+256       First 256 bytes reserved              07000002
+HTTPHDRS DS    0C                 Start of input HTTP headers           07010002
+OUTLEN   DS    F                  Length of usable commarea             07020002
+OUTHTTP  DS    CL(HTTP_LEN)       Standard HTTP header information      07030002
+         ORG   OUTHTTP+9          Position of HTTP response code        07040002
+OUTRC    DS    CL6                HTTP response code                    07050002
+         ORG   OUTHTTP+HTTP_LEN   Reposition to end of header           07060002
+OUTHTML  DS    C                  Space for constructed HTML            07070002
+*                                                                       07080002
+*  Working storage obtained by DFHEIENT macro.                          07090002
+*                                                                       07100002
+         DFHEISTG ,               Start of CICS-supplied storage        07110002
+KEYWPTRS DS    3A                 BXH registers for keyword scan        07120002
+CONTLEN  DS    H                  Content-length value                  07130002
+FIELDLEN DS    AL1                Length of receiving field             07140002
+KEYWORDL DS    AL1                Length of current keyword             07150002
+KEYWORD  DS    CL16               Space for current keyword sought      07160002
+FUNCTION DS    CL8                Requested function name               07170002
+USERID   DS    CL8                Userid                                07180002
+PASSWORD DS    CL8                Current password                      07190002
+NEWPASS1 DS    CL8                New password 1                        07200002
+NEWPASS2 DS    CL8                New password 2                        07210002
+BLANKLEN EQU   *-KEYWORD          Length to be set to blanks            07220002
+WORKAREA DS    D                  Doubleword workarea                   07230002
+RECDPTR  DS    A                  Pointer to current logical record     07240002
+RECDLEN  DS    F                  Length of current logical record      07250002
+         DFHEIEND ,               End of CICS-supplied working storage  07260002
+         END                                                            07270002
+

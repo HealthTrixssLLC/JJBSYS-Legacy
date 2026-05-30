@@ -1,0 +1,258 @@
+*ASM XOPTS(NOPROLOG NOEPILOG SP)
+*=====================================================================*
+*                                                                     *
+* MODULE NAME = IEW001                                                *
+*                                                                     *
+* DESCRIPTIVE NAME = CICS/ESA Web Interface Analyzer Non-HTTP         *
+*                    User Replaceable Program                         *
+*                                                                     *
+* STATUS = 6.2.0                                                      *
+*                                                                     *
+* FUNCTION = Analyzes the incoming Non-HTTP request to start the      *
+*            required CICS transaction.
+*                                                                     *
+*---------------------------------------------------------------------*
+*                                                                     *
+* ENTRY POINT = IEW001                                                *
+*                                                                     *
+*     PURPOSE = All functions                                         *
+*                                                                     *
+*     LINKAGE =                                                       *
+*         This entry point is called by the CWI Attach processing     *
+*         program DFHWBXN via EXEC CICS LINK.                         *
+*         The parameters are passed to the exit program via the       *
+*         commarea. The control block for the parameter list is in    *
+*         DFHWBTDD.                                                   *
+*                                                                     *
+*     INPUT =                                                         *
+*                                                                     *
+*     OUTPUT =                                                        *
+*                                                                     *
+*     EXIT-NORMAL = Exit is via an EXEC CICS RETURN command.          *
+*         The following return codes may be returned via the          *
+*         commarea:                                                   *
+*            OK                                                       *
+*            EXCEPTION                                                *
+*            INVALID                                                  *
+*            DISASTER                                                 *
+*                                                                     *
+*-------------------------------------------------------------------- *
+*                                                                     *
+*     ROUTINES =                                                      *
+*         EXEC CICS RETURN - return to the calling program.           *
+*                                                                     *
+*     CONTROL BLOCKS =                                                *
+*         The WBI Analyzer parameter list is defined in DFHWBTDD,     *
+*         along with a description of the parameters.                 *
+*                                                                     *
+*-------------------------------------------------------------------- *
+*                                                                     *
+* DESCRIPTION                                                         *
+*                                                                     *
+*        This is an IEI version of the CICS URM Web Analyzer for      *
+*        Non-HTTP Support previously provided by CICS Native Sockets  *
+*        program IET301.                                              *
+*                                                                     *
+*        A parameter list is provided as input to the program. The    *
+*        parameter list is passed to the program via the COMMAREA.    *
+*        The parameter list is defined in DFHWBTDD.                   *
+*        The parameter list is addressed by the program using the     *
+*        normal conventions for a COMMAREA.                           *
+*                                                                     *
+*---------------------------------------------------------------------*
+*    Start of program                                                 *
+*---------------------------------------------------------------------*
+IEW001   RSECT
+IEW001   AMODE 31
+IEW001   RMODE ANY
+         DFHREGS ,
+*
+         DFHEIENT CODEREG=R10,                                         *
+               DATAREG=R13,                                            *
+               EIBREG=R11
+*
+         B     INT01                BRANCH AROUND DUMP ID
+         DS    0H
+         DC    CL8'IEW001'          DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'        ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'        ASSEMBLE TIME
+         DC    CL1' '
+INT01    DS    0H
+*
+         OC    EIBCALEN,EIBCALEN    COMMAREA passed?
+         BZ    XIT99                ..No, Exit
+*
+         L     R3,DFHEICAP          Load COMMAREA @
+         USING WBRA_PARMS,R3
+*
+         CLC   WBRA_EYECATCHER,=C'>analyze'  Validate eye catcher
+         BNE   XIT08                ..No, Exit Code
+*
+         CLC   WBRA_REQUEST_TYPE,=AL1(TYPE_NON_HTTP)
+*                                   Input from Non-HTTP
+         BNE   XIT08                ..No, Exit Code
+*
+*******  MVC   WBRA_DFHCNV_KEY,=C'DFHWBUD'  Set Code Page Name
+         XC    WBRA_USERID,WBRA_USERID      Set Userid Name Null
+*
+*---------------------------------------------------------------------*
+*                                                                     *
+* This analyzer extracts the required CICS information by             *
+* assuming the following Non-HTTP input structure                     *
+*                                                                     *
+*       TRANID                                                        *
+*                                                                     *
+*  where                                                              *
+*    TRANID   = The transaction id to be used for the alias.          *
+*               The TRANSID MUST have a length = 4.                   *
+*                                                                     *
+*---------------------------------------------------------------------*
+*
+         L     R5,WBRA_USER_DATA_PTR
+         LH    R4,WBRA_USER_DATA_LENGTH
+*
+         CHI   R4,13                Input length >= 13
+         BL    RESOURCE_BAD_LENGTH  ..No, Exit Code
+*
+         MVC   WBRA_ALIAS_TRANID,0(R5) Set Alias Transaction Id
+         TR    WBRA_ALIAS_TRANID,EBCDIC
+*
+         EXEC  CICS,                                                   *
+               INQUIRE,                                                *
+               TRANSACTION(WBRA_ALIAS_TRANID),                         *
+               RESP(RESP),                                             *
+               RESP2(RESP2)
+         CLC   RESP,DFHRESP(NORMAL)     Valid Transaction Requested
+         BNE   TRAN_NAME_INVALID        ..No, Exit Code
+*
+         MVC   WBRA_SERVER_PROGRAM,=CL8'IET311' Set Program Id
+         B     XIT00                Exit Code
+*
+*---------------------------------------------------------------------*
+*    Set REASON for exception returns                                 *
+*---------------------------------------------------------------------*
+*
+RESOURCE_BAD_LENGTH DS 0H
+         MVC   WBRA_REASON,=A(RESOURCE_TOO_SHORT)
+         B     XIT04
+*
+TRAN_NAME_INVALID DS 0H
+         MVC   WBRA_REASON,=A(TRAN_ID_INVALID)
+         B     XIT04
+*
+*---------------------------------------------------------------------*
+*    Return OK                                                        *
+*---------------------------------------------------------------------*
+XIT00    DS    0H
+         MVC   WBRA_RESPONSE,=A(OK)
+         B     XIT99
+*---------------------------------------------------------------------*
+*    Return Exception                                                 *
+*---------------------------------------------------------------------*
+XIT04    DS    0H
+         MVC   WBRA_RESPONSE,=A(EXCEPTION)
+         B     XIT99
+*---------------------------------------------------------------------*
+*    Return Invalid                                                   *
+*---------------------------------------------------------------------*
+XIT08    DS    0H
+         MVC   WBRA_RESPONSE,=A(INVALID)
+         B     XIT99
+*---------------------------------------------------------------------*
+*    Return Disaster                                                  *
+*---------------------------------------------------------------------*
+XIT12    DS    0H
+         MVC   WBRA_RESPONSE,=A(DISASTER)
+         B     XIT99
+*
+*---------------------------------------------------------------------*
+*    Return point                                                     *
+*---------------------------------------------------------------------*
+XIT99    DS    0H
+         EXEC  CICS,                                                   *
+               RETURN
+*---------------------------------------------------------------------*
+*    Constants and Literals                                           *
+*---------------------------------------------------------------------*
+*
+TYPE_NON_HTTP EQU 2
+*
+OK         EQU 0
+EXCEPTION  EQU 4
+INVALID    EQU 8
+DISASTER   EQU 12
+OK_LOOP    EQU 16
+*
+RESOURCE_TOO_SHORT  EQU 1
+FIRST_SLASH_MISSING EQU 2
+CONV_NAME_INVALID   EQU 4
+TRAN_ID_INVALID     EQU 5
+SERV_NAME_INVALID   EQU 6
+USER_TOKEN_INVALID  EQU 7
+SERVER_NAME_MISSING EQU 8
+*
+*                .0.1.2.3.4.5.6.7.8.9.A.B.C.D.E.F
+*
+EBCDIC   DC    X'00010203372D2E2F1605250B0C0D0E0F'  0.
+         DC    X'101112133C3D322618193F271C1D1E1F'  1.
+         DC    X'405A7F7B5B6C507D4D5D5C4E6B604B61'  2.
+         DC    X'F0F1F2F3F4F5F6F7F8F97A5E4C7E6E6F'  3.
+         DC    X'7CC1C2C3C4C5C6C7C8C9D1D2D3D4D5D6'  4.
+         DC    X'D7D8D9E2E3E4E5E6E7E8E9BAE0BBB06D'  5.
+         DC    X'79818283848586878889919293949596'  6.
+         DC    X'979899A2A3A4A5A6A7A8A9C04FD0A107'  7.
+         DC    X'202122232415061728292A2B2C090A1B'  8.
+         DC    X'30311A333435360838393A3B04143EFF'  9.
+         DC    X'41AA4AB19FB26AB5BDB49A8A5FCAAFBC'  A.
+         DC    X'908FEAFABEA0B6B39DDA9B8BB7B8B9AB'  B.
+         DC    X'6465626663679E687471727378757677'  C.
+         DC    X'AC69EDEEEBEFECBF80FDFEFBFCADAE59'  D.
+         DC    X'4445424643479C485451525358555657'  E.
+         DC    X'8C49CDCECBCFCCE170DDDEDBDC8D8EDF'  F.
+*
+*
+*                .0.1.2.3.4.5.6.7.8.9.A.B.C.D.E.F
+*
+ASCII    DC    X'00010203372D2E2F1605250B0C0D0E0F'  0.
+         DC    X'101112133C3D322618193F271C1D1E1F'  1.
+         DC    X'405A7F7B5B6C507D4D5D5C4E6B604B61'  2.
+         DC    X'F0F1F2F3F4F5F6F7F8F97A5E4C7E6E6F'  3.
+         DC    X'7CC1C2C3C4C5C6C7C8C9D1D2D3D4D5D6'  4.
+         DC    X'D7D8D9E2E3E4E5E6E7E8E9BAE0BBB06D'  5.
+         DC    X'79818283848586878889919293949596'  6.
+         DC    X'979899A2A3A4A5A6A7A8A9C04FD0A107'  7.
+         DC    X'202122232415061728292A2B2C090A1B'  8.
+         DC    X'30311A333435360838393A3B04143EFF'  9.
+         DC    X'41AA4AB19FB26AB5BDB49A8A5FCAAFBC'  A.
+         DC    X'908FEAFABEA0B6B39DDA9B8BB7B8B9AB'  B.
+         DC    X'6465626663679E687471727378757677'  C.
+         DC    X'AC69EDEEEBEFECBF80FDFEFBFCADAE59'  D.
+         DC    X'4445424643479C485451525358555657'  E.
+         DC    X'8C49CDCECBCFCCE170DDDEDBDC8D8EDF'  F.
+*
+*---------------------------------------------------------------------*
+*    Literal pool                                                     *
+*---------------------------------------------------------------------*
+         LTORG ,
+*-------------------------------------------------------------------- *
+*    DSECTS                                                           *
+*---------------------------------------------------------------------*
+         COPY DFHWBTDD                Analyzer parameter list
+*
+*---------------------------------------------------------------------*
+*    Working storage definitions                                      *
+*---------------------------------------------------------------------*
+         DFHEISTG ,
+*
+DBLWORK  DS    D                        DOUBLE WORD WORK
+FULWORK  DS    F                        FULL WORD WORK
+RESP     DS    F                        EXEC COMMAND RESPONSE
+RESP2    DS    F                        EXEC COMMAND RESPONSE
+HLFWORK  DS    H                        HALF WORD WORK
+*
+         DFHEIEND ,
+*---------------------------------------------------------------------*
+         END   IEW001
+

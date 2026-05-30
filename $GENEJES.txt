@@ -1,0 +1,751 @@
+//TSSS013J JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//         REGION=0M TYPRUN=SCAN
+//*--------------------------------------------------------------------
+//DFHEITAL PROC SUFFIX=1$,           Suffix for translator module
+//         ASMBLR=ASMA90,              Assembler module name
+//         CPNDX='CICSIE.TS51.RSU1311',
+//         INDEX='CICSIE.TS51.RSU1311',
+//         PROGLIB='SYS2.PROD.EJES.R53.SEJELINK',
+//         DSCTLIB='TECH.PROD.EJES.R53.SEJEMAC',
+//         OUTC='*',                   Class for print output
+//         REG=0M,                     Region size for all steps
+//         LNKPARM='LIST,XREF',        Link edit parameters
+//         WORK=SYSDA                  Unit for work datasets
+//*
+//TRN      EXEC PGM=DFHEAP&SUFFIX,
+//            REGION=&REG,
+//            PARM='SP,NOEDF'
+//STEPLIB  DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//         DD DSN=&INDEX..SDFHLPA,DISP=SHR
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSPUNCH DD DSN=&&SYSCIN,
+//            DISP=(,PASS),UNIT=&WORK,
+//            DCB=BLKSIZE=400,
+//            SPACE=(400,(400,100))
+//*
+//ASM      EXEC PGM=&ASMBLR,
+//            REGION=&REG,
+//            PARM=('DECK,NOOBJECT,LIST,SIZE(MAX,ABOVE)',
+//            'PROFILE(JJBSYS90)')
+//SYSLIB   DD DSN=&DSCTLIB,DISP=SHR
+//         DD DSN=&INDEX..SDFHMAC,DISP=SHR
+//         DD DSN=&CPNDX..SEYUMAC,DISP=SHR
+//         DD DSN=&INDEX..SDFHSAMP,DISP=SHR
+//         DD DSN=SYS1.MACLIB,DISP=SHR
+//         DD DSN=SYS1.MODGEN,DISP=SHR
+//         DD DSN=CICSIE.TS51.PTABLES,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSUT2   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSUT3   DD UNIT=&WORK,SPACE=(1700,(400,400))
+//SYSPUNCH DD DSN=&&LOADSET,
+//            UNIT=&WORK,DISP=(,PASS),
+//            SPACE=(400,(100,100))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DSN=&&SYSCIN,DISP=(OLD,DELETE)
+//*
+//COPYLINK EXEC PGM=IEBGENER,COND=(0,NE,ASM)
+//SYSUT1   DD DSN=&INDEX..SDFHMAC(DFHEILIA),DISP=SHR
+//SYSUT2   DD DSN=&&COPYLINK,DISP=(NEW,PASS),
+//            DCB=(LRECL=80,BLKSIZE=400,RECFM=FB),
+//            UNIT=&WORK,SPACE=(400,(20,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSIN    DD DUMMY
+//*
+//LKED     EXEC PGM=IEWL,REGION=&REG,
+//            PARM='&LNKPARM',COND=(0,NE,ASM)
+//SYSLIB   DD DSN=&INDEX..SDFHLOAD,DISP=SHR
+//SYSLMOD  DD DSN=&PROGLIB,DISP=SHR
+//SYSUT1   DD UNIT=&WORK,DCB=BLKSIZE=1024,
+//            SPACE=(1024,(200,20))
+//SYSPRINT DD SYSOUT=&OUTC
+//SYSLIN   DD DSN=&&LOADSET,DISP=(OLD,DELETE)
+//         DD DSN=&&COPYLINK,DISP=(OLD,DELETE)
+//         DD DDNAME=SYSIN
+//         PEND
+//*
+//S1       EXEC DFHEITAL
+//*TRN.SYSIN  DD DISP=SHR,DSN=TECH.PROD.EJES.R53.SEJESRC(EJESCICI)
+//TRN.SYSIN  DD *
+CICI     TITLE 'CICI - CICS INTERFACE - Copyright © 1990-2013 PHOENIX S*00000100
+               OFTWARE INTERNATIONAL'                                   00000200
+*START OF SPECIFICATIONS***************************************         00000300
+*                                                             *         00000400
+* MODULE NAME = EJESCICI                                      *         00000500
+*                                                             *         00000600
+* DESCRIPTIVE NAME = (E)JES interface for CICS releases       *         00000700
+*                    4.1 and above.                           *         00000800
+*                                                             *         00000900
+* FUNCTION =                                                  *         00001000
+*                                                             *         00001100
+*    This module is the initial entry point for executing     *         00001200
+*    (E)JES in the CICS environment.  It also provides a      *         00001300
+*    central location for all CICS services used.             *         00001400
+*                                                             *         00001500
+* OPERATION =                                                 *         00001600
+*                                                             *         00001700
+*                                                             *         00001800
+* COPYRIGHT=                                                  *         00001900
+*                                                             *         00002000
+*    Contains restricted materials of Phoenix Software        *         00002100
+*    International. Copyright © 1990-2013 by Phoenix          *         00002200
+*    Software International. Licensed materials property      *         00002300
+*    of Phoenix Software international.                       *         00002400
+*                                                             *         00002500
+* RESTRICTIONS =                                              *         00002600
+*                                                             *         00002700
+*    This module should be used for CICS/ESA 4.1 and higher   *         00002800
+*    and all releases of CICS Transaction Server.             *         00002900
+*                                                             *         00003000
+*                                                             *         00003100
+*END OF SPECIFICATIONS ****************************************         00003200
+                                                                        00003300
+         SPLEVEL SET=6             Specify OS/390 R2 macro format       00003400
+         SYSSTATE ARCHLVL=2        Program requires z/Architecture      00003500
+         SYSSTATE OSREL=ZOSV1R8    Program requires z/OS 1.8 and higher 00003600
+         COPY  DFHGDEFS            Define CICS Globals                  00003700
+         COPY  DFHSYS              Set CICS Globals                     00003800
+EJESCICI AMODE 31                  Indicate AMODE(31) program           00003900
+EJESCICI RMODE 24                  Indicate RMODE(24) program           00004000
+EJESCICI DFHEIENT CODEREG=12       Define CICS entrypoint               00004100
+         J     *+12                Branch around eyecatcher             00004200
+         DC    CL8'EJESCICI'       Define module eyecatcher             00004300
+         STM   R11,R13,CICREGS     Save interface registers             00004400
+         LA    R0,CICIVECT         Point to routine vector              00004500
+         ST    R0,CICVECT          Save vector address                  00004600
+         LH    R0,EIBCALEN         Load COMMAREA length                 00004700
+         LTR   R0,R0               Any COMMAREA ?                       00004800
+         JNP   CICI0100            Branch if not                        00004900
+         L     R1,DFHEICAP         Load COMMAREA address                00005000
+         CH    R0,UCBLNT(,R1)      Length matches ?                     00005100
+         JNE   CICI0100            Branch if not                        00005200
+         CLC   =C'GX',UCBPROG(R1)  Block validates ?                    00005300
+         JNE   CICI0100            Branch if not                        00005400
+         ST    R1,CICUCB           Save COMMAREA address                00005500
+         OI    CICFLAG1,CIC1COMM   Indicate COMMAREA was passed         00005600
+         J     CICI0110            Continue                             00005700
+CICI0100 DS    0H                                                       00005800
+         EXEC CICS ASSIGN                                              +00005900
+               STARTCODE(CICSTART)                                      00006000
+         CLC   CICSTART,=C'SD'     START with data ?                    00006100
+         JNE   CICI0110            Branch if not                        00006200
+         EXEC CICS HANDLE CONDITION                                    +00006300
+               ENDDATA(CICI0110)                                        00006400
+         EXEC CICS RETRIEVE                                            +00006500
+               SET(R2)                                                 +00006600
+               LENGTH(CICCPLL)                                          00006700
+         ST    R2,CICCPL           Save parameter list address          00006800
+CICI0110 DS    0H                                                       00006900
+         EXEC CICS HANDLE CONDITION                                    +00007000
+               ENDDATA                                                  00007100
+         DFHCSAD TYPE=LOCATE,      Get CSA address in R2               +00007200
+               REG=R2              (same)                               00007300
+_2       USING DFHCSADS,R2     *** Synchronize CSADS                    00007400
+         TM    _2.CSASSI3,CSATRISO Transaction isolation ?              00007500
+         JZ    CICI0120            Branch if not                        00007600
+         OI    CICFLAG1,CIC1SSPC   Show subspace support present        00007700
+CICI0120 DC    0H                                                       00007800
+         DROP  _2              *** Drop CSADS                           00007900
+                                                                        00008000
+***************************************************************         00008100
+* Determine if Threadsafe                                     *         00008200
+***************************************************************         00008300
+         EXEC CICS INQUIRE TASK(EIBTASKN) TCB(CICWKF1) NOHANDLE         00008400
+         OI    CICFLAG1,CIC1THRS   Assume threadsafe                    00008500
+         CLC   CICWKF1,DFHVALUE(QR) The QR TCB ?                        00008600
+         JNE   CICI0130            Branch if not                        00008700
+         NI    CICFLAG1,X'FF'-CIC1THRS Show not threadsafe              00008800
+CICI0130 DC    0H                                                       00008900
+                                                                        00009000
+***************************************************************         00009100
+* Establish error recovery routine                            *         00009200
+***************************************************************         00009300
+         EXEC CICS HANDLE ABEND                                        +00009400
+               LABEL(CICIABXT)                                          00009500
+                                                                        00009600
+***************************************************************         00009700
+* Load and invoke the CICS driver                             *         00009800
+***************************************************************         00009900
+         EXEC CICS LOAD                                                +00010000
+               PROGRAM('EJESCICS')                                     +00010100
+               ENTRY(R15)                                               00010200
+         LA    R1,EJESCWK          Point to the CICS work area          00010300
+         BASR  R14,R15             Pass control to load module          00010400
+         EXEC CICS ABEND                                               +00010500
+               ABCODE('E000')                                           00010600
+                                                                        00010700
+***************************************************************         00010800
+* Acquire 24-bit storage from CICS                            *         00010900
+***************************************************************         00011000
+CICIGM24 DS    0H                                                       00011100
+         EXEC CICS GETMAIN                                             +00011200
+               SET(R1)                                                 +00011300
+               FLENGTH(CICWKF1)                                        +00011400
+               BELOW                                                   +00011500
+               INITIMG(X'00')                                           00011600
+         BR    R3                  Return                               00011700
+                                                                        00011800
+***************************************************************         00011900
+* Acquire 31-bit storage from CICS                            *         00012000
+***************************************************************         00012100
+CICIGM31 DS    0H                                                       00012200
+         EXEC CICS GETMAIN                                             +00012300
+               SET(R1)                                                 +00012400
+               FLENGTH(CICWKF1)                                        +00012500
+               INITIMG(X'00')                                           00012600
+         BR    R3                  Return                               00012700
+                                                                        00012800
+***************************************************************         00012900
+* Acquire 64-bit storage from CICS                            *         00013000
+***************************************************************         00013100
+CICIGM64 DS    0H                                                       00013200
+         AIF   ('&CTSVER' LT '0510').GDSA10                             00013300
+*        EXEC CICS GETMAIN                                             +00013400
+               SET(R1)                                                 +00013500
+               FLENGTH(CICWKF1)                                        +00013600
+               GRANDE                                                  +00013700
+               INITIMG(X'00')                                          +00013800
+               NOHANDLE                                                 00013900
+*        LLGF  R15,EIBRESP         Pass completion code                 00014000
+*        LTGR  R15,R15             Did we get the storage ?             00014100
+*        BZR   R3                                                       00014200
+         LGHI  R1,-4096            Pass no address                      00014300
+         LGHI  R15,4               Pass completion code                 00014400
+         BR    R3                  Return                               00014500
+         AGO   .GDSA20                                                  00014600
+.GDSA10  ANOP                                                           00014700
+         LGHI  R1,-4096            Pass no address                      00014800
+         LGHI  R15,4               Pass completion code                 00014900
+         BR    R3                  Return                               00015000
+.GDSA20  ANOP                                                           00015100
+                                                                        00015200
+***************************************************************         00015300
+* Release storage previously acquired from CICS               *         00015400
+***************************************************************         00015500
+CICIFREM DS    0H                                                       00015600
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00015700
+         L     R2,CICWKF1          Load storage address                 00015800
+         EXEC CICS FREEMAIN                                            +00015900
+               DATA(DUMMY1)                                             00016000
+         BR    R3                  Return                               00016100
+         DROP  R2              *** Drop dummy DSECT                     00016200
+                                                                        00016300
+***************************************************************         00016400
+* Obtain User ID from CICS                                    *         00016500
+***************************************************************         00016600
+CICIGUID DS    0H                                                       00016700
+         MVC   CICWKD1,=CL8' '     Set User ID to blanks                00016800
+         EXEC CICS ASSIGN                                              +00016900
+               USERID(CICWKD1)                                          00017000
+         CLI   CICWKD1,C' '        Blank User ID ?                      00017100
+         BHR   R3                  Branch if not                        00017200
+         EXEC CICS ASSIGN                                              +00017300
+               OPID(CICWKD1)                                            00017400
+         BR    R3                  Return                               00017500
+                                                                        00017600
+***************************************************************         00017700
+* Obtain terminal characteristics from CICS                   *         00017800
+***************************************************************         00017900
+CICIGTRM DS    0H                                                       00018000
+         EXEC CICS ASSIGN                                              +00018100
+               FACILITY(CICWKF1)                                       +00018200
+               EXTDS(CICWKQ1)                                          +00018300
+               SCRNHT(CICWKH1)                                         +00018400
+               SCRNWD(CICWKH2)                                          00018500
+         BR    R3                  Return                               00018600
+                                                                        00018700
+***************************************************************         00018800
+* Obtain external security area address from CICS             *         00018900
+***************************************************************         00019000
+CICIGXSA DS    0H                                                       00019100
+         EXEC CICS ADDRESS                                             +00019200
+               ACEE(R2)                                                 00019300
+         C     R2,=A(X'FF000000')  Any ACEE for this user ?             00019400
+         BER   R3                  Branch if not                        00019500
+         ST    R2,CICACEE          Save ACEE address                    00019600
+         BR    R3                  Return                               00019700
+                                                                        00019800
+***************************************************************         00019900
+* Return to CICS                                              *         00020000
+***************************************************************         00020100
+CICIRETU DS    0H                                                       00020200
+         EXEC CICS HANDLE ABEND                                         00020300
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00020400
+         USING EJESCPL,R4      *** Synchronize START parm list DSECT    00020500
+         L     R4,CICDYNAM         Load buffer address                  00020600
+         ICM   R2,15,CICUCB        Load UCB address                     00020700
+         JZ    CICIRETX            Branch if not set                    00020800
+         CLI   UCBPROG+2(R2),C' '  Transaction ID or user request ?     00020900
+         JNH   CICIRETX            Branch if not                        00021000
+         LH    R0,CICCBUFL         Load buffer length                   00021100
+         LTR   R0,R0               Any user request ?                   00021200
+         JNP   CICIRET2            Branch if not                        00021300
+         CLI   CPLTRANS,C' '       Was EJESCICI started ?               00021400
+         JNH   CICIRET1            Branch if not                        00021500
+         EXEC CICS START                                               +00021600
+               TRANSID(UCBPROG+2(R2))                                  +00021700
+               TERMID(UCBNAME(R2))                                     +00021800
+               FROM(EJESCPL)                                           +00021900
+               LENGTH(CICCBUFL)                                         00022000
+         J     CICIRETX            Continue                             00022100
+CICIRET1 DS    0H                                                       00022200
+         EXEC CICS START                                               +00022300
+               TRANSID(UCBPROG+2(R2))                                  +00022400
+               TERMID(UCBNAME(R2))                                     +00022500
+               FROM(CPLINCMD)                                           00022600
+         J     CICIRETX            Continue                             00022700
+CICIRET2 DS    0H                                                       00022800
+         EXEC CICS START                                               +00022900
+               TRANSID(UCBPROG+2(R2))                                  +00023000
+               TERMID(UCBNAME(R2))                                      00023100
+CICIRETX DS    0H                                                       00023200
+         EXEC CICS RETURN                                               00023300
+         BR    R3                  Return (should not occur)            00023400
+         DROP  R4              *** Drop START parm list DSECT           00023500
+         DROP  R2              *** Drop dummy DSECT                     00023600
+                                                                        00023700
+***************************************************************         00023800
+* Transfer control back to (E)JES                             *         00023900
+***************************************************************         00024000
+CICIXCTL DS    0H                                                       00024100
+         L     R2,CICUCB           Load UCB address                     00024200
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00024300
+         EXEC CICS RETURN                                              +00024400
+               TRANSID(EIBTRNID)                                       +00024500
+               COMMAREA(0(R2))                                         +00024600
+               LENGTH(UCBLNT(R2))                                       00024700
+         BR    R3                  Return (should not occur)            00024800
+         DROP  R2              *** Drop dummy DSECT                     00024900
+                                                                        00025000
+***************************************************************         00025100
+* Perform program load                                        *         00025200
+***************************************************************         00025300
+CICILOAD DS    0H                                                       00025400
+         EXEC CICS HANDLE CONDITION                                    +00025500
+               ERROR(CICILODY)                                          00025600
+         CLI   CICWKQ1,X'00'       Should module be held ?              00025700
+         JE    CICILOD1            Branch if not                        00025800
+         EXEC CICS LOAD                                                +00025900
+               PROGRAM(CICWKD1)                                        +00026000
+               ENTRY(R2)                                               +00026100
+               FLENGTH(CICWKF2)                                        +00026200
+               HOLD                                                     00026300
+         J     CICILOD2            Continue                             00026400
+CICILOD1 DS    0H                                                       00026500
+         EXEC CICS LOAD                                                +00026600
+               PROGRAM(CICWKD1)                                        +00026700
+               ENTRY(R2)                                               +00026800
+               FLENGTH(CICWKF2)                                         00026900
+CICILOD2 DS    0H                                                       00027000
+         ST    R2,CICWKF1          Save module entrypoint address       00027100
+         EXEC CICS HANDLE CONDITION                                    +00027200
+               ERROR                                                    00027300
+         BR    R3                  Return                               00027400
+CICILODY DS    0H                                                       00027500
+         EXEC CICS HANDLE CONDITION                                    +00027600
+               ERROR                                                    00027700
+         LHI   R15,4               Set return code                      00027800
+         BR    R3                  Return                               00027900
+                                                                        00028000
+***************************************************************         00028100
+* Perform program release                                     *         00028200
+***************************************************************         00028300
+CICIRLSE DS    0H                                                       00028400
+         EXEC CICS HANDLE CONDITION                                    +00028500
+               ERROR(CICIRLSY)                                          00028600
+         EXEC CICS RELEASE                                             +00028700
+               PROGRAM(CICWKD1)                                         00028800
+         EXEC CICS HANDLE CONDITION                                    +00028900
+               ERROR                                                    00029000
+         BR    R3                  Return                               00029100
+CICIRLSY DS    0H                                                       00029200
+         EXEC CICS HANDLE CONDITION                                    +00029300
+               ERROR                                                    00029400
+         LHI   R15,4               Set return code                      00029500
+         BR    R3                  Return                               00029600
+                                                                        00029700
+***************************************************************         00029800
+* Write data to temp storage queue                            *         00029900
+***************************************************************         00030000
+CICIQPUT DS    0H                                                       00030100
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00030200
+         L     R2,CICWKF1          Load storage address                 00030300
+         EXEC CICS HANDLE CONDITION                                    +00030400
+               ERROR(CICIQPTY)                                         +00030500
+               NOSPACE(CICIQPTY)                                        00030600
+         CLI   CICWKQ1,X'00'       Main storage ?                       00030700
+         JNE   CICIQPT2            Branch if not                        00030800
+         CLC   CICWKH2,=H'0'       Item re-write ?                      00030900
+         JE    CICIQPT1            Branch if not                        00031000
+         EXEC CICS WRITEQ TS                                           +00031100
+               QNAME(CICWKL1)                                          +00031200
+               FROM(DUMMY)                                             +00031300
+               LENGTH(CICWKH1)                                         +00031400
+               ITEM(CICWKH2) REWRITE                                   +00031500
+               MAIN                                                     00031600
+         EXEC CICS HANDLE CONDITION                                    +00031700
+               ERROR                                                   +00031800
+               NOSPACE                                                  00031900
+         BR    R3                  Return                               00032000
+CICIQPT1 DS    0H                                                       00032100
+         EXEC CICS WRITEQ TS                                           +00032200
+               QNAME(CICWKL1)                                          +00032300
+               FROM(DUMMY)                                             +00032400
+               LENGTH(CICWKH1)                                         +00032500
+               ITEM(CICWKH2)                                           +00032600
+               MAIN                                                     00032700
+         EXEC CICS HANDLE CONDITION                                    +00032800
+               ERROR                                                   +00032900
+               NOSPACE                                                  00033000
+         BR    R3                  Return                               00033100
+CICIQPT2 DS    0H                                                       00033200
+         CLC   CICWKH2,=H'0'       Item re-write ?                      00033300
+         JE    CICIQPT3            Branch if not                        00033400
+         EXEC CICS WRITEQ TS                                           +00033500
+               QNAME(CICWKL1)                                          +00033600
+               FROM(DUMMY)                                             +00033700
+               LENGTH(CICWKH1)                                         +00033800
+               ITEM(CICWKH2) REWRITE                                   +00033900
+               AUXILIARY                                                00034000
+         EXEC CICS HANDLE CONDITION                                    +00034100
+               ERROR                                                   +00034200
+               NOSPACE                                                  00034300
+         BR    R3                  Return                               00034400
+CICIQPT3 DS    0H                                                       00034500
+         EXEC CICS WRITEQ TS                                           +00034600
+               QNAME(CICWKL1)                                          +00034700
+               FROM(DUMMY)                                             +00034800
+               LENGTH(CICWKH1)                                         +00034900
+               ITEM(CICWKH2)                                           +00035000
+               AUXILIARY                                                00035100
+         EXEC CICS HANDLE CONDITION                                    +00035200
+               ERROR                                                   +00035300
+               NOSPACE                                                  00035400
+         BR    R3                  Return                               00035500
+CICIQPTY DS    0H                                                       00035600
+         EXEC CICS HANDLE CONDITION                                    +00035700
+               ERROR                                                   +00035800
+               NOSPACE                                                  00035900
+         LHI   R15,4               Set return code                      00036000
+         BR    R3                  Return                               00036100
+         DROP  R2              *** Drop dummy DSECT                     00036200
+                                                                        00036300
+***************************************************************         00036400
+* Read data from temp storage queue                           *         00036500
+***************************************************************         00036600
+CICIQGET DS    0H                                                       00036700
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00036800
+         L     R2,CICWKF1          Load storage address                 00036900
+         EXEC CICS HANDLE CONDITION                                    +00037000
+               ERROR(CICIQGTY)                                          00037100
+         EXEC CICS READQ TS                                            +00037200
+               QNAME(CICWKL1)                                          +00037300
+               INTO(DUMMY)                                             +00037400
+               LENGTH(CICWKH1)                                         +00037500
+               ITEM(CICWKH2)                                            00037600
+         EXEC CICS HANDLE CONDITION                                    +00037700
+               ERROR                                                    00037800
+         BR    R3                  Return                               00037900
+CICIQGTY DS    0H                                                       00038000
+         EXEC CICS HANDLE CONDITION                                    +00038100
+               ERROR                                                    00038200
+         LHI   R15,4               Set return code                      00038300
+         BR    R3                  Return                               00038400
+         DROP  R2              *** Drop dummy DSECT                     00038500
+                                                                        00038600
+***************************************************************         00038700
+* Delete temp storage queue                                   *         00038800
+***************************************************************         00038900
+CICIQDEL DS    0H                                                       00039000
+         EXEC CICS HANDLE CONDITION                                    +00039100
+               ERROR(CICIQDLY)                                          00039200
+         EXEC CICS DELETEQ TS                                          +00039300
+               QNAME(CICWKL1)                                           00039400
+         EXEC CICS HANDLE CONDITION                                    +00039500
+               ERROR                                                    00039600
+         BR    R3                  Return                               00039700
+CICIQDLY DS    0H                                                       00039800
+         EXEC CICS HANDLE CONDITION                                    +00039900
+               ERROR                                                    00040000
+         LHI   R15,4               Set return code                      00040100
+         BR    R3                  Return                               00040200
+                                                                        00040300
+***************************************************************         00040400
+* Transmit screen to user                                     *         00040500
+***************************************************************         00040600
+CICIXMIT DS    0H                                                       00040700
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00040800
+         L     R2,CICDYNAM         Load message address                 00040900
+         CLI   DUMMY1,X'F3'        Structured field request ?           00041000
+         JE    CICIXMT2            Branch if yes                        00041100
+         CLI   DUMMY1,X'F1'        Suppress erase requested ?           00041200
+         JE    CICIXMT1            Branch if yes                        00041300
+         EXEC CICS SEND                                                +00041400
+               FROM(DUMMY3)                                            +00041500
+               LENGTH(CICCBUFL)                                        +00041600
+               CTLCHAR(DUMMY2)                                         +00041700
+               WAIT                                                    +00041800
+               ERASE                                                    00041900
+         BR    R3                  Return                               00042000
+CICIXMT1 DS    0H                                                       00042100
+         EXEC CICS SEND                                                +00042200
+               FROM(DUMMY3)                                            +00042300
+               LENGTH(CICCBUFL)                                        +00042400
+               CTLCHAR(DUMMY2)                                          00042500
+         BR    R3                  Return                               00042600
+CICIXMT2 DS    0H                                                       00042700
+         LH    R0,CICWKH1          Adjust length for AID byte           00042800
+         BCTR  R0,0                (same)                               00042900
+         STH   R0,CICWKH1          (same)                               00043000
+         EXEC CICS CONVERSE                                            +00043100
+               FROM(DUMMY2)                                            +00043200
+               FROMLENGTH(CICCBUFL)                                    +00043300
+               INTO(DUMMY2)                                            +00043400
+               TOLENGTH(CICWKH1)                                       +00043500
+               STRFIELD                                                 00043600
+         MVC   DUMMY1,EIBAID       Set AID byte                         00043700
+         LHI   R0,1                Adjust length for AID byte           00043800
+         AH    R0,CICWKH1          (same)                               00043900
+         STH   R0,CICWKH1          (same)                               00044000
+         BR    R3                  Return                               00044100
+         DROP  R2              *** Drop dummy DSECT                     00044200
+                                                                        00044300
+***************************************************************         00044400
+* Receive input message from user                             *         00044500
+***************************************************************         00044600
+CICIRECV DS    0H                                                       00044700
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00044800
+         L     R2,CICWKF1          Load message address                 00044900
+         TM    CICFLAG1,CIC1COMM   First time entry ?                   00045000
+         JO    CICIREC1            Branch if not                        00045100
+         CLC   CICSTART,=C'TD'     Started by 'TD' ?                    00045200
+         JE    CICIREC1            Branch if yes                        00045300
+         MVI   DUMMY1,X'60'        Set AID byte to CLEAR & RESET        00045400
+         XC    DUMMY2(2),DUMMY2    Zero out cursor position             00045500
+         MVC   CICWKH1,=H'1'       Store message length                 00045600
+         ICM   R14,15,CICCPL       Load parm list address               00045700
+         BZR   R3                  Branch if no parm list               00045800
+         USING EJESCPL,R14     *** Synchronize parameter list DSECT     00045900
+         CLC   CICCPLL,=Y(CPLLENTH) Correct length ?                    00046000
+         JNE   CICIREC0            Branch if not                        00046100
+         CLC   CPLID,=C'ECPL'      Correct identifier ?                 00046200
+         JNE   CICIREC0            Branch if not                        00046300
+         CLI   CPLINCMD,C' '       Any initial command ?                00046400
+         BNHR  R3                  Branch if not                        00046500
+         MVI   DUMMY1,X'7D'        Set AID byte to ENTER key            00046600
+         MVC   DUMMY4(4),EIBTRNID  Set transaction name                 00046700
+         MVI   DUMMY4+4,C' '       Set blank space                      00046800
+         MVC   DUMMY4+5(L'CPLINCMD),CPLINCMD Set initial operand        00046900
+         MVC   CICWKH1,=Y(L'CPLINCMD+5+3) Set command length            00047000
+         BR    R3                  Return                               00047100
+CICIREC0 DS    0H                                                       00047200
+         CLI   CPLID,C' '          Any initial command ?                00047300
+         BNHR  R3                  Branch if not                        00047400
+         MVI   DUMMY1,X'7D'        Set AID byte to ENTER key            00047500
+         MVC   DUMMY4(4),EIBTRNID  Set transaction name                 00047600
+         MVI   DUMMY4+4,C' '       Set blank space                      00047700
+         LA    R0,DUMMY4+5         Set initial operand                  00047800
+         LH    R1,CICCPLL          (same)                               00047900
+         LR    R15,R1              (same)                               00048000
+         MVCL  R0,R14              (same)                               00048100
+         LA    R0,5+3              Set command length                   00048200
+         AH    R0,CICCPLL          (same)                               00048300
+         STH   R0,CICWKH1          (same)                               00048400
+         BR    R3                  Return                               00048500
+         DROP  R14             *** Drop parameter list DSECT            00048600
+CICIREC1 DS    0H                                                       00048700
+         EXEC CICS RECEIVE                                             +00048800
+               INTO(DUMMY4)                                            +00048900
+               LENGTH(CICWKH1)                                         +00049000
+               ASIS                                                     00049100
+         LHI   R0,1                Assume short read                    00049200
+         CLI   EIBAID,X'6F'        Short read ?                         00049300
+         JH    CICIREC2            Branch if not                        00049400
+         CLI   EIBAID,X'60'        Short read ?                         00049500
+         JNL   CICIREC3            Branch if yes                        00049600
+CICIREC2 DS    0H                                                       00049700
+         LHI   R0,3                Adjust message length                00049800
+         AH    R0,CICWKH1          (same)                               00049900
+CICIREC3 DS    0H                                                       00050000
+         STH   R0,CICWKH1          Store message length                 00050100
+         MVC   DUMMY1,EIBAID       Set AID byte                         00050200
+         MVC   DUMMY2(2),EIBCPOSN  Set cursor position                  00050300
+         BR    R3                  Return                               00050400
+         DROP  R2              *** Drop dummy DSECT                     00050500
+                                                                        00050600
+***************************************************************         00050700
+* Wait for event to complete                                  *         00050800
+***************************************************************         00050900
+CICIWAIT DS    0H                                                       00051000
+         LA    R2,CICWKF1          Point to ECB address                 00051100
+         EXEC CICS WAIT EXTERNAL                                       +00051200
+               ECBLIST(R2)                                             +00051300
+               NUMEVENTS(1)                                             00051400
+         BR    R3                  Return                               00051500
+                                                                        00051600
+***************************************************************         00051700
+* Post event request                                          *         00051800
+***************************************************************         00051900
+CICIPOST DS    0H                                                       00052000
+         L     R1,CICWKF1          Load ECB address                     00052100
+         POST  (1),0,              Post the event                      +00052200
+               LINKAGE=SVC         (same)                               00052300
+         LA    R2,CICWKF2          Point to ECB address                 00052400
+         EXEC CICS WAIT EXTERNAL                                       +00052500
+               ECBLIST(R2)                                             +00052600
+               NUMEVENTS(1)                                             00052700
+         BR    R3                  Return                               00052800
+                                                                        00052900
+***************************************************************         00053000
+* Issue CICS abend                                            *         00053100
+***************************************************************         00053200
+CICIABND DS    0H                                                       00053300
+         EXEC CICS ABEND                                               +00053400
+               ABCODE(CICWKF1)                                          00053500
+         BR    R3                  Return (should not occur)            00053600
+                                                                        00053700
+***************************************************************         00053800
+* Perform Time Delay                                          *         00053900
+***************************************************************         00054000
+CICIDLAY DS    0H                                                       00054100
+         EXEC CICS DELAY                                               +00054200
+               INTERVAL(CICWKPL4)                                       00054300
+         BR    R3                  Return                               00054400
+                                                                        00054500
+***************************************************************         00054600
+* Handle abnormal terminations trapped by CICS                *         00054700
+***************************************************************         00054800
+CICIABXT DS    0H                                                       00054900
+         STM   R0,R15,CICSAVE      Save the registers                   00055000
+         ICM   R3,15,CICAIA        Load AIA address                     00055100
+         JZ    CICIABX1            Branch if not established            00055200
+         EXEC CICS ASSIGN                                              +00055300
+               ABCODE(CICWKF1)                                         +00055400
+               ASRAINTRPT(CICWKD1)                                     +00055500
+               ASRAPSW(0(R3))                                          +00055600
+               ASRAREGS(8(R3))                                          00055700
+         MVC   CICWKF2,CICWKD1+2   Copy interrupt code                  00055800
+CICIABX1 DS    0H                                                       00055900
+         ICM   R15,15,CICABXT      Load abend handler address           00056000
+         JZ    CICIABXX            Branch if not established            00056100
+         EXEC CICS HANDLE ABEND                                        +00056200
+               LABEL(CICIABXT)                                          00056300
+         L     R15,CICABXT         Load abend handler address           00056400
+         LA    R1,EJESCWK          Point to CICS work area              00056500
+         BASR  R14,R15             Pass control to abend handler        00056600
+CICIABXX DS    0H                                                       00056700
+         EXEC CICS ABEND                                               +00056800
+               ABCODE('E001')                                           00056900
+                                                                        00057000
+***************************************************************         00057100
+* Write data to profile VSAM KSDS                             *         00057200
+***************************************************************         00057300
+CICIVWRT DS    0H                                                       00057400
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00057500
+         L     R2,CICWKF1          Load storage address                 00057600
+         EXEC CICS HANDLE CONDITION                                    +00057700
+               ERROR(CICIVWTY)                                         +00057800
+               NOTFND(CICIVWT1)                                         00057900
+* READ the VSAM record with UPDATE and REWRITE it                       00058000
+         MVC   CICWKH2,CICWKH1     Set length work field for read       00058100
+         EXEC CICS READ                                                +00058200
+               DATASET('EJESPROF')                                     +00058300
+               SET(2)                                                  +00058400
+               LENGTH(CICWKH2)                                         +00058500
+               KEYLENGTH(9)                                            +00058600
+               RIDFLD(CICWKD1)                                         +00058700
+               UPDATE                                                   00058800
+         LH    R1,CICWKH1          Length of the input record           00058900
+         LR    R15,R1              Length of the profile                00059000
+         LR    R0,R2               Location of the VSAM input buffer    00059100
+         L     R14,CICWKF1         Set location of new Profile          00059200
+         MVCL  R0,R14              Move Profile to VSAM buffer          00059300
+         EXEC CICS REWRITE                                             +00059400
+               DATASET('EJESPROF')                                     +00059500
+               FROM(DUMMY)                                             +00059600
+               LENGTH(CICWKH1)                                          00059700
+         EXEC CICS HANDLE CONDITION                                    +00059800
+               ERROR                                                   +00059900
+               NOTFND                                                   00060000
+         BR    R3                  Return                               00060100
+CICIVWT1 DS    0H                                                       00060200
+         EXEC CICS WRITE                                               +00060300
+               DATASET('EJESPROF')                                     +00060400
+               FROM(DUMMY)                                             +00060500
+               RIDFLD(CICWKD1)                                         +00060600
+               LENGTH(CICWKH1)                                         +00060700
+               KEYLENGTH(9)                                             00060800
+         EXEC CICS HANDLE CONDITION                                    +00060900
+               ERROR                                                   +00061000
+               NOTFND                                                   00061100
+         BR    R3                  Return                               00061200
+CICIVWTY DS    0H                                                       00061300
+         EXEC CICS HANDLE CONDITION                                    +00061400
+               ERROR                                                   +00061500
+               NOTFND                                                   00061600
+         LHI   R15,4               Set return code                      00061700
+         BR    R3                  Return                               00061800
+         DROP  R2              *** Drop dummy DSECT                     00061900
+                                                                        00062000
+***************************************************************         00062100
+* Read data from profile VSAM KSDS                            *         00062200
+***************************************************************         00062300
+CICIVRED DS    0H                                                       00062400
+         USING DUMMY,R2        *** Synchronize dummy DSECT              00062500
+         L     R2,CICWKF1          Load storage address                 00062600
+         EXEC CICS HANDLE CONDITION                                    +00062700
+               ERROR(CICIVRDY)                                         +00062800
+               NOTFND(CICIVRDY)                                         00062900
+         MVC   CICWKH2,CICWKH1     Set length work field for read       00063000
+         EXEC CICS READ                                                +00063100
+               DATASET('EJESPROF')                                     +00063200
+               RIDFLD(CICWKD1)                                         +00063300
+               INTO(DUMMY)                                             +00063400
+               LENGTH(CICWKH2)                                         +00063500
+               KEYLENGTH(9)                                             00063600
+         EXEC CICS HANDLE CONDITION                                    +00063700
+               ERROR                                                   +00063800
+               NOTFND                                                   00063900
+         BR    R3                  Return                               00064000
+CICIVRDY DS    0H                                                       00064100
+         EXEC CICS HANDLE CONDITION                                    +00064200
+               ERROR                                                   +00064300
+               NOTFND                                                   00064400
+         LHI   R15,4               Set return code                      00064500
+         BR    R3                  Return                               00064600
+         DROP  R2              *** Drop dummy DSECT                     00064700
+                                                                        00064800
+***************************************************************         00064900
+* Vector table describing CICS interface routines             *         00065000
+***************************************************************         00065100
+         EJESCWK CVT=YES           CICS interface Vector table          00065200
+                                                                        00065300
+***************************************************************         00065400
+* NOTE: If the offsets within OCO Control Block UCBDSECT      *         00065500
+*       are changed, those changes must be reflected below.   *         00065600
+*                                                             *         00065700
+UCBLNT   EQU   0,2                 UCBLNT  in UCBDSECT        *         00065800
+UCBNAME  EQU   4,4                 UCBNAME in UCBDSECT        *         00065900
+UCBPROG  EQU   24,8                UCBPROG in UCBDSECT        *         00066000
+*                                                             *         00066100
+***************************************************************         00066200
+                                                                        00066300
+***************************************************************         00066400
+* Dummy sections                                              *         00066500
+***************************************************************         00066600
+DUMMY    DSECT ,                   Dummy DSECT for internal use         00066700
+DUMMY1   DS    CL1                                                      00066800
+DUMMY2   DS    CL1                                                      00066900
+DUMMY3   DS    CL1                                                      00067000
+DUMMY4   DS    CL1                                                      00067100
+                                                                        00067200
+         DFHCSAD TYPE=DSECT        Define DFHCSADS                      00067300
+         DFHAFCD ,                 Define DFHAFCD                       00067400
+DFHEISTG DSECT ,                                                        00067500
+         EJESCWK ,                 CICS interface work area             00067600
+         EJESCPL ,                 CICS interface START parm list       00067700
+         YREGS ,                                                        00067800
+         END   ,                                                        00067900
+//LKED.SYSIN DD *
+   ENTRY EJESCICI
+   NAME EJESCICI(R)
+

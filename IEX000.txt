@@ -1,0 +1,534 @@
+         TITLE '**  CICS/ESA USER EXIT PROCESSOR  **'
+*----------------------------------------------------------------------
+*  XPI SETUP REQUIREMENT TO SUPPRESS REFERENCES TO PROTECTED STORAGE
+*----------------------------------------------------------------------
+         DFHUEXIT TYPE=XPIENV           SETUP CICS XPI ENVIRONMENT
+*----------------------------------------------------------------------
+*  IEX000   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION
+*----------------------------------------------------------------------
+IEX000   RSECT
+         STM   RE,RC,12(RD)             SAVE CALLERS REGS
+         LR    RC,RF                    LOAD BASE REG
+         USING IEX000,RC                USE IT
+         B     INT01                    BRANCH AROUND DUMP ID
+IEX000   AMODE 31                       MAY EXECUTE ABOVE 16M
+IEX000   RMODE ANY                      MAY RESIDE ABOVE 16M
+         DS    0H
+         DC    CL8'IEX000'              DUMP PROGRAM ID
+         DC    CL1' '
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE
+         DC    CL1' '
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME
+         DC    CL1' '
+*----------------------------------------------------------------------
+*        USER EXIT VALIDATION
+*----------------------------------------------------------------------
+INT01    DS    0H
+         SR    R3,R3                    CLR ERROR INDEX REG
+         LR    RB,R1                    LOAD UE PARMS @
+         USING DFHUEPAR,RB              USE IT
+         L     R1,UEPEXN                LOAD @ OF EXIT # INVOKED
+         LA    R3,1(,R3)                INDEX THE ERROR INDEX
+         CLI   0(R1),XZCOUT             TERMINAL OUTPUT EXIT
+         BE    UZCOUT                   ..YES, BRANCH
+         CLI   0(R1),XZCATT             PRE-TASK ATTACH EXIT
+         BE    UZCATT                   ..YES, BRANCH
+         CLI   0(R1),XTDOUT             PRE-TD WRITE EXIT
+         BE    UTDOUT                   ..YES, BRANCH
+         CLI   0(R1),XEIIN              EXEC CICS IN EXIT
+         BE    UEIIN                    ..YES, BRANCH
+         CLI   0(R1),XFCREQ             FC REQUEST EXIT
+         BE    UFCREQ                   ..YES, BRANCH
+         CLI   0(R1),XDUREQ             DUMP REQUEST EXIT
+         BE    UDUREQ                   ..YES, BRANCH
+         CLI   0(R1),XMEOUT             MSG REROUTE/SUPPRESS EXIT
+         BE    UMEOUT                   ..YES, BRANCH
+         B     XIT99                    ..EXIT - EXIT NOT SUPPORTED
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XZCOUT -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UZCOUT   DS    0H
+         L     RA,UEPTCTTE              LOAD @ OF TCTTE ID
+         USING DFHTCTTE,RA              USE TCT BASE @
+         CLI   TCTTETI+2,C'P'           PRINTER?
+         BE    UZCOUT00                 ..YES, BRANCH
+         CLC   TCTTETI(3),=C'MMZ'        PRINTER?
+         BNE   UZCOUT20                 ..NO, BRANCH
+UZCOUT00 DS    0H
+         LA    RE,ZEBRATBL              LOAD EXCLUDE TABLE @
+         LA    RF,ZEBRACNT              LOAD EXCLUDE TABLE #
+UZCOUT03 DS    0H
+         CLC   TCTTETI,0(RE)            EXCLUDED?
+         BE    UZCOUT20                 ..YES,BRANCH
+         LA    RE,L'ZEBRATBL(,RE)       INDEX TABLE @
+         BCT   RF,UZCOUT03              ..LOOP
+         L     RA,UEPTIOA               LOAD TIOA @
+         DROP  RA
+         USING DFHTIOA,RA
+         LH    R9,TIOATDL               LOAD TIOA DATA LENGTH
+         LA    RA,TIOADBA               LOAD TIOA DATA @
+         DROP  RA
+*----------------------------------------------------------------------
+         L     R0,LOOKBYTE
+         LR    RE,RA
+         LR    RF,RE
+         LA    R9,0(RF,R9)
+         LR    RF,R9
+UZCOUT05 DS    0H
+         SRST  RF,RE
+         BH    UZCOUT20
+         BO    UZCOUT05
+         BL    UZCOUT10
+         B     UZCOUT20
+UZCOUT10 DS    0H
+         MVI   0(RF),CHNGBYTE
+         LR    RE,RF
+         LR    RF,R9
+         B     UZCOUT05
+*----------------------------------------------------------------------
+UZCOUT20 DS    0H
+         L     RA,UEPTCTTE              LOAD @ OF TCTTE ID
+         USING DFHTCTTE,RA              USE TCT BASE @
+         L     RE,TCTENIBA              LOAD NIB @
+         CLC   =C'IEPCNS',12(RE)        LUNAME PREFIX NETSPOOL
+         BE    XIT01                    ..YES, EXIT
+         CLI   TCTTETI+2,C'P'           PRINTER?
+         BE    UZCOUT22                 ..YES, BRANCH
+         CLC   TCTTETI(3),=C'MMZ'        PRINTER?
+         BNE   XIT01                    ..NO, BRANCH
+UZCOUT22 DS    0H
+         L     RA,UEPTIOA               LOAD TIOA @
+         DROP  RA
+         USING DFHTIOA,RA
+         LH    R9,TIOATDL               LOAD TIOA DATA LENGTH
+         LA    RA,TIOADBA               LOAD TIOA DATA @
+         DROP  RA
+         L     R0,LEFTBRKT
+         LR    RE,RA
+         LR    RF,RE
+         LA    R9,0(RF,R9)
+         LR    RF,R9
+UZCOUT25 DS    0H
+         SRST  RF,RE
+         BH    XIT01
+         BO    UZCOUT25
+         BL    UZCOUT30
+         B     XIT01
+UZCOUT30 DS    0H
+         MVI   0(RF),OLDLBRKT
+         LR    RE,RF
+         LR    RF,R9
+         B     UZCOUT25
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XZCATT -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UZCATT   DS    0H
+         L     RA,UEPTRAN               LOAD @ OF TRANSACTION ID
+         TR    0(4,RA),UPCASE           FORCE UPPER CASE TRANSACTION ID
+         B     XIT01                    ..EXIT
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XTDOUT -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UTDOUT   DS    0H
+         L     RA,UEPTDQUE              LOAD @ OF TDQ ID
+         CLC   =C'JRDR',0(RA)           INTERNAL READER
+         BNE   XIT01                    ..NO, EXIT
+         L     RA,UEPTDAUD              LOAD @ OF TD RECORD
+         CLC   =C'/*$VS,',0(RA)         JES2 COMMAND
+         BNE   XIT01                    ..NO, EXIT
+         LA    RA,NULLJCL               LOAD @ NULL JCL RECORD
+         ST    RA,UEPTDAMD              SET MODIFICATION @
+         LA    RA,NULLJCLN              LOAD @ NULL JCL LENGTH
+         ST    RA,UEPTDLMD              SET MODIFICATION @
+         B     XIT01                    ..EXIT
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XEIIN -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UEIIN    DS    0H
+         LA    R3,1(,R3)                INDEX THE ERROR INDEX
+         L     RA,UEPGAA                LOAD @ OF GLOBAL WORKAREA
+         LTR   RA,RA                    GAA BASE @ GT ZERO
+         USING USRXITGA,RA              USE GAA BASE @
+         BZ    XIT99                    ..NO, BRANCH
+         LA    R3,1(,R3)                INDEX THE ERROR INDEX
+         L     R9,UEPGAL                LOAD @ OF GLOBAL WORKAREA LEN
+         LH    R9,0(,R9)                LOAD GLOBAL WORKAREA LENGTH
+         LTR   R9,R9                    GAL GT ZERO
+         BZ    XIT99                    ..NO, BRANCH
+         CLI   EINSDUMP,EINSDMPN        TAKE SOS SDUMP
+         BE    XIT99                    ..NO, BYPASS DUMP
+         L     RD,UEPSTACK              LOAD KERNAL STACK ENTRY @
+         L     R4,UEPXSTOR              LOAD GLUE LIFO FOR XPI
+         USING XPI,R4                   USE IT
+         LA    R5,XPIPARM               XPI PARM AREA @
+         USING DFHSMSR_ARG,R5           USE IT
+         XC    XPIRESP,XPIRESP
+         XC    XPIREASN,XPIREASN
+         DFHSMSRX CALL,                                                *
+               CLEAR,                                                  *
+               IN,                                                     *
+               FUNCTION(INQUIRE_SHORT_ON_STORAGE),                     *
+               OUT,                                                    *
+               SOS_ABOVE_THE_LINE(XPISOSAB),                           *
+               SOS_BELOW_THE_LINE(XPISOSBE),                           *
+               RESPONSE(XPIRESP),                                      *
+               REASON(XPIREASN)                                     *
+         CLI   XPIRESP,SMSR_OK          XPI NORMAL RESPONSE
+         BE    UEIIN05
+         WTO   'IEXEI001I  EIIN INQUIRE SOS RESPONSE NOT OK'
+         B     XIT01
+UEIIN05  DS    0H
+         CLI   XPISOSAB,SMSR_YES
+         BE    UEIIN10
+         CLI   XPISOSBE,SMSR_YES
+         BNE   XIT01
+         WTO   'IEXEI003I  EIIN DETECTED SOS BELOW 16M LINE'
+         B     UEIIN20
+UEIIN10  DS    0H
+         WTO   'IEXEI002I  EIIN DETECTED SOS ABOVE 16M LINE'
+UEIIN20  DS    0H
+         DROP  R5
+         USING DFHDUDU_ARG,R5           USE IT
+         MVI   EINSDUMP,EINSDMPN        SUPPRESS FUTURE SDUMPS
+         XC    XPIRESP,XPIRESP
+         XC    XPIREASN,XPIREASN
+         DFHDUDUX CALL,                                                *
+               CLEAR,                                                  *
+               IN,                                                     *
+               FUNCTION(SYSTEM_DUMP),                                  *
+               SYSTEM_DUMPCODE(EINDMPCD),                              *
+               CALLER(EINCALLR),                                       *
+               TITLE(EINTITLE),                                        *
+               OUT,                                                    *
+               DUMPID(XPIDMPID),                                       *
+               RESPONSE(XPIRESP),                                      *
+               REASON(XPIREASN)
+         CLI   XPIRESP,DUDU_OK          XPI NORMAL RESPONSE
+         BNE   UEIIN25
+         WTO   'IEXEI005I  EIIN SOS DUMP COMPLETE'
+         B     XIT01
+UEIIN25  DS    0H
+         CLI   XPIRESP,DUDU_EXCEPTION   XPI EXCEPTION RESPONSE
+         BNE   UEIIN40
+         CLI   XPIREASN,DUDU_FESTAE_FAILED
+         BNE   UEIIN30
+         WTO   'IEXEI006I  EIIN SOS DUMP EXCEPTION FESTAE FAILED'
+         B     XIT01
+UEIIN30  DS    0H
+         CLI   XPIREASN,DUDU_INSUFFICIENT_STORAGE
+         BNE   UEIIN31
+         WTO   'IEXEI007I  EIIN SOS DUMP EXCEPTION INSUFF STORAGE'
+         B     XIT01
+UEIIN31  DS    0H
+         CLI   XPIREASN,DUDU_NO_DATASET
+         BNE   UEIIN32
+         WTO   'IEXEI008I  EIIN SOS DUMP EXCEPTION NO DATA SET'
+         B     XIT01
+UEIIN32  DS    0H
+         CLI   XPIREASN,DUDU_PARTIAL_SYSTEM_DUMP
+         BNE   UEIIN33
+         WTO   'IEXEI009I  EIIN SOS DUMP EXCEPTION PARTIAL DUMP'
+         B     XIT01
+UEIIN33  DS    0H
+         WTO   'IEXEI010I  EIIN SOS DUMP EXCEPTION RESPONSE'
+         B     XIT01
+UEIIN40  DS    0H
+         WTO   'IEXEI011I  EIIN SOS DUMP INVALID RESPONSE'
+         B     XIT01
+         DROP  R4
+         DROP  R5
+         DROP  RA
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XFCREQ -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UFCREQ   DS    0H
+         L     RA,UEPCLPS               LOAD @ OF EXIT PARMS
+         LTR   RA,RA                    PARMS @ GT ZERO
+         USING FC_ADDR_LIST,RA          USE EXIT PARM BASE @
+         BZ    XIT01                    ..NO, BRANCH
+         L     R9,FC_ADDR0              LOAD @ OF EID PARMS
+         LTR   R9,R9                    PARM @ GT ZERO
+         USING FC_EID,R9                USE EID BASE @
+         BZ    XIT01                    ..NO, BRANCH
+         TM    FC_BITS1,FC_EXIST1       IS FC_ADDR1 VALID
+         BZ    XIT01                    ..NO, BRANCH
+         L     R8,FC_ADDR1              LOAD @ OF FILE NAME PARM
+         LTR   R8,R8                    PARM @ GT ZERO
+         USING FC_DATA1,R8              USE PARM BASE @
+         BZ    XIT01                    ..NO, BRANCH
+         CLC   FC_FILE,=CL8'HOCMMLOG'   UPS LOG FILE
+         BNE   XIT01                    ..NO, BRANCH
+         DROP  R8                       DROP BASE
+         CLI   FC_FUNCT,FC_WRITE        EXEC WRITE REQUEST
+         BNE   XIT01                    ..NO, BRANCH
+         L     R8,UEPFSHIP              LOAD @ OF FUNC SHIP PARMS
+         CLI   0(R8),C'Y'               FUNCTION SHIP REQUEST
+         BNE   UFCREQ1                  ..NO, BRANCH
+         MVC   4(4,R8),=F'4096'         SET BUFFER LENGTH
+         MVC   8(4,R8),=F'4024'         SET RECORD LENGTH
+         MVC   12(4,R8),=F'24'          SET RIDFLD LENGTH
+UFCREQ1  DS    0H
+         XC    UEPRCODE,UEPRCODE        SET EIB RETURN CODE
+         XC    UEPRESP,UEPRESP          SET EIB RESP CODE
+         XC    UEPRESP2,UEPRESP2        SET EIB RESP CODE2
+         B     XIT02                    ..EXIT VIA BYPASS REQUEST
+         DROP  R9                       DROP BASE
+         DROP  RA                       DROP BASE
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XDUREQ -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UDUREQ   DS    0H
+         LA    R3,1(,R3)                INDEX THE ERROR INDEX
+         L     RA,UEPGAA                LOAD @ OF GLOBAL WORKAREA
+         LTR   RA,RA                    GAA BASE @ GT ZERO
+         USING USRXITGA,RA              USE GAA BASE @
+         BZ    XIT99                    ..NO, BRANCH
+         LA    R3,1(,R3)                INDEX THE ERROR INDEX
+         L     R9,UEPGAL                LOAD @ OF GLOBAL WORKAREA LEN
+         LH    R9,0(,R9)                LOAD GLOBAL WORKAREA LENGTH
+         LTR   R9,R9                    GAL GT ZERO
+         BZ    XIT99                    ..NO, BRANCH
+         L     R7,UEPTRANID             LOAD @ OF TRANSACTION ID
+         LA    R9,DUNOTE                LOAD @ OF DUMP NOTICE TRAN IDS
+         LA    R8,DUNOTE#               LOAD # OF DUMP NOTICE TRAN IDS
+UDUREQ01 DS    0H
+         CLC   0(4,R7),0(R9)            NOTICE TRAN ID
+         BE    UDUREQ02                 ..YES, BRANCH
+         LA    R9,8(,R9)                INDEX NOTICE TRAN ID @
+         BCT   R8,UDUREQ01              ..LOOP
+         B     XIT01                    ..EXIT
+UDUREQ02 DS    0H
+         L     R1,4(,R9)                LOAD WTO LENGTH
+         WTO   ,MF=(E,(1))
+         CLC   =C'O462',0(R9)           O462 ABEND
+         BNE   XIT01                    ..NO, EXIT
+         OC    DDUO462I,DDUO462I        ICE START SET
+         BNZ   XIT01                    ..YES, EXIT
+         ZAP   DDUO462I,=PL4'1500'      SET O462 ICE START IN 15 MIN
+         B     XIT01
+         DROP  RA                       DROP BASE @
+*----------------------------------------------------------------------
+*        USER EXIT PROCESS  - XMEOUT -
+*        REGS ON ENTRY -
+*              RB = DFHUEPAR PARM LIST @
+*              RD = EXIT SAVE AREA @
+*              RE = RETURN @
+*              RF = EXIT ENTRY @
+*----------------------------------------------------------------------
+UMEOUT   DS    0H
+*        WTO   'IEXMO001I  XMEOUT ENTERED.'
+         L     R9,UEPMDOM               LOAD @ OF DOMAIN ID
+         CLC   =C'ME',0(R9)             MESSAGE DOMAIN
+         BNE   XIT01                    ..NO, BRANCH
+         L     R9,UEPMNUM               LOAD @ OF MSG NUMBER
+         CLC   =F'0116',0(R9)           MSG ME0116
+         BNE   XIT01                    ..NO, BRANCH
+*        WTO   'IEXMO002I  DFHME0116 MSG RECEIVED.'
+         L     R9,UEPNRTE               LOAD @ OF NOROUTE FLAG
+         CLI   0(R9),C'1'               NOROUTE FLAG SET
+         BE    XIT02                    ..YES, BRANCH
+*        WTO   'IEXMO003I  DFHME0116 ROUTABLE.'
+         L     R9,UEPMNRC               LOAD @ OF # ROUTE CODES
+         XC    0(2,R9),0(R9)            CLEAR ANY ROUTE CODES
+         L     R9,UEPMNTD               LOAD @ OF # TD QUEUES
+         OC    0(2,R9),0(R9)            ANY TD QUEUES
+         BNZ   XIT01                    ..YES, BRANCH
+*        WTO   'IEXMO004I  DFHME0116 SENT TO CSML.'
+         MVC   0(2,R9),=H'1'            SET ONE TD QUEUE
+         L     R9,UEPMTDQ               LOAD @ OF TD QUEUE IDS
+         MVC   0(4,R9),=C'CSML'         SET ROUTE TD QUEUE ID
+         B     XIT01                    ..EXIT
+*----------------------------------------------------------------------
+*        USER EXIT WITH RETURN CODE
+*----------------------------------------------------------------------
+XIT01    DS    0H
+         L     RD,UEPEPSA               RESTORE GLUE SAVE AREA @
+         RETURN (14,12),                RESTORE CALLERS REGS           *
+               RC=UERCNORM              NORMAL RETURN CODE
+*
+XIT02    DS    0H
+         LA    RD,UERCBYP               LOAD BYPASS RETURN CODE
+         ST    RD,UEPCRCA               FORCE BYPASS RETURN CODE
+         L     RD,UEPEPSA               RESTORE GLUE SAVE AREA @
+         RETURN (14,12),                RESTORE CALLERS REGS           *
+               RC=UERCBYP               XMEOUT SUPPRESS RETURN CODE
+*----------------------------------------------------------------------
+*        USER EXIT NON-ZERO RETURN CODE
+*----------------------------------------------------------------------
+XIT99    DS    0H
+         BCTR  R3,0                     DECREMENT ERR TABLE INDEX
+         SLL   R3,3                     MULTIPLY BY 8
+         LA    R3,ERRTBL(R3)            LOAD ERR TABLE VECTOR @
+         LM    R2,R3,0(R3)              LOAD ERR TBL ENTRY @ AND LEN
+         L     RD,UEPSTACK              LOAD KERNAL STACK ENTRY @
+         LA    R6,XIT99Z                LOAD TRACE RETURN @ FOR XPI
+         L     R4,UEPXSTOR              LOAD GLUE LIFO FOR XPI
+         USING XPI,R4                   USE IT
+         LA    R5,XPIPARM               XPI PARM AREA @
+         USING DFHTRPT_ARG,R5           USE IT
+         DFHTRPTX CALL,                                                *
+               CLEAR,                                                  *
+               IN,                                                     *
+               FUNCTION(TRACE_PUT),                                    *
+               POINT_ID(X'0186'),                                      *
+               DATA1((R2),(R3)),                                       *
+               RETURN_ADDR((R6)),                                      *
+               OUT,                                                    *
+               RESPONSE(*)
+XIT99Z   DS    0H
+         B     XIT01
+*----------------------------------------------------------------------
+*        CONSTANTS AND LITERALS
+*----------------------------------------------------------------------
+LOOKBYTE DS    0F
+         DC    X'000000B0'
+CHNGBYTE EQU   X'5F'
+*
+LEFTBRKT DS    0F
+         DC    X'000000AD'
+OLDLBRKT EQU   X'BA'
+*
+ZEBRATBL DS    0F
+         DC    CL4'BAP8'
+         DC    CL4'WWWW'
+         DC    CL4'XXXX'
+         DC    CL4'YYYY'
+         DC    CL4'ZZZZ'
+ZEBRACNT EQU   (*-ZEBRATBL)/L'ZEBRATBL
+*
+ERRTBL   DS    0F
+         DC    A(EMSG01),A(L'EMSG01)
+         DC    A(EMSG02),A(L'EMSG02)
+         DC    A(EMSG03),A(L'EMSG03)
+         DC    A(EMSG04),A(L'EMSG04)
+         DC    A(EMSG05),A(L'EMSG05)
+         DC    A(EMSG06),A(L'EMSG06)
+         DC    A(0),A(0)
+EMSG01   DC    C'ERROR CODE 1 UNSUPPORTED EXIT NUMBER'
+EMSG02   DC    C'ERROR CODE 2 GLOBAL AREA ADDRESS ZERO'
+EMSG03   DC    C'ERROR CODE 3 GLOBAL AREA LENGTH ZERO'
+EMSG04   DC    C'ERROR CODE 4 UNKNOWN GLUE ERROR'
+EMSG05   DC    C'ERROR CODE 5 UNKNOWN GLUE ERROR'
+EMSG06   DC    C'ERROR CODE 6 UNKNOWN GLUE ERROR'
+*
+DUNOTE   DS    0F
+         DC    CL4'EFTP',A(NOTE12)
+         DC    CL4'OADR',A(NOTE13)
+**       DC    CL4'WDLP',A(NOTE14)
+         DC    CL4'O462',A(NOTE15)
+DUNOTE#  EQU   (*-DUNOTE)/8
+*
+NOTE12   WTO   'IEX00112I  TRANSACTION EFTP HAS ABENDED.',MF=L
+NOTE13   WTO   'IEX00113I  TRANSACTION OADR HAS ABENDED.',MF=L
+**NOTE14   WTO   'IEX00114I  TRANSACTION WDLP HAS ABENDED.',MF=L
+NOTE15   WTO   'IEX00115I  TRANSACTION O462 HAS ABENDED.',MF=L
+*
+UPCASE   EQU   *                        UPPERCASE TRANSLATE TABLE
+         DC    X'000102030405060708090A0B0C0D0E0F'
+         DC    X'101112131415161718191A1B1C1D1E1F'
+         DC    X'202122232425262728292A2B2C2D2E2F'
+         DC    X'303132333435363738393A3B3C3D3E3F'
+         DC    X'404142434445464748494A4B4C4D4E4F'
+         DC    X'505152535455565758595A5B5C5D5E5F'
+         DC    X'606162636465666768696A6B6C6D6E6F'
+         DC    X'707172737475767778797A7B7C7D7E7F'
+         DC    X'80C1C2C3C4C5C6C7C8C98A8B8C8D8E8F'
+         DC    X'90D1D2D3D4D5D6D7D8D99A9B9C9D9E9F'
+         DC    X'A0A1E2E3E4E5E6E7E8E9AAABACADAEAF'
+         DC    X'B0B1B2B3B4B5B6B7B8B9BABBBCBDBEBF'
+         DC    X'C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF'
+         DC    X'D0D1D2D3D4D5D6D7D8D9DADBDCDDDEDF'
+         DC    X'E0E1E2E3E4E5E6E7E8E9EAEBECEDEEEF'
+         DC    X'F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF'
+*
+         DS    0F
+EINDMPCD DC    CL8'SOS DUMP'
+EINCALLR DC    A(CALLERID)
+         DC    A(L'CALLERID)
+EINTITLE DC    A(TITLEID)
+         DC    A(L'TITLEID)
+CALLERID DC    C'CSECT=IEX000 ENTRY=UEIIN FUNC=SOS'
+TITLEID  DC    C'CICS EIIN GLUE SOS DETECTED DUMP'
+*
+TRTBLANK DC    256X'00'                 BLANK TRANSLATE AND TEST TABLE
+         ORG   TRTBLANK+X'40'
+         DC    X'FF'
+         ORG
+*
+         DS    0F
+NULLJCLN DC    A(L'NULLJCL)
+NULLJCL  DC    CL80'// '
+*
+         LTORG
+*----------------------------------------------------------------------
+*        DSECTS
+*----------------------------------------------------------------------
+*
+XPI      DSECT
+XPIPARM  DS    XL256                    XPI PARM LIST AREA
+XPIUPARM DS    0XL64                    XPI USER PARM LIST AREA
+XPIRESP  DS    XL1                      XPI RESPONSE CODE
+XPIREASN DS    XL1                      XPI REASON CODE
+XPISOSAB DS    XL1                      XPI SOS ABOVE 16M RESPONSE
+XPISOSBE DS    XL1                      XPI SOS BELOW 16M RESPONSE
+XPIDMPID DS    CL9                      XPI ASSIGNED DUMP ID
+*
+         COPY  DFHDUDUY                 COPY DUMP MANAGER XPI DSECTS
+         COPY  DFHSMSRY                 COPY STORAG RECOVERY XPI DSECTS
+         COPY  DFHTRPTY                 COPY TRACE PUT XPI DSECTS
+         COPY  DFHFCEDS                 COPY FILE CONTROL EXIT DSECTS
+TCTTEAR  EQU   0
+         COPY  DFHTCTTE                 COPY TERMINAL ENTRY DSECT
+         DROP  0
+TIOABAR  EQU   0
+         COPY  DFHTIOA                  COPY TERMINAL I/O AREA DSECT
+         DROP  0
+*
+         DFHUEXIT TYPE=EP,                                             *
+               ID=ALL
+*
+USRXITGA DSECT                          USER EXIT GAA DSECT
+DPESYSID DS    CL4                      SYSID
+DPESUFIX DS    CL2                      DLI PSB SUFFIX CHARACTER
+         DS    XL1                      ..FILLER
+EINSDUMP DS    XL1                      EIN SOS SDUMP
+EINSDMPN EQU   C'N'                     ..DO NOT TAKE SDUMP
+DDUO462I DS    PL4                      NEXT INTERVAL TO START O462
+USRXITLN EQU   *-USRXITGA               GLOBAL AREA LENGTH
+*
+DLIPLIST DSECT                          CALL DLI PLIST
+DLIFUNC  DS    A                        @ DLI FUNCTION
+DLIPSBNM DS    A                        @ DLI PSB NAME
+*
+         END
+

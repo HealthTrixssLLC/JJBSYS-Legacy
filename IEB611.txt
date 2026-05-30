@@ -1,0 +1,200 @@
+*ASM XOPTS(CICS,NOPROLOG,NOEPILOG,SP)                                   00010002
+IEB611   TITLE '**  CICS/ESA FILE ATTRIBUTES SERVER PROGRAM  **'        00020002
+*---------------------------------------------------------------------- 00030002
+*        REGISTER AND OTHER EQUATES                                     00040002
+*---------------------------------------------------------------------- 00050002
+RF       EQU   15                                                       00060002
+RE       EQU   14                                                       00070002
+RD       EQU   13                                                       00080002
+RC       EQU   12                                                       00090002
+RB       EQU   11                                                       00100002
+RA       EQU   10                                                       00110002
+R9       EQU   9                                                        00120002
+R8       EQU   8                                                        00130002
+R7       EQU   7                                                        00140002
+R6       EQU   6                                                        00150002
+R5       EQU   5                                                        00160002
+R4       EQU   4                                                        00170002
+R3       EQU   3                                                        00180002
+R2       EQU   2                                                        00190002
+R1       EQU   1                                                        00200002
+R0       EQU   0                                                        00210002
+*---------------------------------------------------------------------- 00220002
+*  IEB611   CSECT - PROGRAM ENTRY AND DUMP IDENTIFICATION               00230002
+*---------------------------------------------------------------------- 00240002
+IEB611   DFHEIENT CODEREG=(12),                                        *00250002
+               DATAREG=(13),                                           *00260002
+               EIBREG=(11)                                              00270002
+         MVC   EISEYE,=CL16'IEB611 EI STORAGE'                          00280002
+         MVC   FAILRSP,=CL8'FAILRSP '   SET EYE CATCHER                 00290002
+         MVC   FAILRSP2,=CL8'FAILRSP2'  SET EYE CATCHER                 00300002
+         MVC   FAILFN,=CL8'FAILFN  '    SET EYE CATCHER                 00310002
+         MVC   FAILRC,=CL8'FAILRC  '    SET EYE CATCHER                 00320002
+         B     INT00                    BRANCH AROUND DUMP ID           00330002
+IEB611   AMODE 31                       MAY EXECUTE ABOVE 16M           00340002
+IEB611   RMODE ANY                      MAY RESIDE ABOVE 16M            00350002
+         DS    0H                                                       00360002
+         DC    CL8'IEB611'              DUMP PROGRAM ID                 00370002
+         DC    CL1' '                                                   00380002
+         DC    CL8'&SYSDATE'            ASSEMBLE DATE                   00390002
+         DC    CL1' '                                                   00400002
+         DC    CL5'&SYSTIME'            ASSEMBLE TIME                   00410002
+         DC    CL1' '                                                   00420002
+INT00    DS    0H                                                       00430002
+*---------------------------------------------------------------------- 00440002
+*        VERIFY CALLER'S PARMS                                          00450002
+*---------------------------------------------------------------------- 00460002
+         LH    R1,EIBCALEN              LOAD COMMAREA LENGTH            00470002
+         CH    R1,=AL2(COMMIN)          CHECK MINIMUM LENGTH            00480002
+         BL    ABN01                    ..NO CHOICE BUT ABEND           00490002
+         EXEC  CICS,                                                   *00500002
+               ADDRESS,                                                *00510002
+               COMMAREA(RA),                                           *00520002
+               RESP(RESP),                                             *00530002
+               RESP2(RESP2)                                             00540002
+         CLC   RESP,DFHRESP(NORMAL)     COMMAREA @ FOUND                00550002
+         BNE   ABN02                    ..NO CHOICE BUT ABEND           00560002
+         USING COMPARM,RA                                               00570002
+         XC    COMRSP(8),COMRSP         SET NORMAL RESPONSE             00580002
+         EXEC  CICS,                                                   *00590002
+               INQUIRE,                                                *00600002
+               FILE(COMFILE),                                          *00610002
+               ACCESSMETHOD(COMDSORG),                                 *00620002
+               KEYLENGTH(COMKEYL),                                     *00630002
+               ENABLESTATUS(COMENABL),                                 *00640002
+               OPENSTATUS(COMOPEN),                                    *00650002
+               RECORDFORMAT(COMRECFM),                                 *00660002
+               RECORDSIZE(COMLRECL),                                   *00670002
+               TYPE(COMXSDS),                                          *00680002
+               RESP(RESP),                                             *00690002
+               RESP2(RESP2)                                             00700002
+         CLC   RESP,DFHRESP(NORMAL)     FILE RESOURCE FOUND             00710002
+         BNE   XIT00                    ..NO RETURN RESP CODE           00720002
+         LA    R1,19                    SET NOTOPEN RESP                00730002
+         ST    R1,RESP                                                  00740002
+         CLC   COMENABL,DFHVALUE(ENABLED) FILE ENABLED                  00750002
+         BNE   XIT00                    ..NO, RETURN ERROR              00760002
+         XC    RESP,RESP                CLR RETURN CODE                 00770002
+         CLC   COMOPEN,DFHVALUE(OPEN)   FILE OPEN                       00780002
+         BE    XIT00                    ..YES, BRANCH                   00790002
+         EXEC  CICS,                                                   *00800002
+               SET,                                                    *00810002
+               FILE(COMFILE),                                          *00820002
+               OPEN,                                                   *00830002
+               RESP(RESP),                                             *00840002
+               RESP2(RESP2)                                             00850002
+         CLC   RESP,DFHRESP(NORMAL)     FILE OPENED                     00860002
+         BNE   XIT00                    ..NO, RETURN RESP CODE          00870002
+         EXEC  CICS,                                                   *00880002
+               INQUIRE,                                                *00890002
+               FILE(COMFILE),                                          *00900002
+               ACCESSMETHOD(COMDSORG),                                 *00910002
+               KEYLENGTH(COMKEYL),                                     *00920002
+               ENABLESTATUS(COMENABL),                                 *00930002
+               OPENSTATUS(COMOPEN),                                    *00940002
+               RECORDFORMAT(COMRECFM),                                 *00950002
+               RECORDSIZE(COMLRECL),                                   *00960002
+               TYPE(COMXSDS),                                          *00970002
+               RESP(RESP),                                             *00980002
+               RESP2(RESP2)                                             00990002
+         B     XIT00                    RETURN TO CALLER                01000002
+*---------------------------------------------------------------------- 01010002
+*        VARIOUS ERROR MSGS AND ABENDS                                  01020002
+*---------------------------------------------------------------------- 01030002
+ABN01    DS    0H                                                       01040002
+         LA    R2,MSG01                                                 01050002
+         LA    R3,L'MSG01                                               01060002
+         ICM   R4,B'1111',ABC01                                         01070002
+         B     ABN99                                                    01080002
+ABN02    DS    0H                                                       01090002
+         LA    R2,MSG02                                                 01100002
+         LA    R3,L'MSG02                                               01110002
+         ICM   R4,B'1111',ABC02                                         01120002
+         B     ABN99                                                    01130002
+ABN99    DS    0H                                                       01140002
+         MVC   SAVRESP,RESP                                             01150002
+         MVC   SAVRESP2,RESP2                                           01160002
+         MVC   SAVFN,EIBFN                                              01170002
+         MVC   SAVRC,EIBRCODE                                           01180002
+         STH   R3,HLFWORK                                               01190002
+         EXEC  CICS,                                                   *01200002
+               WRITEQ,                                                 *01210002
+               TD,                                                     *01220002
+               QUEUE(=C'CSMT'),                                        *01230002
+               FROM(0(,R2)),                                           *01240002
+               LENGTH(HLFWORK),                                        *01250002
+               RESP(RESP),                                             *01260002
+               RESP2(RESP2)                                             01270002
+         ST    R4,FULWORK                                               01280002
+         EXEC  CICS,                                                   *01290002
+               ABEND,                                                  *01300002
+               ABCODE(FULWORK),                                        *01310002
+               RESP(RESP),                                             *01320002
+               RESP2(RESP2)                                             01330002
+*---------------------------------------------------------------------- 01340002
+*        RETURN TO CICS                                                 01350002
+*---------------------------------------------------------------------- 01360002
+XIT00    DS    0H                                                       01370002
+         MVC   COMRSP(8),RESP           SET CICS RESP CODE              01380002
+         EXEC  CICS,                                                   *01390002
+               RETURN                                                   01400002
+         DFHEIRET                                                       01410002
+*---------------------------------------------------------------------- 01420002
+*        CONSTANTS                                                      01430002
+*---------------------------------------------------------------------- 01440002
+*                                                                       01450002
+MSG01    DC    C'IEB611001  COMMAREA length passed from IEB601 EXCI Fil*01460002
+               e Server too small, B601 abend initiated.'               01470002
+ABC01    EQU   *-21                                                     01480002
+*                                                                       01490002
+MSG02    DC    C'IEB611002  COMMAREA address can not be located, B602 a*01500002
+               bend initiated.'                                         01510002
+ABC02    EQU   *-21                                                     01520002
+*                                                                       01530002
+*---------------------------------------------------------------------- 01540002
+*        CICS WORKING STORAGE DSECT                                     01550002
+*---------------------------------------------------------------------- 01560002
+         DFHEISTG                                                       01570002
+EISEYE   DS    CL16                     EYE CATCHER                     01580002
+*                                                                       01590002
+DBLWORK  DS    D                        DOUBLE WORD WORK                01600002
+FULWORK  DS    F                        FULL WORD WORK                  01610002
+*                                                                       01620002
+RESP     DS    F                        EXEC COMMAND RESPONSE           01630002
+RESP2    DS    F                        EXEC COMMAND RESPONSE           01640002
+*                                                                       01650002
+FAILRSP  DS    CL8                      EYE CATCHER                     01660002
+SAVRESP  DS    F                        SAVED EXEC COMMAND RESPONSE     01670002
+FAILRSP2 DS    CL8                      EYE CATCHER                     01680002
+SAVRESP2 DS    F                        SAVED EXEC COMMAND RESPONSE     01690002
+FAILFN   DS    CL8                      EYE CATCHER                     01700002
+SAVFN    DS    H                        SAVED EXEC EIBFN                01710002
+FAILRC   DS    CL8                      EYE CATCHER                     01720002
+SAVRC    DS    XL6                      SAVED EXEC EIBRCODE             01730002
+*                                                                       01740002
+HLFWORK  DS    F                        HALF WORD WORK                  01750002
+*                                                                       01760002
+         DFHEIEND                                                       01770002
+*---------------------------------------------------------------------- 01780002
+*        CLIENT'S COMMAREA PARM LIST DSECT                              01790002
+*---------------------------------------------------------------------- 01800002
+*                                                                       01810002
+COMPARM  DSECT                                                          01820002
+*                                                                       01830002
+COMFILE  DS    CL8                      FILE ID                         01840002
+*                                                                       01850002
+COMOPEN  DS    F                        FILE OPEN STATUS                01860002
+COMENABL DS    F                        FILE ENABLE STATUS              01870002
+COMKEYL  DS    F                        FILE KEY LENGTH                 01880002
+COMRECFM DS    F                        FILE RECORD FORMAT              01890002
+COMLRECL DS    F                        FILE RECORD LENGTH              01900002
+COMDSORG DS    F                        FILE ORGANIZATION               01910002
+COMXSDS  DS    F                        FILE ORGANIZATION TYPE          01920002
+*                                                                       01930002
+COMRSP   DS    A                        RETURN CODE 1                   01940002
+COMRSP2  DS    A                        RETURN CODE 2                   01950002
+*                                                                       01960002
+COMMIN   EQU   *-COMPARM                MINIMUM COMMAREA LENGTH         01970002
+*---------------------------------------------------------------------- 01980002
+         END                                                            01990002
+

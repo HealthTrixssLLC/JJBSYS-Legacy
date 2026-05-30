@@ -1,0 +1,219 @@
+++USERMOD(OHCI513) REWORK(20131220) .
+++VER(C150) FMID(HCI6800)
+   /*
+     USERMOD OHCI513 CREATED USING SMP SYSMOD INSTALL DIALOG.
+     CREATED BY: TSSS013
+             ON: 13/12/20  12:00
+                 YY/MM/DD
+    DESCRIPTION:
+                 User replacable module for program autoinstall.
+      ATTENTION:
+                 The following UCLIN must be applied to the
+                 TZONE prior to installing the USERMOD.
+-----------------------------------------------------------------------
+UCLIN .
+REP       MAC             ( DFHPGADX )
+          GENASM          ( DFHPGADX )
+                          .
+REP       ASSEM           ( DFHPGADX )
+++ASMIN
+         COPY DFHPGADX                                                  00000100
+++ENDASMIN
+                          .
+ENDUCL.
+-----------------------------------------------------------------------
+       */ .
+++MAC(DFHPGADX) DISTLIB(ADFHSAMP) .
+*********************************************************************** 00500000
+*                                                                     * 01000000
+* MODULE NAME = DFHPGADX                                              * 01500000
+*                                                                     * 02000000
+* DESCRIPTIVE NAME = CICS/ESA    Program Autoinstall program exit     * 02500000
+*                                                                     * 03000000
+*                                                                     * 03500000
+*    @BANNER_START                           01                       * 03583300
+*    Licensed Materials - Property of IBM                             * 03666600
+*                                                                     * 03749900
+*    5655-S97              DFHPGADX                                   * 03833200
+*                                                                     * 03916500
+*    (C) Copyright IBM Corp. 1993, 2004                               * 03999800
+*                                                                     * 04083100
+*    CICS                                                             * 04166400
+*    (Element of CICS Transaction Server                              * 04249700
+*    for z/OS, Version 4 Release 1)                                   * 04333000
+*    @BANNER_END                                                      * 04416300
+*                                                                     * 04500000
+* STATUS = 6.4.0                                                      * 05000000
+*                                                                     * 05500000
+* FUNCTION = Provides user input for the program autoinstall function * 06000000
+*                                                                     * 06500000
+*        There are ASM, PL/I, COBOL and C versions of this program.   * 07000000
+*                                                                     * 07500000
+*        This program is a sample version in assembler of the program * 08000000
+*        autoinstall exit. The program is invoked when a program      * 08500000
+*        is being autoinstalled on behalf of the user and the         * 09000000
+*        autoinstall exit name is set to the default, DFHPGADX.       * 09500000
+*        The exit may be used to specify requirements for the         * 10000000
+*        program definition.                                          * 10500000
+*                                                                     * 11000000
+*        A parameter list is provided as input to the program. The    * 11500000
+*        parameter list is passed to the program via the commarea.    * 12000000
+*        The parameter list is defined in DFHPGACD.                   * 12500000
+*        The parameter list is addressed by the program using the     * 13000000
+*        normal conventions for a commarea.                           * 13500000
+*                                                                     * 14000000
+*        The parameter list specifies the name of the program to be   * 14500000
+*        autoinstalled and the module type. The user may use the      * 15000000
+*        parameter list to return information for the program to be   * 15500000
+*        autoinstalled. The user may also indicate using the          * 16000000
+*        return_code parameter that the program should not be         * 16500000
+*        defined.                                                     * 17000000
+*                                                                     * 17500000
+* NOTES :                                                             * 18000000
+*                                                                     * 18100000
+*    THIS IS A PRODUCT SENSITIVE SAMPLE.                              * 18200000
+*    REFER TO PRODUCT DOCUMENTATION.                                  * 18300000
+*                                                                     * 18400000
+*    DEPENDENCIES = S/390                                             * 18500000
+*    MODULE TYPE = Executable                                         * 19000000
+*    PROCESSOR = Assembler                                            * 19500000
+*    ATTRIBUTES = Read only, Serially Reusable                        * 20000000
+*                                                                     * 20500000
+*---------------------------------------------------------------------* 21000000
+*                                                                     * 21500000
+* ENTRY POINT = DFHPGADX                                              * 22000000
+*                                                                     * 22500000
+*     PURPOSE = All functions                                         * 23000000
+*                                                                     * 23500000
+*     LINKAGE =                                                       * 24000000
+*         This entry point is called by the autoinstall function      * 24500000
+*         to link to the program autoinstall exit program.            * 25000000
+*         The parameters are passed to the exit program via the       * 25500000
+*         commarea. The control block for the parameter list is in    * 26000000
+*         DFHPGACD.                                                   * 26500000
+*                                                                     * 27000000
+*     INPUT =                                                         * 27500000
+*         The input parameters provide the user with the name         * 28000000
+*         and module type for the program to be autoinstalled.        * 28500000
+*         The following input parameters are passed to the program    * 29000000
+*         via the commarea:                                           * 29500000
+*         PGAC_PROGRAM        - name of program to be autoinstalled   * 30000000
+*         PGAC_MODULE_TYPE    - program, mapset or partitionset       * 30500000
+*                                                                     * 31000000
+*     OUTPUT =                                                        * 31600000
+*         The output parameters may be used to specify user           * 32200000
+*         requirements for the program definition.                    * 32800000
+*         The following output parameters may be returned to the      * 33400000
+*         autoinstall function via the commarea:                      * 34000000
+*         PGAC_MODEL_NAME     - autoinstall model program name        * 34600000
+*         PGAC_LANGUAGE       - assembler, cobol, C370, LE370, PL/I   * 35200000
+*         PGAC_CEDF_STATUS    - cedf status, yes or no                * 35800000
+*         PGAC_DATA_LOCATION  - data location, below or any           * 36400000
+*         PGAC_EXECUTION_KEY  - execution key, CICS or user           * 37000000
+*         PGAC_LOAD_ATTRIBUTE - reload, transient, resident, reuseable* 37600000
+*         PGAC_USE_LPA_COPY   - use LPA copy, yes or no               * 38200000
+*         PGAC_EXECUTION_SET  - use DPL subset or full API            * 38800000
+*         PGAC_REMOTE_SYSID   - remote system ID                      * 39400000
+*         PGAC_REMOTE_PROGID  - remote program name                   * 40000000
+*         PGAC_REMOTE_TRANSID - remote transaction ID                 * 40600000
+*         PGAC_DYNAMIC_STATUS - DPL dynamic or not dynamic            * 41200000
+*         PGAC_CONCURRENCY    - QUASIRENT or THREADSAFE               * 41400000
+*         PGAC_API            - CICSAPI or OPENAPI                    * 41500000
+*                                                                     * 41600000
+*     EXIT-NORMAL = Exit is via an EXEC CICS RETURN command.          * 41800000
+*         The following return codes may be returned via the          * 42400000
+*         commarea:                                                   * 43000000
+*         PGAC_RETURN_CODE = PGAC_RETURN_OK                           * 43600000
+*         PGAC_RETURN_CODE = PGAC_RETURN_DONT_DEFINE_PROGRAM          * 44200000
+*                                                                     * 44800000
+*     EXIT-ERROR =                                                    * 45400000
+*         If the program abends, an error response is returned        * 46000000
+*         to the autoinstall function. A message is issued by the     * 46600000
+*         autoinstall function and the autoinstall function  is       * 47200000
+*         disabled.                                                   * 47800000
+*                                                                     * 48400000
+*-------------------------------------------------------------------- * 49000000
+*                                                                     * 49600000
+* EXTERNAL REFERENCES =                                               * 50200000
+*         None.                                                       * 50800000
+*                                                                     * 51400000
+*     ROUTINES =                                                      * 52000000
+*         EXEC CICS RETURN - return to the calling program.           * 52600000
+*                                                                     * 53200000
+*     CONTROL BLOCKS =                                                * 53800000
+*         The PGAC control block, which includes the input and        * 54400000
+*         output parameters, is in DFHPGACD.                          * 55000000
+*         See INPUT and OUTPUT description above for a description    * 55600000
+*         of the parameters.                                          * 56200000
+*                                                                     * 56800000
+*-------------------------------------------------------------------- * 57400000
+*                                                                     * 58000000
+* DESCRIPTION                                                         * 58600000
+*         The default program autoinstall exit simply sets the        * 59200000
+*         return code to OK and returns.                              * 59800000
+*         The user may customize this program to provide information  * 60400000
+*         for the autoinstalled definition based on the program       * 61000000
+*         name and the module type.                                   * 61600000
+*                                                                     * 62200000
+*-------------------------------------------------------------------- * 62800000
+*                                                                     * 63400000
+* CHANGE ACTIVITY :                                                   * 64000000
+**                                                                    * 64600000
+*        $MOD(DFHPGADX),COMP(PROGRAM),PROD(CICS    ):                 * 65200000
+*                                                                     * 65800000
+*     PN= REASON REL YYMMDD HDXXIII : REMARKS                         * 66400000
+*    $L0= 646    410 930222 HDBVDMC : Program Autoinstall             * 66700000
+*    $L1= 722    530 980511 HD1MA   : add new parameters              * 68000000
+*    $D1= I07566 640 040810 HD2GJST : Add OPENAPI program option      * 69000000
+*    $P1= M83159 410 930713 HDBVDMC : M83159: DSECTGEN changes        * 70000000
+*                                                                     * 73000000
+*********************************************************************** 73600000
+*********************************************************************** 74200000
+         DFHEIGBL ,,,NOLE          INSERTED BY TRANSLATOR               74200010
+DFHEISTG DSECT  ,                                                       74800000
+         DFHEISTG                  INSERTED BY TRANSLATOR               74800010
+*                                                                       75400000
+*    Insert your own storage definitions here                           76000000
+*                                                                       76600000
+*    Copy the commarea definitions                                      77200000
+*                                                                       77800000
+         COPY DFHPGACD                Autoinstall commarea              78400000
+*                                                                       79000000
+*********************************************************************** 79600000
+         DFHEIGBL ,,RS,NOLE        INSERTED BY TRANSLATOR               79600010
+DFHPGADX RSECT                                                   *JJB*  80200000
+         DFHEIENT                  INSERTED BY TRANSLATOR               80200010
+DFHPGADX AMODE 31                                                       80800000
+DFHPGADX RMODE ANY                                                      81400000
+         DFHREGS ,                                                      82000000
+*                                                                       82300000
+*        If there is no commarea, return                                82600000
+         OC    EIBCALEN,EIBCALEN                                        82900000
+         BZ    RETURN0                                                  83200000
+*                                                                       83500000
+*        Address the commarea                                           83800000
+         L     R2,DFHEICAP                                              84400000
+         USING PGAC,R2                                                  85000000
+*                                                                       85600000
+*        Add user specific code here                                    86200000
+*                                                                       87100000
+         MVI   PGAC_DATA_LOCATION,PGAC_LOCATION_ANY              *JJB*  87100010
+         MVI   PGAC_CONCURRENCY,PGAC_THREADSAFE                  *JJB*  87100030
+*                                                                *JJB*  87100050
+*        Set the return code to OK                                      87400000
+RETURNOK DS    0H                                                       88000000
+         MVI   PGAC_RETURN_CODE,PGAC_RETURN_OK                          88600000
+         B     RETURN0                                                  89200000
+*                                                                       89800000
+*        Branch to this label if you elect not to define the program    90400000
+RETURNDD DS    0H                                                       91600000
+         MVI   PGAC_RETURN_CODE,PGAC_RETURN_DONT_DEFINE_PROGRAM         92200000
+*                                                                       97600000
+RETURN0  DS    0H                                                       98200000
+*        EXEC CICS RETURN  ,                                            98800000
+         DFHECALL =X'0E0800000800001000'                                98800010
+         DFHEIRET                  INSERTED BY TRANSLATOR               98800020
+         DFHEISTG                  INSERTED BY TRANSLATOR               98800030
+         DFHEIEND                  INSERTED BY TRANSLATOR               98800040
+         END   DFHPGADX                                                 99400000
+

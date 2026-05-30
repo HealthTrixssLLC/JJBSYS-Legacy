@@ -1,0 +1,25 @@
+//TSSS013X JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,
+//         MSGLEVEL=(1,1),REGION=0M,NOTIFY=&SYSUID TYPRUN=SCAN
+//*
+//         JCLLIB ORDER=(CICSIE.TS51.PTABLES)
+//*
+//TABLEASM EXEC $GENTABL,
+//         NAME='PROD.SYSLIB'
+//SYSUT1   DD   *
+         TITLE 'XLTCO:  CICS/TS V5.1 COMMON TRANSACTION LIST TABLE'
+         PRINT NOGEN
+*
+         DFHXLT TYPE=INITIAL,                                          *
+               SUFFIX=CO
+*
+         DFHXLT TYPE=ENTRY,                                            *
+               TRANSID=(CEMT,BEMT,CESF,CLS1,CLS2,CSAC,CSNE,CSSF,CSTE)
+         DFHXLT TYPE=ENTRY,                                            *
+               TRANSID=(CATD,COPM,CSKE,CSKD,AAON,CETR,CEKL)
+         DFHXLT TYPE=ENTRY,                                            *
+               TRANSID=(SMTP)
+*
+         DFHXLT TYPE=FINAL
+         END   DFHXLTBA
+//
+
