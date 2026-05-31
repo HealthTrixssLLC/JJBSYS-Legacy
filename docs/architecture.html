@@ -29,6 +29,12 @@
       <p>This page describes a conceptual architecture for review purposes. It is not an installation guide and should not be read as a deployment specification.</p>
     </section>
 
+    <section class="card">
+      <h2>Business View</h2>
+      <p>At a business level, this architecture appears designed to keep high-volume operational work reliable, centralized, and governable. Instead of letting every process interact with core data in its own way, it channels work through controlled CICS services and operational utilities.</p>
+      <p>That approach helps reduce risk, improve reuse of trusted business logic, and support growth without rebuilding the core platform for every new interface.</p>
+    </section>
+
     <section class="diagram">
       <h2>Text-Based Conceptual Diagram</h2>
       <pre><code>Batch Jobs / JCL
@@ -75,6 +81,17 @@ Supporting Layers:
       <article class="card">
         <h3>Operational automation</h3>
         <p>PLT members, startup and shutdown structures, and support utilities suggest a strong focus on region operations and maintainability.</p>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h3>Problems this helped solve</h3>
+        <p>It gave the organization a way to connect batch, online, and integration channels without duplicating core logic or exposing unmanaged access paths.</p>
+      </article>
+      <article class="card">
+        <h3>Why it was effective</h3>
+        <p>It separates access patterns from core execution and reflects a reliability-first engineering style built for long-term operational use.</p>
       </article>
     </section>
   </main>
