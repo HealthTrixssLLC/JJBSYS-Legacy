@@ -1,10 +1,10 @@
 *ASM XOPTS(NOPROLOG NOEPILOG SP)                                        00010002
-IEW101   TITLE '** IEI CICS WEB Security Converter **'                  00020002
+IEW101   TITLE '** CICS WEB Security Converter **'                      00020002
 *********************************************************************** 00030002
 *                                                                     * 00040002
 * MODULE NAME = IEW101                                                * 00050002
 *                                                                     * 00060002
-* DESCRIPTIVE NAME = IEI CICS Web Security Converter                  * 00070002
+* DESCRIPTIVE NAME = CICS Web Security Converter                      * 00070002
 *                                                                     * 00080002
 * STATUS = 5.3.0                                                      * 00090002
 *                                                                     * 00100002
@@ -417,16 +417,16 @@ REDIR1   DC    CL9'HTTP/1.0'      Protocol level 1.0                    04110002
 REDIR1_L EQU   *-REDIR1                                                 04170002
 REDIR2   DC    AL2(CRLF,CRLF)     End of header section                 04180002
          DC    C'<html><head><title>'                                   04190002
-         DC    C'IEI CICS Web Redirection Required'                     04200002
+         DC    C'CICS Web Redirection Required'                         04200002
          DC    C'</title></head>'                                       04210002
          DC    AL2(CRLF)                                                04220002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  04230002
          DC    C'<p><div align="center">'                               04240002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       04250002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     04250002
          DC    C'<h1>'                                                  04260002
          DC    C'CICS Web Interface Redirection Required'               04270002
          DC    C'</h1></div><p>',AL2(CRLF),C'<p>'                       04280002
-         DC    C'Your use of the IEI CICS Web Interface requires'       04290002
+         DC    C'Your use of the CICS Web Interface requires'           04290002
          DC    C' a different location to be specified.'                04300002
          DC    AL2(CRLF),C'<p>Please redirect your request'             04310002
          DC    C' <a href="'                                            04320002

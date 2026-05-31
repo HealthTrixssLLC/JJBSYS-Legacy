@@ -732,7 +732,7 @@ WTOERROR WTO   TEXT=((,C),(,D),(,DE)),                                 *07290000
                MF=L                                                     07320000
 *                                                                       07330000
 WTOC00   DC    AL2(L'WTOC00M)                                           07340000
-WTOC00M  DC    C'IEB50100 IEI EXCI Callable Client'                     07350000
+WTOC00M  DC    C'IEB50100 EXCI Callable Client'                         07350000
 WTOD01   DC    AL2(L'WTOD01M)                                           07360000
 WTOD01M  DC    C'IEB50101 Caller failed to pass a parameter list'       07370000
 WTOD02   DC    AL2(L'WTOD02M)                                           07380000

@@ -19,7 +19,7 @@
 //SYSLIN   DD DISP=(,PASS),SPACE=(400,(100,100,1)),UNIT=SYSDA,          00190001
 //         DCB=(RECFM=FB,LRECL=80,BLKSIZE=400),DSN=&OBJ(IEIAIT)         00200001
 //SYSIN    DD *                                                         00210001
-IEIAIT   TITLE '**  IEI TERMINAL AUTOINSTALL TABLE  **'                 00220001
+IEIAIT   TITLE '**  SITE TERMINAL AUTOINSTALL TABLE  **'                00220001
          PRINT NOGEN                                                    00230001
 **                                                                      00240001
 ** AUTOINSTALLED PRINTERS                                               00250001

@@ -956,7 +956,7 @@ DUMPTAB  DS    0XL8
          DC    C'AZVK',A(9)
          DC    C'4039',A(0)
 *
-*  IEI User Abend Codes Begin Here
+*  Site User Abend Codes Begin Here
 *
          DC    C'T303',A(9)
          DC    C'T306',A(9)

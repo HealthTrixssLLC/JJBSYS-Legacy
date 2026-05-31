@@ -79,7 +79,7 @@
 *                                                                     *
 * DESCRIPTION                                                         *
 *                                                                     *
-*        This an IEI modified version of the sample DFHWBADX CWI      *
+*        This a site-modified version of the sample DFHWBADX CWI      *
 *        Analyzer exit. The program is invoked when an HTTP request   *
 *        is received and WBI Analyzer exit name is set to IEW000.     *
 *        This name can be changed by use of the SET TCPIPSERVICE      *
@@ -178,7 +178,7 @@ IEW000   RMODE ANY
 * Scan for alias tranid    *
 *--------------------------*
 GET_TRANID DS  0H
-*        CLC   =C'IEW100',WBRA_CONVERTER_PROGRAM IEI Image Converter
+*        CLC   =C'IEW100',WBRA_CONVERTER_PROGRAM Site Image Converter
 *        BNE   GET_TRANID_CONT       ..No, continue
 *        XC    WBRA_DFHCNV_KEY,WBRA_DFHCNV_KEY   Do not Translate
 *GET_TRANID_CONT DS  0H
@@ -192,7 +192,7 @@ GET_TRANID DS  0H
          LTR   R6,R6                 Is tranid present ?
          BNP   TRAN_NAME_INVALID     ..no, error
          MVC   WBRA_ALIAS_TRANID,SEGMENT
-         CLC   =C'WGET',WBRA_ALIAS_TRANID IEI Image Converter
+         CLC   =C'WGET',WBRA_ALIAS_TRANID Site Image Converter
          BNE   GET_TRANID_CONT       ..No, continue
          XC    WBRA_DFHCNV_KEY,WBRA_DFHCNV_KEY   Do not Translate
 GET_TRANID_CONT DS  0H

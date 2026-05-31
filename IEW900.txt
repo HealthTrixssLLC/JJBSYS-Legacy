@@ -1,10 +1,10 @@
 *ASM XOPTS(NOPROLOG NOEPILOG SP)                                        00010002
-IEW900   TITLE '** CICS/TS IEI Web Signon Program **'                   00020002
+IEW900   TITLE '** CICS/TS Web Signon Program **'                       00020002
 *********************************************************************** 00030002
 *                                                                     * 00040002
 * MODULE NAME = IEW900                                                * 00050002
 *                                                                     * 00060002
-* DESCRIPTIVE NAME = CICS/TS Web Interface IEI Signon Program         * 00070002
+* DESCRIPTIVE NAME = CICS/TS Web Interface Signon Program             * 00070002
 *                                                                     * 00080002
 * STATUS = 5.3.0                                                      * 00090002
 *                                                                     * 00100002
@@ -14,7 +14,7 @@ IEW900   TITLE '** CICS/TS IEI Web Signon Program **'                   00020002
 *                                                                     * 00140002
 * ENTRY POINT = IEW900                                                * 00150002
 *                                                                     * 00160002
-*     PURPOSE = IEI Web Interface signon program                      * 00170002
+*     PURPOSE = Web Interface signon program                          * 00170002
 *                                                                     * 00180002
 *     LINKAGE =                                                       * 00190002
 *         This entry point is called by the CICS Web Business Logic   * 00200002
@@ -499,14 +499,14 @@ HTTP_LEN EQU   *-HTTPRESP                                               04960002
 *                                                                       04990002
 INIT_P   DC    C'<html><head>'                                          05000002
          DC    C'<title>'                                               05010002
-         DC    C'IEI CICS Signon'                                       05020002
+         DC    C'CICS Signon'                                           05020002
          DC    C'</title></head>'                                       05030002
          DC    AL2(CRLF)                                                05040002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05050002
          DC    C'<p><div align="center">'                               05060002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05070002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     05070002
          DC    C'<h2>'                                                  05080002
-         DC    C'IEI CICS Signon'                                       05090002
+         DC    C'CICS Signon'                                           05090002
          DC    C'</h2></div></p><hr>',AL2(CRLF)                         05100002
          DC    C'<form action="&ALTNAME.?'                              05110002
 INIT_T   DC    CL8' ',C'" method="POST">',AL2(CRLF)                     05120002
@@ -533,16 +533,16 @@ INIT_L   EQU   *-INIT_P                                                 05290002
 *                                                                       05330002
 FINAL_P  DC    C'<html><head>'                                          05340002
          DC    C'<title>'                                               05350002
-         DC    C'IEI CICS Signon Successful'                            05360002
+         DC    C'CICS Signon Successful'                                05360002
          DC    C'</title></head>'                                       05370002
          DC    AL2(CRLF)                                                05380002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05390002
          DC    C'<p><div align="center">'                               05400002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05410002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     05410002
          DC    C'<h2>'                                                  05420002
-         DC    C'IEI CICS Signon Successful'                            05430002
+         DC    C'CICS Signon Successful'                                05430002
          DC    C'</h2></div></p><hr>',AL2(CRLF)                         05440002
-         DC    C'<center><p>Signon to IEI CICS Successful'              05450002
+         DC    C'<center><p>Signon to CICS Successful'                  05450002
          DC    AL2(CRLF),C'</center></body></html>'                     05460002
 FINAL_L  EQU   *-FINAL_P                                                05470002
 *                                                                       05480002
@@ -550,14 +550,14 @@ FINAL_L  EQU   *-FINAL_P                                                05470002
 *                                                                       05500002
 RETRY_P  DC    C'<html><head>'                                          05510002
          DC    C'<title>'                                               05520002
-         DC    C'IEI CICS Signon Unsuccessful'                          05530002
+         DC    C'CICS Signon Unsuccessful'                              05530002
          DC    C'</title></head>'                                       05540002
          DC    AL2(CRLF)                                                05550002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05560002
          DC    C'<p><div align="center">'                               05570002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05580002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     05580002
          DC    C'<h2>'                                                  05590002
-         DC    C'IEI CICS Signon Unsuccessful'                          05600002
+         DC    C'CICS Signon Unsuccessful'                              05600002
          DC    C'</h2></div></p><hr>',AL2(CRLF)                         05610002
          DC    C'<form action="&ALTNAME.?'                              05620002
 RETRY_T  DC    CL8' ',C'" method="POST">',AL2(CRLF)                     05630002
@@ -587,14 +587,14 @@ RETRY_L  EQU   *-RETRY_P                                                05840002
 *                                                                       05870002
 NEWPS_P  DC    C'<html><head>'                                          05880002
          DC    C'<title>'                                               05890002
-         DC    C'IEI CICS New Password Required'                        05900002
+         DC    C'CICS New Password Required'                            05900002
          DC    C'</title></head>'                                       05910002
          DC    AL2(CRLF)                                                05920002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  05930002
          DC    C'<p><div align="center">'                               05940002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       05950002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     05950002
          DC    C'<h2>'                                                  05960002
-         DC    C'IEI CICS New Password Required'                        05970002
+         DC    C'CICS New Password Required'                            05970002
          DC    C'</h2></div></p><hr>',AL2(CRLF)                         05980002
          DC    C'<form action="&ALTNAME.?'                              05990002
 NEWPS_T  DC    CL8' ',C'" method="POST">',AL2(CRLF)                     06000002
@@ -630,14 +630,14 @@ NEWPS_L  EQU   *-NEWPS_P                                                06270002
 *                                                                       06300002
 FAIL_P   DC    C'<html><head>'                                          06310002
          DC    C'<title>'                                               06320002
-         DC    C'IEI CICS Signon Implementation Error'                  06330002
+         DC    C'CICS Signon Implementation Error'                      06330002
          DC    C'</title></head>'                                       06340002
          DC    AL2(CRLF)                                                06350002
          DC    C'<body background="/iew100/wget/iew100/graypatt.jpg">'  06360002
          DC    C'<p><div align="center">'                               06370002
-         DC    C'<img src="/iew100/wget/iew100/ieilogo.jpg"><br>'       06380002
+         DC    C'<img src="/iew100/wget/iew100/site-logo.jpg"><br>'     06380002
          DC    C'<h2>'                                                  06390002
-         DC    C'IEI CICS Signon Implementation Error'                  06400002
+         DC    C'CICS Signon Implementation Error'                      06400002
          DC    C'</h2></div></p><hr>',AL2(CRLF)                         06410002
          DC    C'An implementation error occurred.',AL2(CRLF)           06420002
 FAIL_S   EQU   *-FAIL_P           Length of short message               06430002

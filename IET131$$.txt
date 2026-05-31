@@ -184,7 +184,7 @@ INT36    DS    0H
          MVI   BDRYDSH2,C'-'
          MVI   BDRYDSH3,C'-'
          MVC   BDRYDSH4,=C'--'
-         MVC   BDRYIEI,=C'IEI-'
+         MVC   BDRYIEI,=C'APP-'
          MVC   BDRYTSQ,COMTSQ01
          LH    R1,TSQITEMS
          CVD   R1,DBLWORK
@@ -1709,8 +1709,8 @@ B64OUT   DS    XL4                      BASE64 Output
 BDRYIDB  DS    0C                       MULTIPART/MIXED BOUNARY ID
 BDRYDSH1 DS    CL2                      TWO DASHES "--"
 BDRYIDT  DS    0C                       BOUNDARY ID TITLE
-BDRYIEI  DS    CL4                      IEI SIGNATURE "IEI-"
-BDRYSYS  DS    CL4                      IEI CICS SYSID
+BDRYIEI  DS    CL4                      APP SIGNATURE "APP-"
+BDRYSYS  DS    CL4                      SITE CICS SYSID
 BDRYDSH2 DS    CL1                      ONE DASH "-"
 BDRYTSQ  DS    CL8                      USER TSQ NAME MUST BE LEN=8
 BDRYDSH3 DS    CL1                      ONE DASH "-"

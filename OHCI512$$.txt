@@ -193,7 +193,7 @@ WTOERROR WTO   TEXT=((,C),(,D),(,DE)),                                 *
                MF=L
 *
 WTOC00   DC    AL2(L'WTOC00M)
-WTOC00M  DC    C'IEIXCU00  IEI EXCI URM Exit'
+WTOC00M  DC    C'IEIXCU00  EXCI URM Exit'
 WTOD01   DC    AL2(L'WTOD01M)
 WTOD01M  DC    C'IEIXCU01  GETMAIN failed'
 WTOD02   DC    AL2(L'WTOD02M)

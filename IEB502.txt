@@ -587,7 +587,7 @@ RSPTBL   DS    0CL12                                                    04680002
          DC    CL12'99-UNDEFINED'                                       05870002
 *                                                                       05880002
 WTOC00   DC   AL2(L'WTOC00M)                                            05890002
-WTOC00M  DC   C'IEB50200 IEI EXCI Callable Client Trace'                05900002
+WTOC00M  DC   C'IEB50200 EXCI Callable Client Trace'                    05900002
 WTOD01   DC   AL2(L'WTOD01M)                                            05910002
 WTOD01M  DC   C'IEB50201 Trace data set failed to open'                 05920002
 WTOD98   DC   AL2(L'WTOD98M)                                            05930002
