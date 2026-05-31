@@ -1,8 +1,8 @@
-//TSSS013Z JOB 1,J.BAKER,
+//USER0001Z JOB 1,OPEN.SRC,
 //         CLASS=S,
 //         MSGCLASS=M,
 //         REGION=0M,
-//         NOTIFY=TSSS013
+//         NOTIFY=USER0001
 //*        TYPRUN=SCAN
 //*--------------------------------------------------------------------
 //DFHEITAL PROC SUFFIX=1$,
@@ -27,7 +27,7 @@
 //ASM      EXEC PGM=&ASMBLR,
 //         REGION=&REG,
 //         PARM=('DECK,NOOBJECT,LIST(133),SIZE(MAX,ABOVE)',
-//         'PROFILE(JJBSYS90)')
+//         'PROFILE(SITECFG0)')
 //SYSLIB   DD DSN=&INDEX..SDFHMAC,DISP=SHR
 //         DD DSN=SYS1.MACLIB,DISP=SHR
 //         DD DSN=SYS1.MODGEN,DISP=SHR

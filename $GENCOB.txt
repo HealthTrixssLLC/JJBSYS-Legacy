@@ -1,4 +1,4 @@
-//TSSS013C JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//USER0001C JOB 1,OPEN.SRC,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
 //         REGION=0M TYPRUN=SCAN
 //*--------------------------------------------------------------------
 //DFHEITVL PROC REG=0M,

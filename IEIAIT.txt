@@ -1,8 +1,8 @@
-//TSSS013A JOB 1,J.BAKER,                                               00010001
+//USER0001A JOB 1,OPEN.SRC,                                               00010001
 //         CLASS=S,                                                     00020001
 //         MSGCLASS=M,                                                  00030001
 //         REGION=0M,                                                   00040001
-//         NOTIFY=TSSS013                                               00050001
+//         NOTIFY=USER0001                                               00050001
 //*        TYPRUN=SCAN                                                  00060001
 //ASM      EXEC PGM=ASMA90,                                             00070001
 //         PARM=('NODECK,OBJECT,LIST,SIZE(MAX)')                        00080001

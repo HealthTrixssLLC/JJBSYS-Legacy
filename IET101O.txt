@@ -433,17 +433,17 @@ XIT10    DS    0H
          CNOP  0,4
 SRVRTBL  DS    0XL16
 *
-*        #      10.129.00.24    KELLY SETZER
-*        $     208.136.50.21    ACCESSINGRAM
+*        #      192.0.2.24      SAMPLE HOST
+*        $      192.0.2.21      SAMPLE IP ONLY
 *
-*        B      10.129.19.61    iei-fedex.svg.nexus
-*        C      10.129.09.61    iei-fedex.chcg.nexus
-*        D      10.129.07.61    iei-fedex.dlls.nexus
-*        I      10.129.01.62    iei-fedexCPQ.mdf.lvrgn.nexus (Prod)
-*        M      10.129.18.61    iei-fedex.mmphs.nexus
-*        O      10.129.24.61    iei-fedex.rng.nexus
-*        P      10.129.11.61    iei-fedex.clkms.nexus
-*        X      10.129.96.61    iei-fedex_6227.iei.nexus (Test)
+*        B      192.0.2.31      site-b.example.com
+*        C      192.0.2.32      site-c.example.com
+*        D      192.0.2.33      site-d.example.com
+*        I      192.0.2.34      prod-endpoint.example.com
+*        M      192.0.2.35      site-m.example.com
+*        O      192.0.2.36      site-o.example.com
+*        P      192.0.2.37      site-p.example.com
+*        X      192.0.2.38      test-endpoint.example.com
 *
 *SRVRKELY DC    C'#'                     SERVER CODE
 *         DC    X'00'                    RESERVED
@@ -455,7 +455,7 @@ SRVRTBL  DS    0XL16
 SRVRAIEI DC    C'$'                     SERVER CODE
          DC    X'00'                    RESERVED
          DC    AL2(0080)                SERVER PORT NUMBER
-         DC    AL1(208),AL1(136),AL1(050),AL1(021) SERVER IP ADDR
+         DC    AL1(192),AL1(000),AL1(002),AL1(021) SERVER IP ADDR
          DC    A(0)                     NAME LENGTH
          DC    A(0)                     NAME @
 *
@@ -511,15 +511,15 @@ SRVTLVRG DC    C'X'                     SERVER CODE
          ORG
 SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL
 *
-CHCG     DC    C'iei-fedex.chcg.nexus'
-CLKMS    DC    C'iei-fedex.clkms.nexus'
-DLLS     DC    C'iei-fedex.dlls.nexus'
-LVRGNT   DC    C'fedex_6227.iei.nexus'
-MMPHS    DC    C'iei-fedex.mmphs.nexus'
-RNG      DC    C'iei-fedex.rng.nexus'
-SVG      DC    C'iei-fedex.svg.nexus'
-LVRGNP   DC    C'fedex.iei.nexus'
-*LVRGNP   DC    C'iei-fedexcpq.mdf.lvrgn.nexus'
+CHCG     DC    C'site-c.example.com'
+CLKMS    DC    C'site-p.example.com'
+DLLS     DC    C'site-d.example.com'
+LVRGNT   DC    C'test-endpoint.example.com'
+MMPHS    DC    C'site-m.example.com'
+RNG      DC    C'site-o.example.com'
+SVG      DC    C'site-b.example.com'
+LVRGNP   DC    C'prod-endpoint.example.com'
+*LVRGNP   DC    C'legacy-prod.example.com'
 *
 E_WOULD_BLOCK DC AL4(35)                BLOCKING ERROR CODE
 *

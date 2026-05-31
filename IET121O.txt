@@ -531,13 +531,13 @@ XIT10    DS    0H                                                       05210000
          CNOP  0,4                                                      05310000
 SRVRTBL  DS    0XL16                                                    05320000
 *                                                                       05330000
-*        P      10.129.11.49    sorter01.clkms.nexus                    05340000
-*        B      10.129.19.49    sorter01.svg.nexus                      05350000
-*        C      10.129.09.50    sorter02.chcg.nexus                     05360000
-*        I      10.129.01.62    iei-fedexCPQ.mdf.lvrgn.nexus (Prod)     05370000
-*        M      10.129.18.51    conveyor01.mmphs.nexus                  05380000
-*        N      10.129.18.53    sorter03.mmphs.nexus                    05390000
-*        X      10.129.96.61    iei-fedex_6227.iei.nexus (Test)         05400000
+*        P      192.0.2.49      sorter-a.example.com                    05340000
+*        B      192.0.2.50      sorter-b.example.com                    05350000
+*        C      192.0.2.51      sorter-c.example.com                    05360000
+*        I      192.0.2.52      prod-endpoint.example.com               05370000
+*        M      192.0.2.53      conveyor-a.example.com                  05380000
+*        N      192.0.2.54      sorter-d.example.com                    05390000
+*        X      192.0.2.55      test-endpoint.example.com               05400000
 *                                                                       05410000
 SRVRMMPH DC    C'M'                     SERVER CODE                     05420000
          DC    X'00'                    RESERVED                        05430000
@@ -584,14 +584,14 @@ SRVTLVRG DC    C'X'                     SERVER CODE                     05780000
          ORG                                                            05840000
 SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL                                    05850000
 *                                                                       05860000
-LVRGNT   DC    C'fedex_6227.iei.nexus'                                  05870000
-MMPHSP   DC    C'conveyor01.mmphs.nexus'                                05880000
-PORTSR   DC    C'sorter01.clkms.nexus'                                  05890000
-MMPHSR   DC    C'sorter03.mmphs.nexus'                                  05900000
-CHCGSR   DC    C'sorter02.chcg.nexus'                                   05910000
-SAVAGP   DC    C'sorter01.svg.nexus'                                    05920000
-LVRGNP   DC    C'fedex.iei.nexus'                                       05930000
-*LVRGNP   DC    C'iei-fedexcpq.mdf.lvrgn.nexus'                         05940000
+LVRGNT   DC    C'test-endpoint.example.com'                             05870000
+MMPHSP   DC    C'conveyor-a.example.com'                                05880000
+PORTSR   DC    C'sorter-a.example.com'                                  05890000
+MMPHSR   DC    C'sorter-d.example.com'                                  05900000
+CHCGSR   DC    C'sorter-c.example.com'                                  05910000
+SAVAGP   DC    C'sorter-b.example.com'                                  05920000
+LVRGNP   DC    C'prod-endpoint.example.com'                             05930000
+*LVRGNP   DC    C'legacy-prod.example.com'                              05940000
 *                                                                       05950000
 CALL     CALL  ,                                                       *05960000
                (0,0,0,0,0,0,0,0,0,0,0,0),                              *05970000

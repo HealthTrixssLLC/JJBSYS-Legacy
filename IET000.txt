@@ -610,13 +610,13 @@ IET00016 WTO   'IET00016 - TCP/IP GETHOSTBYNAME call failed, abend.',  *
 SRVRNAML DC    A(L'SRVRNAME)                     UPS DNS LEN
 SRVRNAMP DC    CL256' '                          GETHOSTBYNAME AREA
          ORG   SRVRNAMP
-*SRVRNAME DC    C'www.pld-certify-x.ups.com'     UPS Certification DNS
-SRVRNAME DC    C'www.pld.ups.com'               UPS Production DNS
+*SRVRNAME DC    C'test-endpoint.example.com'     Example test DNS
+SRVRNAME DC    C'prod-endpoint.example.com'     Example production DNS
          ORG
 SRVRPORT DC    AL2(443)                          UPS SSL Port
 *
-*KEYRING  DC    C'CICSTC02/CTRING01 '  Test
-KEYRING  DC    C'CICSTC01/PRD0RNG1 '  Production
+*KEYRING  DC    C'<TEST_KEYRING>    '  Test placeholder
+KEYRING  DC    C'<KEYRING_NAME>    '  Production placeholder
          ORG   *-1
          DC    X'00'
          ORG
@@ -624,8 +624,8 @@ KEYRING  DC    C'CICSTC01/PRD0RNG1 '  Production
 POSTB    DS    0C
          DC    C'POST /hapld/tos/kdwhapltos HTTP/1.1'
          DC    X'0D',X'25'
-*         DC    C'Host: www.pld-certify-x.ups.com'  Certification
-         DC    C'Host: www.pld.ups.com'          Production
+*         DC    C'Host: test-endpoint.example.com'  Test placeholder
+         DC    C'Host: prod-endpoint.example.com'  Production placeholder
          DC    X'0D',X'25'
          DC    C'Content-type: multipart/mixed; boundary=BOUNDARY'
          DC    X'0D',X'25'
@@ -649,8 +649,8 @@ APPLB    DS    0C
 *
          DC    C'&&UserId=ING001TN'              UserId
          DC    C'&&Password=INGRAM'              Password
-*        DC    C'&&UserId=jjbsys'                UserId
-*        DC    C'&&Password=ingram'              Password
+*        DC    C'&&UserId=<SERVICE_USER>'        UserId placeholder
+*        DC    C'&&Password=<SERVICE_PASSWORD>'  Password placeholder
 *
 APPLE    EQU   *
 APPLL    EQU   APPLE-APPLB

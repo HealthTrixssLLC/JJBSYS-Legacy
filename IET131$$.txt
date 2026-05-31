@@ -1461,10 +1461,10 @@ QNAME    DC    CL8'$SMTPIO$'
          CNOP  0,4
 SRVRTBL  DS    0XL16
 *
-*        F  =  10.129.0.10:25           iefw.nexus
-*        I  =  10.129.1.11:25           smtp.lvrgn.nexus
-*        S  =  10.129.0.20:25           mainframe.lvrgn.nexus
-*        X  =  10.129.1.38:25           exchange.mail.nexus
+*        F  =  192.0.2.81:25            firewall-mail.example.net
+*        I  =  192.0.2.82:25            smtp-a.example.net
+*        S  =  192.0.2.83:25            mainframe-mail.example.net
+*        X  =  192.0.2.84:25            exchange.example.net
 *
 SRVRMAIL DC    C'F'                     SERVER CODE
          DC    X'00'                    RESERVED
@@ -1493,10 +1493,10 @@ SRVRXCHG DC    C'X'                     SERVER CODE
          ORG
 SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL
 *
-FIRWAL   DC    C'iefw.nexus'
-LVRGN    DC    C'smtp.lvrgn.nexus'
-SMTP     DC    C'mainframe.lvrgn.nexus'
-XCHG     DC    C'exchange.mail.nexus'
+FIRWAL   DC    C'firewall-mail.example.net'
+LVRGN    DC    C'smtp-a.example.net'
+SMTP     DC    C'mainframe-mail.example.net'
+XCHG     DC    C'exchange.example.net'
 *
 CALL     CALL  ,                                                       *
                (0,0,0,0,0,0,0,0),                                      *
@@ -1728,7 +1728,7 @@ BDRYIDEL EQU   *-BDRYIDB                BOUNDARY END LEN
 COMPARM  DSECT
 *
 COMSRV   DS    CL1                      TCP SMTP SERVER ID
-COMSRCX  EQU   C'I'                     ..I = smtp.lvrgn.nexus
+COMSRCX  EQU   C'I'                     ..I = smtp-a.example.net
 *
 COMTRQ   DS    CL1                      TEMPLATES/QUEUES REQ CODE
 COMTRQ01 EQU   C'1'                     ..ONE TEMPLATE/QUEUE PAIR

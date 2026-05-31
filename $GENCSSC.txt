@@ -1,4 +1,4 @@
-//TSSS013C JOB 1,J.BAKER,CLASS=Z,MSGCLASS=M,NOTIFY=&SYSUID,
+//USER0001C JOB 1,OPEN.SRC,CLASS=Z,MSGCLASS=M,NOTIFY=&SYSUID,
 //         REGION=0M
 //*--------------------------------------------------------------------
 //DFHEITVL PROC SUFFIX=1$,

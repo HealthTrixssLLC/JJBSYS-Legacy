@@ -954,15 +954,15 @@ WBC05    DS    0H
          L     R2,TOADDR
          L     R3,TOLEN
 *----------------------------------------------------------------------
-*        SETUP C:E PARMS for UPSFTPOD Mailbox
+*        SETUP C:E PARMS for partner mailbox
 *----------------------------------------------------------------------
 WBC20    DS    0H
          MVI   HTMGIFSW,C' '            Clr GIF Switch
          MVI   VBQREQ,VBQREQAD
          XC    VBQRSP,VBQRSP
          MVI   VBQSTR,VBQSTRFL
-         MVC   VBQCESYS,=CL8'IEPCCMBX'
-         MVC   VBQCEMBX,=CL8'UPSFTPOD'
+         MVC   VBQCESYS,=CL8'MAILSYS '
+         MVC   VBQCEMBX,=CL8'MAILBOX1'
          MVC   VBQTSQ,SAVTSQ
          MVC   VBQCEBID,=CL64' '
          MVC   VBQCEBNO,=CL64' '
@@ -1357,7 +1357,7 @@ WBC49    DS    0H
 *
 *----------------------------------------------------------------------
 *        Process XML Response
-*        SETUP C:E PARMS for MOJOFTP Mailbox
+*        SETUP C:E PARMS for alternate mailbox
 *----------------------------------------------------------------------
 WBC60    DS    0H
          CLC   TRACKNUM(L'TRACKNUM-1),TRACKNUM+1
@@ -1365,8 +1365,8 @@ WBC60    DS    0H
          MVI   VBQREQ,VBQREQAD
          XC    VBQRSP,VBQRSP
          MVI   VBQSTR,VBQSTRFL
-         MVC   VBQCESYS,=CL8'IEPCCMBX'
-         MVC   VBQCEMBX,=CL8'MOJOFTP '
+         MVC   VBQCESYS,=CL8'MAILSYS '
+         MVC   VBQCEMBX,=CL8'MAILBOX2'
          MVC   VBQTSQ,SAVTSQ
          MVC   VBQCEBID,=CL64' '
          MVC   VBQCEBNO,=CL64' '
@@ -1553,15 +1553,15 @@ TSQENQ   DC    CL16'#IET141--IEETSQ#'
 PGMENQ   DC    CL16'#IET141--IEE101#'
 *
 UPSACC   DC    0C                       <== TEST ==>
-         DC    C'ACCKEY=BBE4A73CACF40BC5'
-         DC    C'&&USERID=jjbsys'
-         DC    C'&&PASSWORD=ingram'
+         DC    C'ACCKEY=<ACCESS_KEY>'
+         DC    C'&&USERID=<SERVICE_USER>'
+         DC    C'&&PASSWORD=<SERVICE_PASSWORD>'
 UPSACCLN EQU   *-UPSACC
 *
 UPSACP   DC    0C                       <== PRODUCTION ==>
-         DC    C'ACCKEY=BBE4A73CACF40BC5'
-         DC    C'&&USERID=jjbsys'
-         DC    C'&&PASSWORD=ingram'
+         DC    C'ACCKEY=<ACCESS_KEY>'
+         DC    C'&&USERID=<SERVICE_USER>'
+         DC    C'&&PASSWORD=<SERVICE_PASSWORD>'
 UPSACPLN EQU   *-UPSACP
 *
 MEDIA    DC    CL56'text/xml'

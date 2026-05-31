@@ -433,9 +433,9 @@ XIT10    DS    0H
          CNOP  0,4
 SRVRTBL  DS    0XL16
 *
-*        I      10.129.01.63    minint-4o31oea.iei.nexus     (Prod-New)
-*        L      10.129.01.62    iei-fedexCPQ.mdf.lvrgn.nexus (Prod-Old)
-*        X      10.129.96.61    iei-fedex_6227.iei.nexus (Test)
+*        I      192.0.2.41      prod-endpoint.example.com     (Prod-New)
+*        L      192.0.2.42      legacy-prod.example.com       (Prod-Old)
+*        X      192.0.2.43      test-endpoint.example.com     (Test)
 *
 *        $      208.136.50.21   Access Ingram
 *
@@ -467,9 +467,9 @@ SRVRAIEI DC    C'$'                     SERVER CODE
 *
 SRVRTBL# EQU   (*-SRVRTBL)/L'SRVRTBL
 *
-LVRGNN   DC    C'minint-4o31oea.iei.nexus'
-LVRGNP   DC    C'fedex.iei.nexus'
-LVRGNT   DC    C'fedex_6227.iei.nexus'
+LVRGNN   DC    C'prod-endpoint.example.com'
+LVRGNP   DC    C'legacy-prod.example.com'
+LVRGNT   DC    C'test-endpoint.example.com'
 *
 E_WOULD_BLOCK DC AL4(35)                BLOCKING ERROR CODE
 *

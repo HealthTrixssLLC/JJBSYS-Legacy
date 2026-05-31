@@ -1,8 +1,8 @@
-//TSSS013A JOB 1,J.BAKER,
+//USER0001A JOB 1,OPEN.SRC,
 //         CLASS=S,
 //         MSGCLASS=M,
 //         REGION=0M,
-//         NOTIFY=TSSS013
+//         NOTIFY=USER0001
 //*        TYPRUN=SCAN
 //*
 //ASM      EXEC PGM=ASMA90,

@@ -1,4 +1,4 @@
-//TSSS013C JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//USER0001C JOB 1,OPEN.SRC,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
 //         REGION=0M TYPRUN=SCAN
 //*--------------------------------------------------------------------
 //DFHEITAL PROC SUFFIX=1$,           Suffix for translator module
@@ -25,7 +25,7 @@
 //ASM      EXEC PGM=&ASMBLR,
 //            REGION=&REG,
 //            PARM=('DECK,NOOBJECT,LIST,SIZE(MAX,ABOVE)',
-//            'PROFILE(JJBSYS90)')
+//            'PROFILE(SITECFG0)')
 //SYSLIB   DD DSN=&DSCTLIB,DISP=SHR
 //         DD DSN=&INDEX..SDFHMAC,DISP=SHR
 //         DD DSN=&CPNDX..SEYUMAC,DISP=SHR

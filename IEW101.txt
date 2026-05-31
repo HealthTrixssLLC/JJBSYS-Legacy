@@ -238,7 +238,7 @@ SENDPAGE DS    0H                 Send page prepared by SIGNON          02300002
 *        LR    R14,R9             Get address for output                02380002
 *====================================================================== 02390002
 *        LA    R14,124(,R14)      Get address of href=                = 02400002
-*        MVC   0(34,R14),=C'http://mainframe.lvrgn.nexus:4089/'       = 02410002
+*        MVC   0(34,R14),=C'http://mainframe.example.net:4089/'       = 02410002
 *        LA    R14,34(,R14)       Get address of href=                = 02420002
 *====================================================================== 02430002
 *        EX    R2,COPYURL         Copy absolute URL                     02440002

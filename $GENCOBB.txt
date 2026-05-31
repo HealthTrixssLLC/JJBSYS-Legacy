@@ -1,4 +1,4 @@
-//TSSS013B JOB 1,J.BAKER,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
+//USER0001B JOB 1,OPEN.SRC,CLASS=S,MSGCLASS=X,NOTIFY=&SYSUID,
 //         REGION=0M TYPRUN=SCAN
 //*--------------------------------------------------------------------
 //GENCOBB  PROC CMP='IGY.SIGYCOMP',
