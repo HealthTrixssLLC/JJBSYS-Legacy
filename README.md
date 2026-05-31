@@ -96,13 +96,14 @@ If you click raw `.html` files in the GitHub repository view, GitHub will usuall
 | Destination | Why it matters |
 | --- | --- |
 | [docs/index.md](docs/index.md) | Main entry point for browsing the docs inside GitHub |
-| [docs/architecture.md](docs/architecture.md) | High-level conceptual architecture |
-| [docs/component-inventory.md](docs/component-inventory.md) | Fast way to understand member prefixes |
-| [docs/exci-bridge.md](docs/exci-bridge.md) | Batch-to-CICS bridge explanation |
-| [docs/cics-operations.md](docs/cics-operations.md) | Operational utilities and region support |
-| [docs/tcpip-smtp-web.md](docs/tcpip-smtp-web.md) | External integration patterns |
-| [docs/modernization-map.md](docs/modernization-map.md) | Modernization directions to evaluate |
-| [docs/author-legacy.md](docs/author-legacy.md) | Legacy and attribution page |
+| [docs/review/architecture.md](docs/review/architecture.md) | High-level conceptual architecture |
+| [docs/reference/component-inventory.md](docs/reference/component-inventory.md) | Fast way to understand member prefixes |
+| [docs/integration/exci-bridge.md](docs/integration/exci-bridge.md) | Batch-to-CICS bridge explanation |
+| [docs/operations/cics-operations.md](docs/operations/cics-operations.md) | Operational utilities and region support |
+| [docs/integration/tcpip-smtp-web.md](docs/integration/tcpip-smtp-web.md) | External integration patterns |
+| [docs/strategy/modernization-map.md](docs/strategy/modernization-map.md) | Modernization directions to evaluate |
+| [docs/legacy/author-legacy.md](docs/legacy/author-legacy.md) | Legacy and attribution page |
+| [docs/reference/review-manifest.md](docs/reference/review-manifest.md) | Reviewer manifest for finding relevant docs and source files |
 | [docs/index.html](docs/index.html) | HTML entry point for GitHub Pages rendering |
 
 ```text
@@ -114,7 +115,7 @@ PASSWORD(********)
 NEXT STEPS
   1. READ README
   2. OPEN docs/index.md
-  3. REVIEW component-inventory.md
+  3. REVIEW docs/reference/component-inventory.md
   4. TRACE SOURCE MEMBERS BY PREFIX
   5. REPORT SENSITIVE FINDINGS PRIVATELY
 ```

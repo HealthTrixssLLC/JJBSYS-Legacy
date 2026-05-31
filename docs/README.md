@@ -14,20 +14,14 @@ GitHub repository views do not reliably render standalone `.html` files as pages
 
 - `index.md`: Markdown landing page for GitHub repo browsing
 - `index.html`: project overview and navigation hub
-- `architecture.md`: Markdown architecture overview
-- `architecture.html`: high-level conceptual architecture
-- `component-inventory.md`: Markdown component inventory
-- `component-inventory.html`: component grouping by naming pattern
-- `exci-bridge.md`: Markdown EXCI bridge explanation
-- `exci-bridge.html`: EXCI bridge explanation
-- `cics-operations.md`: Markdown operations overview
-- `cics-operations.html`: CICS operations overview
-- `tcpip-smtp-web.md`: Markdown network, SMTP, and web overview
-- `tcpip-smtp-web.html`: network, SMTP, and web integration overview
-- `modernization-map.md`: Markdown modernization direction map
-- `modernization-map.html`: modernization direction map
-- `author-legacy.md`: Markdown legacy and attribution page
-- `author-legacy.html`: legacy and attribution page
+- `review/`: architecture and high-level review guides
+- `integration/`: EXCI, TCP/IP, SMTP, web, and external integration docs
+- `operations/`: CICS operations and region-support docs
+- `strategy/`: modernization and forward-looking documentation
+- `legacy/`: author and preservation context
+- `reference/`: component inventory and reviewer manifest
+- `reference/review-manifest.md`: reviewer map for finding relevant docs and source families
+- `reference/review-manifest.json`: machine-readable version of the reviewer map
 - `styles.css`: shared site styling
 
 ## Enable GitHub Pages

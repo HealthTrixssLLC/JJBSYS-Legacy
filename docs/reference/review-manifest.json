@@ -1,0 +1,76 @@
+{
+  "start_here": {
+    "docs": [
+      "../index.md",
+      "../review/architecture.md",
+      "component-inventory.md"
+    ]
+  },
+  "questions": [
+    {
+      "topic": "overall-system",
+      "docs": [
+        "../review/architecture.md",
+        "component-inventory.md"
+      ],
+      "source_families": [
+        "DFH*",
+        "IEB*",
+        "IEP*",
+        "IET*"
+      ]
+    },
+    {
+      "topic": "batch-to-cics-integration",
+      "docs": [
+        "../integration/exci-bridge.md",
+        "../review/architecture.md"
+      ],
+      "source_families": [
+        "IEB*",
+        "IEX*",
+        "DFH*"
+      ]
+    },
+    {
+      "topic": "external-integration",
+      "docs": [
+        "../integration/tcpip-smtp-web.md",
+        "../integration/exci-bridge.md"
+      ],
+      "source_families": [
+        "IET*",
+        "IEW*",
+        "TCC*"
+      ]
+    },
+    {
+      "topic": "cics-operations",
+      "docs": [
+        "../operations/cics-operations.md",
+        "component-inventory.md"
+      ],
+      "source_families": [
+        "IEP*",
+        "DFH*",
+        "IEX*",
+        "IEIAIT",
+        "IEMAIT"
+      ]
+    },
+    {
+      "topic": "modernization-direction",
+      "docs": [
+        "../strategy/modernization-map.md",
+        "../integration/tcpip-smtp-web.md",
+        "../integration/exci-bridge.md"
+      ],
+      "source_families": [
+        "IEB*",
+        "IET*",
+        "IEW*",
+        "DFH*"
+      ]
+    }
+  ]
+}

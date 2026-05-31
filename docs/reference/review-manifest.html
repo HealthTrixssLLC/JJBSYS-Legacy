@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Manifest - JJBSYS Legacy CICS Mainframe Archive</title>
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Reference</p>
+      <h1 class="site-title">Review Manifest</h1>
+      <p class="site-subtitle">A fast map from reviewer questions to the most relevant documentation sections and source families.</p>
+    </div>
+    <nav>
+      <a href="../index.html">Home</a>
+      <a href="../review/architecture.html">Architecture</a>
+      <a href="component-inventory.html">Component Inventory</a>
+      <a href="../integration/exci-bridge.html">EXCI Bridge</a>
+      <a href="../operations/cics-operations.html">CICS Operations</a>
+      <a href="../integration/tcpip-smtp-web.html">TCP/IP, SMTP, Web</a>
+      <a href="../strategy/modernization-map.html">Modernization Map</a>
+      <a href="../legacy/author-legacy.html">Author Legacy</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <p>Use this page when you know the question you want to answer but not the files you should open first.</p>
+    </section>
+
+    <section class="inventory-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Question</th>
+            <th>Open these docs first</th>
+            <th>Look at these source families</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>How does the system fit together?</td>
+            <td><a href="../review/architecture.html">Architecture</a>, <a href="component-inventory.html">Component Inventory</a></td>
+            <td><code>DFH*</code>, <code>IEB*</code>, <code>IEP*</code>, <code>IET*</code></td>
+          </tr>
+          <tr>
+            <td>How does batch call CICS?</td>
+            <td><a href="../integration/exci-bridge.html">EXCI Bridge</a>, <a href="../review/architecture.html">Architecture</a></td>
+            <td><code>IEB*</code>, <code>IEX*</code>, <code>DFH*</code></td>
+          </tr>
+          <tr>
+            <td>How does the platform integrate externally?</td>
+            <td><a href="../integration/tcpip-smtp-web.html">TCP/IP, SMTP, and Web</a>, <a href="../integration/exci-bridge.html">EXCI Bridge</a></td>
+            <td><code>IET*</code>, <code>IEW*</code>, <code>TCC*</code></td>
+          </tr>
+          <tr>
+            <td>How was the environment operated and controlled?</td>
+            <td><a href="../operations/cics-operations.html">CICS Operations</a>, <a href="component-inventory.html">Component Inventory</a></td>
+            <td><code>IEP*</code>, <code>DFH*</code>, <code>IEX*</code>, <code>IEIAIT</code>, <code>IEMAIT</code></td>
+          </tr>
+          <tr>
+            <td>What are the best modernization directions?</td>
+            <td><a href="../strategy/modernization-map.html">Modernization Map</a>, <a href="../integration/tcpip-smtp-web.html">TCP/IP, SMTP, and Web</a></td>
+            <td><code>IEB*</code>, <code>IET*</code>, <code>IEW*</code>, <code>DFH*</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer>
+    <div class="footer-box">JJBSYS Legacy CICS Mainframe Archive. Historical and educational preservation project.</div>
+  </footer>
+</body>
+</html>
