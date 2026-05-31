@@ -84,18 +84,26 @@ Review these supporting documents before deeper source analysis:
 
 The repository includes a static GitHub Pages documentation site under [`docs/`](docs/README.md).
 
+**Best experience**
+
+- GitHub Pages site: [Launch the archive docs](https://healthtrixssllc.github.io/JJBSYS-Legacy/)
+- GitHub repo-friendly docs index: [Browse docs in Markdown](docs/index.md)
+
+If you click raw `.html` files in the GitHub repository view, GitHub will usually show the source instead of rendering the page. For that reason, the repository now includes Markdown companions for the main docs pages as an easier browsing path inside GitHub itself.
+
 **Start here:**
 
 | Destination | Why it matters |
 | --- | --- |
-| [docs/index.html](docs/index.html) | Main entry point for the archive experience |
-| [docs/architecture.html](docs/architecture.html) | High-level conceptual architecture |
-| [docs/component-inventory.html](docs/component-inventory.html) | Fast way to understand member prefixes |
-| [docs/exci-bridge.html](docs/exci-bridge.html) | Batch-to-CICS bridge explanation |
-| [docs/cics-operations.html](docs/cics-operations.html) | Operational utilities and region support |
-| [docs/tcpip-smtp-web.html](docs/tcpip-smtp-web.html) | External integration patterns |
-| [docs/modernization-map.html](docs/modernization-map.html) | Modernization directions to evaluate |
-| [docs/author-legacy.html](docs/author-legacy.html) | Legacy and attribution page |
+| [docs/index.md](docs/index.md) | Main entry point for browsing the docs inside GitHub |
+| [docs/architecture.md](docs/architecture.md) | High-level conceptual architecture |
+| [docs/component-inventory.md](docs/component-inventory.md) | Fast way to understand member prefixes |
+| [docs/exci-bridge.md](docs/exci-bridge.md) | Batch-to-CICS bridge explanation |
+| [docs/cics-operations.md](docs/cics-operations.md) | Operational utilities and region support |
+| [docs/tcpip-smtp-web.md](docs/tcpip-smtp-web.md) | External integration patterns |
+| [docs/modernization-map.md](docs/modernization-map.md) | Modernization directions to evaluate |
+| [docs/author-legacy.md](docs/author-legacy.md) | Legacy and attribution page |
+| [docs/index.html](docs/index.html) | HTML entry point for GitHub Pages rendering |
 
 ```text
 CICS TS V3 READY
@@ -105,8 +113,8 @@ PASSWORD(********)
 
 NEXT STEPS
   1. READ README
-  2. OPEN docs/index.html
-  3. REVIEW component-inventory.html
+  2. OPEN docs/index.md
+  3. REVIEW component-inventory.md
   4. TRACE SOURCE MEMBERS BY PREFIX
   5. REPORT SENSITIVE FINDINGS PRIVATELY
 ```
@@ -118,7 +126,7 @@ For a structured review path:
 1. Start with this README.
 2. Read [OPEN_SOURCE_RELEASE.md](OPEN_SOURCE_RELEASE.md) for sanitization and release notes.
 3. Read [REVIEW_GUIDE.md](REVIEW_GUIDE.md) for a suggested expert review workflow.
-4. Use the documentation site to understand file prefixes, architecture, and modernization directions.
+4. Use the documentation site or Markdown docs to understand file prefixes, architecture, and modernization directions.
 5. Review source members conservatively and assume expert validation is needed before making deployment conclusions.
 
 ## Contribution Policy
