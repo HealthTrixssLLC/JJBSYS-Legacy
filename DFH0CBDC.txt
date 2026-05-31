@@ -1,7 +1,7 @@
       ******************************************************************
       *                                                                *
       * 28October2010                                                  *
-      * Modified at Ingram Entertainment Inc. to only process          *
+      * Modified for site-specific processing to only process          *
       * TRANSACTION OBJECTS of a GROUP to produce an output file of:   *
       *                                                                *
       *   TRANSACTION(XXXX) PROGRAM(XXXXXXXX)                       JJB*

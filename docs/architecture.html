@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture - JJBSYS Legacy CICS Mainframe Archive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Conceptual Architecture</p>
+      <h1 class="site-title">High-Level System Relationship View</h1>
+      <p class="site-subtitle">A conceptual explanation of how the archive’s batch, CICS, network, web, terminal, exit, and operational components appear to fit together.</p>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a aria-current="page" href="architecture.html">Architecture</a>
+      <a href="component-inventory.html">Component Inventory</a>
+      <a href="exci-bridge.html">EXCI Bridge</a>
+      <a href="cics-operations.html">CICS Operations</a>
+      <a href="tcpip-smtp-web.html">TCP/IP, SMTP, Web</a>
+      <a href="modernization-map.html">Modernization Map</a>
+      <a href="author-legacy.html">Author Legacy</a>
+    </nav>
+  </header>
+  <main>
+    <section class="notice">
+      <p>This page describes a conceptual architecture for review purposes. It is not an installation guide and should not be read as a deployment specification.</p>
+    </section>
+
+    <section class="diagram">
+      <h2>Text-Based Conceptual Diagram</h2>
+      <pre><code>Batch Jobs / JCL
+      |
+      v
+EXCI Client and Bridge Programs
+      |
+      v
+CICS Transactions / Server Programs
+      |         |         |         |
+      |         |         |         +-- CICS Web Interface / HTTP support
+      |         |         +------------ TCP/IP and SMTP integration routines
+      |         +---------------------- Files, queues, programs, and resources
+      +-------------------------------- Operational tools, exits, and utilities
+
+Supporting Layers:
+- Terminal and autoinstall logic
+- User exits and control points
+- PLT startup and shutdown members
+- Monitoring, alerts, and operational automation</code></pre>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h3>Batch jobs and generation JCL</h3>
+        <p>JCL and related members appear to drive compile, link, generation, and batch-triggered interaction patterns.</p>
+      </article>
+      <article class="card">
+        <h3>EXCI bridge programs</h3>
+        <p>Bridge-style members appear to let batch or non-terminal work call into CICS in a controlled way.</p>
+      </article>
+      <article class="card">
+        <h3>CICS application and systems utilities</h3>
+        <p>Core CICS-related members likely manage queues, files, regions, support transactions, and operational workflows.</p>
+      </article>
+      <article class="card">
+        <h3>Network and web integration</h3>
+        <p>TCP/IP, SMTP, HTTP, and CICS web support show how the environment interacted with external systems and web-facing processes.</p>
+      </article>
+      <article class="card">
+        <h3>User exits and terminal utilities</h3>
+        <p>Exit and terminal support members reflect region customization, routing, and control behavior common in mature CICS installations.</p>
+      </article>
+      <article class="card">
+        <h3>Operational automation</h3>
+        <p>PLT members, startup and shutdown structures, and support utilities suggest a strong focus on region operations and maintainability.</p>
+      </article>
+    </section>
+  </main>
+  <footer>
+    <div class="footer-box">JJBSYS Legacy CICS Mainframe Archive. Historical and educational preservation project.</div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EXCI Bridge - JJBSYS Legacy CICS Mainframe Archive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Integration Pattern</p>
+      <h1 class="site-title">EXCI Bridge in Plain English</h1>
+      <p class="site-subtitle">A high-level explanation of how batch jobs can call CICS through a bridge model instead of operating on CICS resources directly.</p>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="component-inventory.html">Component Inventory</a>
+      <a aria-current="page" href="exci-bridge.html">EXCI Bridge</a>
+      <a href="cics-operations.html">CICS Operations</a>
+      <a href="tcpip-smtp-web.html">TCP/IP, SMTP, Web</a>
+      <a href="modernization-map.html">Modernization Map</a>
+      <a href="author-legacy.html">Author Legacy</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <p>EXCI is a bridge concept that lets a batch or non-CICS process request work from CICS in a controlled and structured way. Instead of manipulating CICS resources directly, the external caller asks a CICS-side program or transaction to perform the work and return a response.</p>
+    </section>
+
+    <section class="diagram">
+      <h2>Conceptual Flow</h2>
+      <pre><code>Batch Job
+  ->
+EXCI Client
+  ->
+CICS Transaction / Server Program
+  ->
+CICS File / Queue / Program
+  ->
+Response</code></pre>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h3>Why use a bridge</h3>
+        <p>It centralizes CICS-side handling and keeps external callers from depending on direct access to internal resource details.</p>
+      </article>
+      <article class="card">
+        <h3>What reviewers should look for</h3>
+        <p>Request structures, COMMAREAs, routing behavior, transaction naming, queue use, and error-handling conventions.</p>
+      </article>
+      <article class="card">
+        <h3>Why it matters today</h3>
+        <p>It is a useful historical pattern for understanding how legacy enterprises exposed controlled transaction access before modern API platforms.</p>
+      </article>
+    </section>
+  </main>
+  <footer>
+    <div class="footer-box">JJBSYS Legacy CICS Mainframe Archive. Historical and educational preservation project.</div>
+  </footer>
+</body>
+</html>

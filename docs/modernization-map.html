@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modernization Map - JJBSYS Legacy CICS Mainframe Archive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Modernization Directions</p>
+      <h1 class="site-title">Legacy Pattern to Modernization Direction Map</h1>
+      <p class="site-subtitle">A cautious mapping of legacy capabilities to modern directions worth evaluating.</p>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="component-inventory.html">Component Inventory</a>
+      <a href="exci-bridge.html">EXCI Bridge</a>
+      <a href="cics-operations.html">CICS Operations</a>
+      <a href="tcpip-smtp-web.html">TCP/IP, SMTP, Web</a>
+      <a aria-current="page" href="modernization-map.html">Modernization Map</a>
+      <a href="author-legacy.html">Author Legacy</a>
+    </nav>
+  </header>
+  <main>
+    <section class="notice">
+      <p>These are modernization directions to evaluate. They are not direct replacements and should not be read as one-for-one migrations.</p>
+    </section>
+
+    <section class="direction-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Legacy pattern</th>
+            <th>Modernization direction</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>EXCI and batch integration</td><td>Evaluate IBM CICS Transaction Gateway, IBM z/OS Connect, and controlled API patterns.</td></tr>
+          <tr><td>CICS web programs</td><td>Evaluate z/OS Connect, API gateways, and modern web front-end integration patterns.</td></tr>
+          <tr><td>CICS operations utilities</td><td>Evaluate CICS Explorer, CICS Configuration Manager, vendor monitoring platforms, Zowe CLI, and Ansible-based automation.</td></tr>
+          <tr><td>SMTP and TCP integrations</td><td>Evaluate enterprise messaging, managed integration services, secure gateways, and modern API-based exchange.</td></tr>
+          <tr><td>Documentation and review workflows</td><td>Evaluate GitHub Pages, CODEOWNERS, issue templates, and security governance as the review layer around the archive.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer>
+    <div class="footer-box">JJBSYS Legacy CICS Mainframe Archive. Historical and educational preservation project.</div>
+  </footer>
+</body>
+</html>
