@@ -628,9 +628,9 @@ MSG03    DC    C'IEP004003  SNMP CLIENT PROCESSING UNSUCCESSFUL, ABEND *06580003
 ABC03    EQU   *-15                                                     06600003
 MSG03L   EQU   *-MSG03
 *
-RCVID1   DC    C'JAY.BAKER@INGRAMENTERTAINMENT.COM'
-RCVNM1   DC    C'"JAY.BAKER"'
-SNDNM1   DC    C'"TECH SERVICES"'
+RCVID1   DC    C'maintainer@example.com'
+RCVNM1   DC    C'"PROJECT MAINTAINER"'
+SNDNM1   DC    C'"SYSTEM SUPPORT"'
 SBJECT   DC    C'CPSMTASK Notice: CICSJOBN.TRAN.NNNNN'
 SBJECTJ  EQU   (*-SBJECT)-19
 SBJECTT  EQU   (*-SBJECT)-10
@@ -729,11 +729,11 @@ COMEYE   DS    CL16                     EYE CATCHER
 *
 COMPARM  EQU   *                        IET111 PARM HDR AREA BEGIN @
 COMSRV   DS    CL1                      TCP SMTP SERVER ID
-COMSRVF  EQU   C'F'                     ..F = IEFW.NEXUS:25
-COMSRVI  EQU   C'I'                     ..I = NOC2.LVRGN.NEXUS:25
-COMSRVM  EQU   C'M'                     ..M = EMS.MAIL.NEXUS:25
-COMSRVS  EQU   C'S'                     ..S = EMS.MAIL.NEXUS:5025
-COMSRVX  EQU   C'X'                     ..X = EXCHANGE.MAIL.NEXUS:25
+COMSRVF  EQU   C'F'                     ..F = firewall-mail.example.net:25
+COMSRVI  EQU   C'I'                     ..I = smtp-a.example.net:25
+COMSRVM  EQU   C'M'                     ..M = mail-gateway.example.net:25
+COMSRVS  EQU   C'S'                     ..S = mail-gateway.example.net:5025
+COMSRVX  EQU   C'X'                     ..X = exchange.example.net:25
 *
 COMRSP   DS    CL1                      RESPONSE CODE
 COMRSPOK EQU   C' '                     ..NORMAL

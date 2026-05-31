@@ -437,7 +437,7 @@ SRVRTBL  DS    0XL16
 *        L      192.0.2.42      legacy-prod.example.com       (Prod-Old)
 *        X      192.0.2.43      test-endpoint.example.com     (Test)
 *
-*        $      208.136.50.21   Access Ingram
+*        $      192.0.2.44      SAMPLE EXTERNAL HOST
 *
 SRVNLVRG DC    C'I'                     SERVER CODE
          DC    X'00'                    RESERVED

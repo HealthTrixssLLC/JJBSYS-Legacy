@@ -647,10 +647,8 @@ APPLB    DS    0C
          DC    C'&&ResponseType=application/x-ups-pld'
          DC    C'&&VersionNumber=V4R1'
 *
-         DC    C'&&UserId=ING001TN'              UserId
-         DC    C'&&Password=INGRAM'              Password
-*        DC    C'&&UserId=<SERVICE_USER>'        UserId placeholder
-*        DC    C'&&Password=<SERVICE_PASSWORD>'  Password placeholder
+         DC    C'&&UserId=<SERVICE_USER>'        UserId placeholder
+         DC    C'&&Password=<SERVICE_PASSWORD>'  Password placeholder
 *
 APPLE    EQU   *
 APPLL    EQU   APPLE-APPLB

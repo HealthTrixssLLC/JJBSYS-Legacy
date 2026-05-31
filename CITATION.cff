@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this archive for research, teaching, modernization analysis, or historical reference, please cite it."
+title: "JJBSYS Legacy CICS Mainframe Archive"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/HealthTrixssLLC/JJBSYS-Legacy"
+authors:
+  - family-names: Baker
+    given-names: James J.
+  - family-names: Baker
+    given-names: Jay

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Component Inventory - JJBSYS Legacy CICS Mainframe Archive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Inventory</p>
+      <h1 class="site-title">Component Inventory by Naming Pattern</h1>
+      <p class="site-subtitle">A reviewer-oriented inventory based on file prefixes and legacy member naming conventions.</p>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="architecture.html">Architecture</a>
+      <a aria-current="page" href="component-inventory.html">Component Inventory</a>
+      <a href="exci-bridge.html">EXCI Bridge</a>
+      <a href="cics-operations.html">CICS Operations</a>
+      <a href="tcpip-smtp-web.html">TCP/IP, SMTP, Web</a>
+      <a href="modernization-map.html">Modernization Map</a>
+      <a href="author-legacy.html">Author Legacy</a>
+    </nav>
+  </header>
+  <main>
+    <section class="notice">
+      <p>These classifications are informed by naming patterns and observed comments. Detailed role descriptions should still be validated by mainframe and CICS experts.</p>
+    </section>
+
+    <section class="inventory-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Likely role</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>$GEN*</code> build and generation JCL/procedures</td><td>Compile, link, generation, or procedural build support members for legacy workflows.</td></tr>
+          <tr><td><code>DFH*</code> CICS samples, tables, exits</td><td>CICS sample members, support tables, PLT artifacts, exits, and system-facing region support definitions.</td></tr>
+          <tr><td><code>IEB*</code> batch-to-CICS / EXCI bridge and resource access</td><td>Bridge-oriented logic, batch support, EXCI-related patterns, and direct CICS resource interaction utilities.</td></tr>
+          <tr><td><code>IEP*</code> CICS operations utilities</td><td>Operational support programs for monitoring, control, refresh, reporting, region support, or system assistance.</td></tr>
+          <tr><td><code>IET*</code> TCP/IP, SMTP, HTTP, UPS, and external integration utilities</td><td>Network-facing utilities and examples for sockets, email, HTTP, web traffic, and external service integration patterns.</td></tr>
+          <tr><td><code>IEW*</code> CICS web interface support</td><td>CICS web support components such as analyzers, converters, handlers, or state-oriented routines.</td></tr>
+          <tr><td><code>IEX*</code> user exits</td><td>User exit and customization hooks for region behavior or support flows.</td></tr>
+          <tr><td><code>IEIAIT</code> / <code>IEMAIT</code> terminal autoinstall support</td><td>Terminal and autoinstall-related definitions and support structures.</td></tr>
+          <tr><td><code>OHCI*</code> / <code>OJCI*</code> SMP/E or CICS modification support</td><td>Modification, maintenance, SMP/E-adjacent, or CICS change-support artifacts.</td></tr>
+          <tr><td><code>TCC*</code> TCP/IP client/server samples or related integrations</td><td>TCP/IP client/server examples and connected integration support members.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer>
+    <div class="footer-box">JJBSYS Legacy CICS Mainframe Archive. Historical and educational preservation project.</div>
+  </footer>
+</body>
+</html>
